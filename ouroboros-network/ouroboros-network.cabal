@@ -1019,6 +1019,8 @@ library ouroboros-network-tests-lib
     Test.Ouroboros.Network.TxSubmission.Impaired
     Test.Ouroboros.Network.TxSubmission.Mempool.Simple
     Test.Ouroboros.Network.TxSubmission.MempoolWriter
+    Test.Ouroboros.Network.TxSubmission.Outbound
+    Test.Ouroboros.Network.TxSubmission.SizedBytes
     Test.Ouroboros.Network.TxSubmission.TxLogic
     Test.Ouroboros.Network.TxSubmission.Types
 

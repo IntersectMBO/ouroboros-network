@@ -94,9 +94,11 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Server qualified as Server
+import Ouroboros.Network.TxSubmission.Inbound.V1 (defaultTxSubmissionConfigV1)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionProtocolError (..))
+import Ouroboros.Network.TxSubmission.Outbound (TxOutboundVersion (..),
+           TxSubmissionProtocolError (..))
 
 import Simulation.Network.Snocket (BearerInfo (..), noAttenuation)
 
@@ -117,7 +119,9 @@ import Test.Ouroboros.Network.Diffusion.Node.Kernel
 import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
-import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId)
+import Test.Ouroboros.Network.TxSubmission.Types (ArbTxOutboundVersion (..),
+           ArbTxSubmissionConfig (..), ArbTxSubmissionConfigs (..), Tx (..),
+           TxId, unsafeMkTxDecisionPolicy)
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 import Test.Cardano.Base.QuickCheck qualified as BaseQC
@@ -444,8 +448,10 @@ unit_cm_valid_transitions =
             , abiAcceptFailure           = Nothing
             , abiSDUSize                 = LargeSDU
             }
+      config = defaultTxSubmissionConfigV2
+      policy = unsafeMkTxDecisionPolicy config
       ds = DiffusionScript
-            (SimArgs 1 10 defaultTxDecisionPolicy)
+            (SimArgs 1 10 policy maxBound)
             (Script ((Map.empty, ShortDelay) :| [(Map.empty, LongDelay)]))
             [ ( NodeArgs
                   (-2)
@@ -489,6 +495,7 @@ unit_cm_valid_transitions =
                   (Script (PraosFetchMode FetchModeBulkSync :| [PraosFetchMode FetchModeBulkSync]))
                   []
                   noImpairment
+                  config
                   , [JoinNetwork 0.5]
                 )
               , ( NodeArgs
@@ -531,6 +538,7 @@ unit_cm_valid_transitions =
                   (Script (PraosFetchMode FetchModeDeadline :| []))
                   []
                   noImpairment
+                  config
                   , [JoinNetwork 1.484_848_484_848]
                 )
             ]
@@ -950,10 +958,12 @@ unit_connection_manager_trace_coverage =
     addr, addr' :: NtNAddr
     addr  = TestAddress (IPAddr (read "127.0.0.2") 1_000)
     addr' = TestAddress (IPAddr (read "127.0.0.1") 1_000)
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 policy maxBound)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -982,7 +992,8 @@ unit_connection_manager_trace_coverage =
              naChainSyncEarlyExit = False,
              naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
              naTxs = [],
-             naTxImpairment = noImpairment
+             naTxImpairment = noImpairment,
+             naTxSubmissionConfig = config
 
            }
           , [JoinNetwork 0]
@@ -1018,7 +1029,8 @@ unit_connection_manager_trace_coverage =
              naChainSyncEarlyExit = False,
              naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
              naTxs = [],
-             naTxImpairment = noImpairment
+             naTxImpairment = noImpairment,
+             naTxSubmissionConfig = config
            }
           , [JoinNetwork 0]
           )
@@ -1076,10 +1088,12 @@ unit_connection_manager_transitions_coverage =
     addr, addr' :: NtNAddr
     addr  = TestAddress (IPAddr (read "127.0.0.2") 1000)
     addr' = TestAddress (IPAddr (read "127.0.0.1") 1000)
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 policy maxBound)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -1108,7 +1122,8 @@ unit_connection_manager_transitions_coverage =
              naChainSyncEarlyExit = False,
              naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
              naTxs = [],
-             naTxImpairment = noImpairment
+             naTxImpairment = noImpairment,
+             naTxSubmissionConfig = config
            }
           , [JoinNetwork 0]
           )
@@ -1143,7 +1158,8 @@ unit_connection_manager_transitions_coverage =
              naChainSyncEarlyExit = False,
              naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
              naTxs = [],
-             naTxImpairment = noImpairment
+             naTxImpairment = noImpairment,
+             naTxSubmissionConfig = config
            }
           , [JoinNetwork 0]
           )
@@ -1241,11 +1257,20 @@ instance Arbitrary WellSizedTx where
 -- We exclude txs which are not advertise the right size, since they disconnect
 -- the nodes, and as a result not all tx-s might transfer.
 --
+-- With `TxOutboundV_2` the two nodes use different tx submission
+-- configurations, e.g. different `maxNumUnacknowledgedTxIds` windows.  With
+-- `TxOutboundV_1` they share one configuration (see
+-- `ArbTxSubmissionConfigs`).
+--
 prop_txSubmission_allTransactions :: ArbTxDecisionPolicy
+                                  -> ArbTxSubmissionConfigs
                                   -> NonEmptyList WellSizedTx
                                   -> NonEmptyList WellSizedTx
                                   -> Property
 prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
+                                  (ArbTxSubmissionConfigs outboundVersion
+                                                          submissionConfigA
+                                                          submissionConfigB)
                                   (NonEmpty txsA')
                                   (NonEmpty txsB') =
   let localRootConfig = LocalRootConfig
@@ -1255,7 +1280,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                           IsNotTrustable
       diffScript =
         DiffusionScript
-          (SimArgs 1 10 decisionPolicy)
+          (SimArgs 1 10 decisionPolicy outboundVersion)
           (singletonTimedScript Map.empty)
           [(NodeArgs
               (-3)
@@ -1286,6 +1311,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
               (Script (PraosFetchMode FetchModeDeadline :| []))
               uniqueTxsA
               noImpairment
+              submissionConfigA
           , [JoinNetwork 0])
           , (NodeArgs
                (-1)
@@ -1317,6 +1343,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                (Script (PraosFetchMode FetchModeDeadline :| []))
                uniqueTxsB
                noImpairment
+               submissionConfigB
          , [JoinNetwork 0])
          ]
    in checkAllTransactions (runSimTrace
@@ -1327,6 +1354,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
   where
     txsA = getTx <$> txsA'
     txsB = getTx <$> txsB'
+
 
     -- We need to make sure the transactions are unique, this simplifies
     -- things.
@@ -1390,6 +1418,12 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
         $ counterexample ("B: unique txs: " ++ show uniqueTxsB)
         $ counterexample ("B: valid transactions that should be accepted: " ++ show validSortedTxidsB)
         $ label ("number of valid tx transferred: " ++ renderRanges 10 (getSum . foldMap (Sum . List.length) $ sortedAcceptedTxidsMap))
+        $ label ("unacknowledged txids windows: "
+                 ++ case compare (maxNumUnacknowledgedTxIds submissionConfigA)
+                                 (maxNumUnacknowledgedTxIds submissionConfigB) of
+                      LT -> "A < B"
+                      EQ -> "A = B"
+                      GT -> "A > B")
 
          -- Success criteria, after running for 500k events, we check the map
          -- for the two nodes involved in the simulation and verify that indeed
@@ -1418,9 +1452,13 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
 -- each downstream peer advertises the tx list it was assigned by
 -- 'ChainedPeerTxs'.
 txChainIntegrityDiffScript :: ArbTxDecisionPolicy
+                           -> ArbTxSubmissionConfig
+                           -> ArbTxOutboundVersion
                            -> ChainedPeerTxs
                            -> DiffusionScript
 txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
+                           (ArbTxSubmissionConfig submissionConfig)
+                           (ArbTxOutboundVersion outboundVersion)
                            (ChainedPeerTxs chainedTxsB chainedTxsC) =
   let localRootConfig = LocalRootConfig
                           DoNotAdvertisePeer
@@ -1449,7 +1487,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
         }
 
   in DiffusionScript
-       (SimArgs 1 10 decisionPolicy)
+       (SimArgs 1 10 decisionPolicy outboundVersion)
        (singletonTimedScript Map.empty)
        [ ( NodeArgs
              (-1)
@@ -1469,6 +1507,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
              (Script (PraosFetchMode FetchModeDeadline :| []))
              []
              noImpairment
+             submissionConfig
          , [JoinNetwork 0] )
        , ( NodeArgs
              (-2)
@@ -1489,6 +1528,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
              (Script (PraosFetchMode FetchModeDeadline :| []))
              chainedTxsB
              noImpairment
+             submissionConfig
          , [JoinNetwork 0] )
        , ( NodeArgs
              (-3)
@@ -1509,6 +1549,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
              (Script (PraosFetchMode FetchModeDeadline :| []))
              chainedTxsC
              noImpairment
+             submissionConfig
          , [JoinNetwork 0] )
        ]
 
@@ -1592,11 +1633,17 @@ checkTxChainIntegrity (ChainedPeerTxs chainedTxsB chainedTxsC)
 -- peer delivers a child out-of-order and the mempool rejects with
 -- 'MissingParent', the tx must still reach the node via the well-behaved
 -- downstream peer's re-advertisement.
-prop_txSubmission_chainIntegrity :: ArbTxDecisionPolicy
-                                 -> ChainedPeerTxs
-                                 -> Property
-prop_txSubmission_chainIntegrity argPolicy chainedTxs =
-  let diffScript = txChainIntegrityDiffScript argPolicy chainedTxs
+prop_txSubmission_chainIntegrity
+  :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
+  -> ArbTxOutboundVersion
+  -> ChainedPeerTxs
+  -> Property
+prop_txSubmission_chainIntegrity
+  argPolicy argConfig argVersion chainedTxs
+  =
+  let diffScript = txChainIntegrityDiffScript argPolicy argConfig argVersion
+                                              chainedTxs
       expected   = txChainIntegrityExpected chainedTxs in
   checkTxChainIntegrity
     chainedTxs
@@ -1604,11 +1651,17 @@ prop_txSubmission_chainIntegrity argPolicy chainedTxs =
     (runSimTrace (diffusionSimulation noAttenuation diffScript))
     long_trace
 
-prop_txSubmission_chainIntegrity_iosimpor :: ArbTxDecisionPolicy
-                                          -> ChainedPeerTxs
-                                          -> Property
-prop_txSubmission_chainIntegrity_iosimpor argPolicy chainedTxs =
-  let diffScript = txChainIntegrityDiffScript argPolicy chainedTxs
+prop_txSubmission_chainIntegrity_iosimpor
+  :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
+  -> ArbTxOutboundVersion
+  -> ChainedPeerTxs
+  -> Property
+prop_txSubmission_chainIntegrity_iosimpor
+  argPolicy argConfig argVersion chainedTxs
+  =
+  let diffScript = txChainIntegrityDiffScript argPolicy argConfig argVersion
+                                              chainedTxs
       expected   = txChainIntegrityExpected chainedTxs
       sim :: forall s. IOSim s DiffSimResult
       sim = do
@@ -1619,17 +1672,25 @@ prop_txSubmission_chainIntegrity_iosimpor argPolicy chainedTxs =
         checkTxChainIntegrity chainedTxs expected trace long_trace
 
 prop_txSubmission_chainIntegrity_iosim :: ArbTxDecisionPolicy
+                                       -> ArbTxSubmissionConfig
+                                       -> ArbTxOutboundVersion
                                        -> ChainedPeerTxs
                                        -> Property
 prop_txSubmission_chainIntegrity_iosim = prop_txSubmission_chainIntegrity
 
 
+-- | Tx submission configuration used by the score-impairment fixture.
+txScoreImpairmentConfig :: TxOutboundVersion -> TxSubmissionConfig
+txScoreImpairmentConfig TxOutboundV_1 = defaultTxSubmissionConfigV1
+txScoreImpairmentConfig TxOutboundV_2 = defaultTxSubmissionConfigV2
+
 -- | Policy used by the score-impairment fixture. Default policy with a
 -- guaranteed inflight cap of 2 so the receiver can request bodies from
 -- B and C in parallel.
-txScoreImpairmentPolicy :: TxDecisionPolicy
-txScoreImpairmentPolicy =
-    defaultTxDecisionPolicy { txInflightMultiplicity = 2 }
+txScoreImpairmentPolicy :: TxOutboundVersion -> TxDecisionPolicy
+txScoreImpairmentPolicy outboundVersion =
+    (unsafeMkTxDecisionPolicy (txScoreImpairmentConfig outboundVersion))
+      { txInflightMultiplicity = 2 }
 
 -- | Inputs for 'prop_txSubmission_score_impairment'. Body delays are
 -- expressed as multipliers of 'interTxSpace' so the test is robust to
@@ -1643,45 +1704,61 @@ data ScoreImpairmentInput = ScoreImpairmentInput
   { siiTxCount   :: Int
   , siiBDelayMul :: Double
   , siiCDelayMul :: Double
+  , siiVersion   :: TxOutboundVersion
   } deriving Show
+
+-- | The largest 'siiTxCount' which fits in a single txid reply.
+scoreImpairmentTxIdCap :: TxOutboundVersion -> Int
+scoreImpairmentTxIdCap = fromIntegral
+                       . getNumTxIdsToReq
+                       . maxNumTxIdsToRequest
+                       . txScoreImpairmentConfig
 
 instance Arbitrary ScoreImpairmentInput where
   -- Bound 'siiTxCount' to one txid reply: a second round would advertise
   -- the extra txids to only one peer, collapsing the multiplicity-2 race
   -- this test is meant to exercise.
   arbitrary = do
-    let txIdCap = fromIntegral
-                . getNumTxIdsToReq
-                . maxNumTxIdsToRequest
-                $ txScoreImpairmentPolicy
-    n    <- choose (1, txIdCap)
+    ArbTxOutboundVersion v <- arbitrary
+    n    <- choose (1, scoreImpairmentTxIdCap v)
     bMul <- choose (1.5, 4.0)
     cMul <- (bMul +) <$> choose (1.0, 6.0)
-    pure (ScoreImpairmentInput n bMul cMul)
+    pure (ScoreImpairmentInput n bMul cMul v)
   -- Shrink the tx count, and the delay multipliers while keeping the
   -- 'cMul > bMul > 1' invariant: shrink bMul holding the gap
-  -- (cMul - bMul) constant, and shrink the gap holding bMul fixed.
-  shrink (ScoreImpairmentInput n bMul cMul) =
-    [ ScoreImpairmentInput n' bMul cMul
+  -- (cMul - bMul) constant, and shrink the gap holding bMul fixed.  When
+  -- shrinking the version, clamp the tx count to the new version's cap.
+  shrink sii@(ScoreImpairmentInput n bMul cMul v) =
+    [ sii { siiTxCount = n' }
     | n' <- shrink n, n' >= 1
     ]
     ++
-    [ ScoreImpairmentInput n bMul' (bMul' + (cMul - bMul))
+    [ sii { siiBDelayMul = bMul',
+            siiCDelayMul = bMul' + (cMul - bMul)
+          }
     | bMul' <- shrink bMul
     , bMul' > 1
     ]
     ++
-    [ ScoreImpairmentInput n bMul (bMul + diff)
+    [ sii { siiCDelayMul = bMul + diff }
     | diff <- shrink (cMul - bMul)
     , diff > 0
     ]
+    ++
+    [ sii { siiVersion = v'
+          , siiTxCount = min n (scoreImpairmentTxIdCap v')
+          }
+    | ArbTxOutboundVersion v' <- shrink (ArbTxOutboundVersion v)
+    ]
 
 -- | The invariant 'prop_txSubmission_score_impairment' relies on: a
--- positive tx count and @cMul > bMul > 1@ (C delayed strictly more than
--- B, and B delayed beyond the inter-tx pacing).
+-- positive tx count which fits in a single txid reply and @cMul > bMul > 1@
+-- (C delayed strictly more than B, and B delayed beyond the inter-tx
+-- pacing).
 validScoreImpairmentInput :: ScoreImpairmentInput -> Bool
-validScoreImpairmentInput (ScoreImpairmentInput n bMul cMul) =
+validScoreImpairmentInput (ScoreImpairmentInput n bMul cMul v) =
      n >= 1
+  && n <= scoreImpairmentTxIdCap v
   && bMul > 1
   && cMul > bMul
 
@@ -1704,7 +1781,7 @@ prop_ScoreImpairmentInput_shrinkValid input =
 -- C's body-delay impairment makes its replies consistently late, exposing
 -- the receiver's late-body penalty path.
 txScoreImpairmentDiffScript :: ScoreImpairmentInput -> DiffusionScript
-txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, siiCDelayMul } =
+txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, siiCDelayMul, siiVersion } =
     let localRootConfig = LocalRootConfig
                             DoNotAdvertisePeer
                             InitiatorAndResponderDiffusionMode
@@ -1741,14 +1818,14 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
                     | (i, sz) <- zip [0 .. siiTxCount - 1] (cycle [100, 250, 500])
                     ]
 
-        bDelay = realToFrac siiBDelayMul * interTxSpace txScoreImpairmentPolicy
-        cDelay = realToFrac siiCDelayMul * interTxSpace txScoreImpairmentPolicy
+        bDelay = realToFrac siiBDelayMul * interTxSpace (txScoreImpairmentPolicy siiVersion)
+        cDelay = realToFrac siiCDelayMul * interTxSpace (txScoreImpairmentPolicy siiVersion)
 
         bImpairment = noImpairment { impairBodyDelay = Just bDelay }
         cImpairment = noImpairment { impairBodyDelay = Just cDelay }
 
     in DiffusionScript
-         (SimArgs 1 10 txScoreImpairmentPolicy)
+         (SimArgs 1 10 (txScoreImpairmentPolicy siiVersion) siiVersion)
          (singletonTimedScript Map.empty)
          [ ( NodeArgs
                (-1)
@@ -1768,6 +1845,7 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
                (Script (PraosFetchMode FetchModeDeadline :| []))
                []
                noImpairment
+               (txScoreImpairmentConfig siiVersion)
            , [JoinNetwork 0] )
          , ( NodeArgs
                (-2)
@@ -1788,6 +1866,7 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
                (Script (PraosFetchMode FetchModeDeadline :| []))
                sharedTxs
                bImpairment
+               (txScoreImpairmentConfig siiVersion)
            , [JoinNetwork 0] )
          , ( NodeArgs
                (-3)
@@ -1808,6 +1887,7 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
                (Script (PraosFetchMode FetchModeDeadline :| []))
                sharedTxs
                cImpairment
+               (txScoreImpairmentConfig siiVersion)
            , [JoinNetwork 0] )
          ]
 
@@ -1817,7 +1897,13 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
 -- typically winning the body race, B should accumulate no rejection
 -- penalty while C's late deliveries should drive its score up.
 prop_txSubmission_score_impairment :: ScoreImpairmentInput -> Property
-prop_txSubmission_score_impairment input@ScoreImpairmentInput { siiTxCount, siiBDelayMul, siiCDelayMul } =
+prop_txSubmission_score_impairment
+    input@ScoreImpairmentInput {
+      siiTxCount,
+      siiBDelayMul,
+      siiCDelayMul,
+      siiVersion
+    } =
     let trace = runSimTrace
               $ diffusionSimulation noAttenuation
                   (txScoreImpairmentDiffScript input)
@@ -1884,7 +1970,7 @@ prop_txSubmission_score_impairment input@ScoreImpairmentInput { siiTxCount, siiB
          , counterexample "C must accumulate a penalty"
              $ scoreC > 0
          , counterexample "C's score must stay within scoreMax"
-             $ scoreC <= scoreMax txScoreImpairmentPolicy
+             $ scoreC <= scoreMax (txScoreImpairmentPolicy siiVersion)
          , counterexample "B should deliver strictly more txs than C"
              $ deliveredB > deliveredC
          ]
@@ -2270,9 +2356,12 @@ prop_bootstrap_timeout_iosim = testWithIOSim prop long_trace
 unit_4177 :: Property
 unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
   where
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
+
     script :: DiffusionScript
     script =
-      DiffusionScript (SimArgs 1 10 defaultTxDecisionPolicy)
+      DiffusionScript (SimArgs 1 10 policy maxBound)
         (singletonTimedScript Map.empty)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode
               (Map.fromList [(RelayAccessDomain "test2" 65_535, DoAdvertisePeer)])
@@ -2299,6 +2388,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (Script (PraosFetchMode FetchModeDeadline :| []))
               []
               noImpairment
+              config
           , [JoinNetwork 1.742_857_142_857
             ,Reconfigure 6.333_333_333_33 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)]),
                                         (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)
@@ -2334,6 +2424,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
              (Script (PraosFetchMode FetchModeDeadline :| []))
              []
              noImpairment
+             config
           , [JoinNetwork 0.183_783_783_783
             ,Reconfigure 4.533_333_333_333 [(1,1,Map.empty)]
             ]
@@ -2899,9 +2990,11 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
           abiOutboundWriteFailure = Just 2,
           abiAcceptFailure = Nothing, abiSDUSize = LargeSDU
         }
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 policy maxBound)
         (singletonTimedScript $
            Map.fromList
              [ (("test2", DNS.A), Left [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
@@ -2968,6 +3061,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
             (Script (PraosFetchMode FetchModeDeadline :| []))
             []
             noImpairment
+            config
             , [ JoinNetwork 6.710_144_927_536
               , Kill 7.454_545_454_545
               , JoinNetwork 10.763_157_894_736
@@ -3027,9 +3121,12 @@ prop_connect_failure (AbsIOError ioerr) =
     relayIP   = read "10.0.0.1"
     relayPort = 1
 
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
+
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 policy maxBound)
         (singletonTimedScript Map.empty)
         [ (NodeArgs {
             naSeed = 0,
@@ -3057,7 +3154,8 @@ prop_connect_failure (AbsIOError ioerr) =
             naChainSyncEarlyExit = False,
             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
             naTxs = [],
-            naTxImpairment = noImpairment
+            naTxImpairment = noImpairment,
+            naTxSubmissionConfig = config
           }
           , [JoinNetwork 10]
           ),
@@ -3087,7 +3185,8 @@ prop_connect_failure (AbsIOError ioerr) =
             naChainSyncEarlyExit = False,
             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
             naTxs = [],
-            naTxImpairment = noImpairment
+            naTxImpairment = noImpairment,
+            naTxSubmissionConfig = config
           }
           , [JoinNetwork 0]
           )
@@ -3157,9 +3256,12 @@ prop_accept_failure (AbsIOError ioerr) =
     relayPort = 1
     relayAddr = TestAddress (IPAddr relayIP relayPort)
 
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
+
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 policy maxBound)
         (singletonTimedScript Map.empty)
         [ (NodeArgs {
             naSeed = 0,
@@ -3187,7 +3289,8 @@ prop_accept_failure (AbsIOError ioerr) =
             naChainSyncEarlyExit = False,
             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
             naTxs = [],
-            naTxImpairment = noImpairment
+            naTxImpairment = noImpairment,
+            naTxSubmissionConfig = config
           }
           , [JoinNetwork 10]
           ),
@@ -3217,7 +3320,8 @@ prop_accept_failure (AbsIOError ioerr) =
             naChainSyncEarlyExit = False,
             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
             naTxs = [],
-            naTxImpairment = noImpairment
+            naTxImpairment = noImpairment,
+            naTxSubmissionConfig = config
           }
           , [JoinNetwork 0]
           )
@@ -4283,10 +4387,12 @@ async_demotion_network_script =
     addr3    = TestAddress (IPAddr (read "10.0.0.3") 3000)
     ra_addr3 = RelayAccessAddress (read "10.0.0.3") 3000
 
+    config = defaultTxSubmissionConfigV2
     simArgs = SimArgs {
-        saSlot             = secondsToDiffTime 1,
-        saQuota            = 5,  -- 5% chance of producing a block
-        saTxDecisionPolicy = defaultTxDecisionPolicy
+        saSlot               = secondsToDiffTime 1,
+        saQuota              = 5,  -- 5% chance of producing a block
+        saTxDecisionPolicy   = unsafeMkTxDecisionPolicy config,
+        saTxOutboundVersion  = maxBound
       }
     peerTargets = Governor.nullPeerSelectionTargets {
       targetNumberOfKnownPeers = 1,
@@ -4313,7 +4419,8 @@ async_demotion_network_script =
         naPeerSharing      = PeerSharingDisabled,
         naFetchModeScript  = singletonScript (PraosFetchMode FetchModeDeadline),
         naTxs              = [],
-        naTxImpairment     = noImpairment
+        naTxImpairment     = noImpairment,
+        naTxSubmissionConfig = config
       }
 
 
@@ -4854,8 +4961,10 @@ prop_unit_4258 =
                      abiAcceptFailure = Just (SmallDelay,ioerr),
                      abiSDUSize = LargeSDU
                    }
+      config = defaultTxSubmissionConfigV2
+      policy = unsafeMkTxDecisionPolicy config
       diffScript = DiffusionScript
-        (SimArgs 1 10 defaultTxDecisionPolicy)
+        (SimArgs 1 10 policy maxBound)
         (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode
              Map.empty
@@ -4886,6 +4995,7 @@ prop_unit_4258 =
              (Script (PraosFetchMode FetchModeDeadline :| []))
              []
              noImpairment
+             config
          , [ JoinNetwork 4.166_666_666_666,
              Kill 0.3,
              JoinNetwork 1.517_857_142_857,
@@ -4930,6 +5040,7 @@ prop_unit_4258 =
              (Script (PraosFetchMode FetchModeDeadline :| []))
              []
              noImpairment
+             config
          , [ JoinNetwork 3.384_615_384_615,
              Reconfigure 3.583_333_333_333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])],
              Kill 15.555_555_555_55,
@@ -4960,9 +5071,11 @@ prop_unit_4258 =
 --
 prop_unit_reconnect :: Property
 prop_unit_reconnect =
-  let diffScript =
+  let config = defaultTxSubmissionConfigV2
+      policy = unsafeMkTxDecisionPolicy config
+      diffScript =
         DiffusionScript
-          (SimArgs 1 10 defaultTxDecisionPolicy)
+          (SimArgs 1 10 policy maxBound)
           (singletonTimedScript Map.empty)
           [(NodeArgs
               (-3)
@@ -4994,6 +5107,7 @@ prop_unit_reconnect =
               (Script (PraosFetchMode FetchModeDeadline :| []))
               []
               noImpairment
+              config
           , [ JoinNetwork 0
             ])
           , (NodeArgs
@@ -5023,6 +5137,7 @@ prop_unit_reconnect =
              (Script (PraosFetchMode FetchModeDeadline :| []))
              []
              noImpairment
+             config
          , [ JoinNetwork 10
            ])
          ]
@@ -5450,11 +5565,15 @@ unit_peer_sharing =
         naFetchModeScript = singletonScript (PraosFetchMode FetchModeDeadline),
         naConsensusMode,
         naTxs = [],
-        naTxImpairment = noImpairment
+        naTxImpairment = noImpairment,
+        naTxSubmissionConfig = config
       }
 
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
+
     script = DiffusionScript
-               (mainnetSimArgs 3 defaultTxDecisionPolicy)
+               (mainnetSimArgs 3 policy maxBound)
                (singletonScript (mempty, ShortDelay))
                [ ( (defaultNodeArgs GenesisMode) { naAddr = ip_0,
                                      naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])],
@@ -6147,10 +6266,12 @@ unit_local_root_diffusion_mode diffusionMode =
     addr, addr' :: NtNAddr
     addr  = TestAddress (IPAddr (read "127.0.0.2") 1000)
     addr' = TestAddress (IPAddr (read "127.0.0.1") 1000)
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
 
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 policy maxBound)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -6179,7 +6300,8 @@ unit_local_root_diffusion_mode diffusionMode =
              naChainSyncEarlyExit = False,
              naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
              naTxs = [],
-             naTxImpairment = noImpairment
+             naTxImpairment = noImpairment,
+             naTxSubmissionConfig = config
            }
           , [JoinNetwork 0]
           )
@@ -6214,7 +6336,8 @@ unit_local_root_diffusion_mode diffusionMode =
              naChainSyncEarlyExit = False,
              naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
              naTxs = [],
-             naTxImpairment = noImpairment
+             naTxImpairment = noImpairment,
+             naTxSubmissionConfig = config
            }
           , [JoinNetwork 0]
           )

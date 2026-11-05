@@ -1335,15 +1335,15 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 
       The request gives the maximum number of transaction identifiers that
       can be accepted in the response. Either the numbers acknowledged or the
-      number requested MUST be non-zero. In either case, the number requested
-      MUST not put the total outstanding over the fixed protocol limit (see
-      below in section~\ref{tx-submission-size-limits}).
+      number requested MUST be non-zero.  The total outstanding is bounded by
+      the maximum number of unacknowledged transaction identifiers (see
+      section~\ref{tx-submission-max-unacked}).
 
       The request also gives the number of outstanding transaction identifiers
       that can now be acknowledged. The actual transactions to acknowledge are
       known to the peer based on the FIFO order in which they were provided.
 
-      The request MUST be made (over \MsgRequestTxIdsB{}) if there are non-zer
+      The request MUST be made (over \MsgRequestTxIdsNB{}) if there are non-zero
       remaining unacknowledged transactions.
 \item [\MsgRequestTxIdsB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
@@ -1358,19 +1358,21 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 
       The request gives the maximum number of transaction identifiers that
       can be accepted in the response. This must be greater than zero.
-      The number requested ids MUST not put the total outstanding over
-      the fixed protocol limit (see below in
-      section~\ref{tx-submission-size-limits}).
+      The total outstanding is bounded by the maximum number of
+      unacknowledged transaction identifiers (see
+      section~\ref{tx-submission-max-unacked}).
 
       The request also gives the number of outstanding transaction identifiers
       that can now be acknowledged. The actual transactions to acknowledge are
       known to the peer based on the FIFO order in which they were provided.
 
-      The request MUST be made (over \MsgRequestTxIdsNB{}) if there are zero
+      The request MUST be made (over \MsgRequestTxIdsB{}) if there are zero
       remaining unacknowledged transactions.
 \item [\MsgReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
       The client replies with a list of available transactions.
       The list contains pairs of transaction ids and the corresponding size of the transaction in bytes.
+      The size of a transaction MUST be at most \texttt{65540} bytes
+      (section~\ref{tx-submission-max-tx-size}).
       In the blocking case, the reply MUST contain at least one transaction identifier.
       In the non-blocking case, the reply may contain an empty list.
 
@@ -1439,8 +1441,8 @@ a space limit is violated, the connection SHOULD be torn down.
   \begin{center}
     \begin{tabular}{l|r}
       \header{state}      & \header{size limit in bytes} \\\hline
-      \StInit             & \texttt{5760} \\
-      \StIdle             & \texttt{5760} \\
+      \StInit             & \texttt{65535} \\
+      \StIdle             & \texttt{65535} \\
       \StTxIdsBlocking    & \texttt{2500000} \\
       \StTxIdsNonBlocking & \texttt{2500000} \\
       \StTxs              & \texttt{2500000} \\
@@ -1451,9 +1453,41 @@ a space limit is violated, the connection SHOULD be torn down.
 \end{table}
 
 \subsubsection{Maximum number of unacknowledged transaction identifiers}
+\label{tx-submission-max-unacked}
 
-The maximal number of unacknowledged transactions ids is \texttt{10}.  It is
-a protocol error to exceed it.
+Before \texttt{NodeToNodeV\_16} the maximal number of unacknowledged
+transactions ids is a protocol parameter equal to \texttt{10}.  The server
+MUST NOT request transaction ids which would put the total outstanding over
+it; it is a protocol error to exceed it, and the client tears down the
+connection.
+
+From \texttt{NodeToNodeV\_16} it is a local setting of each side, it is not
+negotiated.  The server sizes its requests by its own setting, which might be
+larger than the client's.  Requesting more transaction ids than the client's
+limit allows is not a protocol error: the client replies with at most as many
+transaction ids as fit within its limit.  A reply to a blocking request still
+contains at least one transaction id, a reply to a non-blocking request can be
+empty.
+
+Since a \MsgRequestTxs{} can carry all outstanding transaction ids, the
+maximal number of unacknowledged transaction ids SHOULD be small enough for
+such a message to fit within the \StIdle{} size limit: \texttt{1489} for
+transaction ids encoded in at most \texttt{44} bytes.
+
+\subsubsection{Maximum transaction size}
+\label{tx-submission-max-tx-size}
+
+On every node-to-node version, the size of a transaction announced in
+\MsgReplyTxIds{} MUST be at most \texttt{65540} bytes.  If a client announces
+a larger transaction, the server SHOULD tear down the connection.
+
+The bound is far above the maximal size of a valid transaction, and every
+version was already limited by it: the ingress size limit of the mini-protocol
+(table~\ref{table:node-to-node-ingress-buffer-limits}) is derived from it, so a much
+larger \MsgReplyTxs{} overflows the ingress buffer and the connection is torn
+down.  Increasing the bound requires a new node-to-node version, since nodes
+running older versions disconnect from a client which announces a larger
+transaction.
 
 \subsection{Timeouts per state}
 
@@ -1496,7 +1530,9 @@ of the transaction provider.
 
 Conceptually, the provider maintains a limited size FIFO of outstanding transactions per consumer.
 (The actual implementation can, of course, use the data structure that works best).
-The maximum FIFO size is a protocol parameter.
+The maximum FIFO size is a protocol parameter before \texttt{NodeToNodeV\_16},
+and a local setting of the provider from \texttt{NodeToNodeV\_16} (see
+section~\ref{tx-submission-max-unacked}).
 The protocol guarantees that, at any time, the consumer and producer agree on the current size of
 that FIFO and on the outstanding transaction ids.
 The consumer can use a variety of heuristics to request transaction ids and transactions.
@@ -1507,8 +1543,9 @@ After the consumer requests new transaction ids, the provider replies with a lis
 puts these transactions in its FIFO.
 As part of a request, a consumer also acknowledges the number of old transactions,
 which are removed from the FIFO at the same time.
-The provider checks that the size of the FIFO, i.e. the number of outstanding transactions,
-never exceeds the protocol limit and aborts the connection if a request violates the limits.
+The provider ensures that the size of the FIFO, i.e. the number of outstanding transactions,
+never exceeds its maximum: before \texttt{NodeToNodeV\_16} it aborts the connection if a request
+violates the limit, from \texttt{NodeToNodeV\_16} it replies with fewer transaction ids.
 The consumer can request any batch of transactions from the current FIFO in any order.
 Note, however, that the reply will omit any transactions that have become invalid in the meantime.
 (More precisely, the server will omit invalid transactions from the reply, but they will still be counted in the FIFO
@@ -2190,7 +2227,8 @@ in table~\ref{table:node-to-node-protocol-versions}.
       \header{version}         & \header{description} \\\hline
       \texttt{NodeToNodeV\_14} & No changes, identifies Plomin HF nodes mandatory on mainnet as of 2025.01.29\\
       \texttt{NodeToNodeV\_15} & No changes, identifies nodes which support SRV records\\
-      \texttt{NodeToNodeV\_16} & Experimental, support Peras mini-protocols\\
+      \texttt{NodeToNodeV\_16} & Experimental, tx-submission: local limit of unacknowledged ids (section~\ref{tx-submission-max-unacked})\\
+      \texttt{NodeToNodeV\_17} & Experimental, support Peras mini-protocols\\
     \end{tabular}
     \caption{Node-to-node protocol versions}
     \label{table:node-to-node-protocol-versions}

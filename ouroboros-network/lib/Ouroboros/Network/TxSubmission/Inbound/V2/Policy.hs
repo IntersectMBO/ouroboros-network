@@ -1,21 +1,42 @@
+{-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE TypeApplications   #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
-  , defaultTxDecisionPolicy
+  , mkTxDecisionPolicy
   , saneTxDecisionPolicy
+  , TxConfigurationError (..)
+  , TxSubmissionConfig (..)
+  , defaultTxSubmissionConfigV2
   , max_TX_SIZE
+  , max_TXID_SIZE
     -- * Re-exports
   , NumTxIdsToReq (..)
   ) where
 
 import Control.DeepSeq
+import Control.Exception (Exception)
+import Control.Monad (unless)
 import Control.Monad.Class.MonadTime.SI
-import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
+import Ouroboros.Network.Protocol.Limits (sizeLimitForState)
+import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2)
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
+           NumTxIdsToReq (..), SingTxSubmission (SingIdle, SingTxs))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (const_MAX_TX_SIZE_DISCREPANCY)
 
 
 -- | Maximal tx size.
+--
+-- It bounds the advertised tx size on every node-to-node version: the V2
+-- inbound disconnects from a peer which advertises a larger tx
+-- (`ProtocolErrorTxSizeTooLarge`).  The bound is far above the ledger's
+-- maximal tx size, and every version was already limited by it through the
+-- ingress queue of the mini-protocol (see below).  Increasing it requires
+-- a new node-to-node version, since nodes running older versions disconnect
+-- from peers which advertise larger txs.
 --
 -- Affects:
 --
@@ -27,17 +48,20 @@ max_TX_SIZE :: SizeInBytes
 max_TX_SIZE = 65_540
 
 
+-- | Upper bound on the size of an encoded txid, the same as used by
+-- `Cardano.Network.NodeToNode.txSubmissionProtocolLimits`.
+--
+-- It bounds `maxNumUnacknowledgedTxIds`: a `MsgRequestTxs` can carry up to
+-- `maxNumUnacknowledgedTxIds` txids and must fit within the `StIdle` size
+-- limit, see `saneTxDecisionPolicy`.
+--
+max_TXID_SIZE :: SizeInBytes
+max_TXID_SIZE = 44
+
+
 -- | Policy for making decisions
 --
 data TxDecisionPolicy = TxDecisionPolicy {
-      maxNumTxIdsToRequest           :: !NumTxIdsToReq,
-      -- ^ a maximal number of txids requested at once.
-
-      maxUnacknowledgedTxIds         :: !NumTxIdsToReq,
-      -- ^ maximal number of unacknowledgedTxIds.  Measured in `NumTxIdsToReq`
-      -- since we enforce this policy by requesting not more txids than what
-      -- this limit allows.
-
       --
       -- Configuration of tx decision logic.
       --
@@ -45,6 +69,17 @@ data TxDecisionPolicy = TxDecisionPolicy {
       txsSizeInflightPerPeer         :: !SizeInBytes,
       -- ^ a limit of tx size in-flight from a single peer.
       -- It can be exceed by max tx size.
+
+      txsSizePerBatch                :: !SizeInBytes,
+      -- ^ Hard limit on the total advertised transaction size in one body
+      -- request batch, except for the first tx in a batch, which is
+      -- requested even if it is larger.  Hence a batch is at most
+      -- `max txsSizePerBatch max_TX_SIZE`.  The default reserves space for
+      -- reply framing and for the `const_MAX_TX_SIZE_DISCREPANCY` tolerance
+      -- of each tx.  It MUST be positive, and the reply to the largest batch
+      -- MUST fit within the `StTxs` size limit (see `saneTxDecisionPolicy`).
+      -- It can be smaller than `max_TX_SIZE`: a larger tx is requested in
+      -- a batch on its own.
 
       maxOutstandingTxBatchesPerPeer :: !Int,
       -- ^ a limit of outstanding tx-body request batches from a single peer.
@@ -87,44 +122,214 @@ data TxDecisionPolicy = TxDecisionPolicy {
 instance NFData TxDecisionPolicy where
   rnf TxDecisionPolicy{} = ()
 
-defaultTxDecisionPolicy :: TxDecisionPolicy
-defaultTxDecisionPolicy =
-  TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 6,
-    maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
-    txsSizeInflightPerPeer = max_TX_SIZE * 6,
-    maxOutstandingTxBatchesPerPeer = 4,
-    txInflightMultiplicity = 2,
-    bufferedTxsMinLifetime = 2,
-    scoreRate              = 0.001,
-    scoreMax               = 15 * 60,
-    scoreAcceptDecrement   = 3,
-    interTxSpace           = 0.250,
-    inflightTimeout        = 0.600,
-    maxPeerClaimDelay      = 0.250,
-    disablePipelinedTxIdRequests = False
+-- | The default policy for the given config.  Returns a `TxConfigurationError`
+-- if it isn't sane (see `saneTxDecisionPolicy`); the node should then report
+-- it and halt.
+--
+mkTxDecisionPolicy
+  :: TxSubmissionConfig
+  -> Either TxConfigurationError TxDecisionPolicy
+mkTxDecisionPolicy config =
+    policy <$ saneTxDecisionPolicy policy config
+  where
+    policy = TxDecisionPolicy {
+      -- Saturates rather than wraps around if `maxNumTxIdsToRequest` is too
+      -- large (such a config does not pass `saneTxDecisionPolicy`).
+      txsSizeInflightPerPeer =
+        fromIntegral @Integer @SizeInBytes
+          $ min (toInteger (maxBound :: SizeInBytes))
+                (toInteger max_TX_SIZE * toInteger (maxNumTxIdsToRequest config)),
+      txsSizePerBatch =
+          safeLimit
+        $ fromIntegral stTxsSizeLimit
+        - msgReplyTxsFraming,
+      maxOutstandingTxBatchesPerPeer = 4,
+      txInflightMultiplicity = 2,
+      bufferedTxsMinLifetime = 2,
+      scoreRate              = 0.001,
+      scoreMax               = 15 * 60,
+      scoreAcceptDecrement   = 3,
+      interTxSpace           = 0.250,
+      inflightTimeout        = 0.600,
+      maxPeerClaimDelay      = 0.250,
+      disablePipelinedTxIdRequests = False
+    }
+    -- for `~2.5MB`, leave 50KB room
+    safeLimit :: SizeInBytes -> SizeInBytes
+    safeLimit limit = limit - limit `div` 50
+
+-- | `MsgReplyTxs` has four bytes of CBOR framing: the outer list, message
+-- tag, indefinite transaction list and break marker.
+--
+msgReplyTxsFraming :: SizeInBytes
+msgReplyTxsFraming = 4
+
+-- | `MsgRequestTxs` has four bytes of CBOR framing: the outer list, message
+-- tag, indefinite txid list and break marker.
+--
+msgRequestTxsFraming :: SizeInBytes
+msgRequestTxsFraming = 4
+
+-- | Size limit of the `StTxs` state, i.e. of a `MsgReplyTxs` message.
+--
+stTxsSizeLimit :: Word
+stTxsSizeLimit =
+    sizeLimitForState
+      (byteLimitsTxSubmission2 (error "invariant violation!"))
+      SingTxs
+
+-- | Size limit of the `StIdle` state, i.e. of a `MsgRequestTxs` message.
+--
+stIdleSizeLimit :: Word
+stIdleSizeLimit =
+    sizeLimitForState
+      (byteLimitsTxSubmission2 (error "invariant violation!"))
+      SingIdle
+
+-- | Shared options between the inbound and outbound side.
+--
+data TxSubmissionConfig =
+    TxSubmissionConfig {
+      maxNumUnacknowledgedTxIds :: !NumTxIdsToAck,
+      -- ^ maximum number of unacknowledged txids; it MUST be positive, and
+      -- small enough for a `MsgRequestTxs` with that many txids to fit within
+      -- the `StIdle` size limit (see `max_TXID_SIZE`).  Before
+      -- `NodeToNodeV_16` it is a protocol parameter and must not be changed;
+      -- since `NodeToNodeV_16` it is a local setting.
+      maxNumTxIdsToRequest      :: !NumTxIdsToReq
+      -- ^ maximum number of txids an inbound client can request at a time.
+    }
+  deriving (Eq, Show)
+
+instance NFData TxSubmissionConfig where
+  rnf TxSubmissionConfig{} = ()
+
+-- | `TxSubmissionConfig` for `TxSubmissionLogicV2`.
+--
+defaultTxSubmissionConfigV2 :: TxSubmissionConfig
+defaultTxSubmissionConfigV2 = TxSubmissionConfig {
+    maxNumUnacknowledgedTxIds = NumTxIdsToAck 10,
+    maxNumTxIdsToRequest      = NumTxIdsToReq 6
   }
 
--- | Sanity check for a 'TxDecisionPolicy': 'True' when every field lies
--- in the range the decision logic assumes.
+-- | Why a `TxDecisionPolicy` with a `TxSubmissionConfig` isn't sane, see
+-- `saneTxDecisionPolicy`.  Each constructor carries the offending values.
 --
--- The window and per-peer limit fields must be positive (otherwise the
--- peer can make no progress), the rate, score and delay parameters must
+data TxConfigurationError
+  -- | `maxNumUnacknowledgedTxIds` must be positive
+  = NumUnacknowledgedTxIdsTooSmall NumTxIdsToAck
+  -- | a `MsgRequestTxs` with `maxNumUnacknowledgedTxIds` txids of size
+  -- `max_TXID_SIZE` doesn't fit within the `StIdle` size limit
+  | NumUnacknowledgedTxIdsTooLarge NumTxIdsToAck
+  -- | `maxNumTxIdsToRequest` must be positive
+  | MaxNumTxIdsToRequestTooSmall NumTxIdsToReq
+  -- | @max_TX_SIZE * maxNumTxIdsToRequest@ doesn't fit in `SizeInBytes`
+  | MaxNumTxIdsToRequestTooLarge NumTxIdsToReq
+  -- | `txsSizeInflightPerPeer` must be positive
+  | TxsSizeInflightPerPeerTooSmall SizeInBytes
+  -- | `txsSizePerBatch` must be positive
+  | TxsSizePerBatchTooSmall SizeInBytes
+  -- | the reply to the largest batch, with `maxNumUnacknowledgedTxIds` txs
+  -- each up to `const_MAX_TX_SIZE_DISCREPANCY` larger than advertised,
+  -- doesn't fit within the `StTxs` size limit
+  | TxsSizePerBatchTooLarge SizeInBytes NumTxIdsToAck
+  -- | `maxOutstandingTxBatchesPerPeer` must be positive
+  | MaxOutstandingTxBatchesPerPeerTooSmall Int
+  -- | `txInflightMultiplicity` must be positive
+  | TxInflightMultiplicityTooSmall Int
+  -- | `bufferedTxsMinLifetime` must be non-negative
+  | BufferedTxsMinLifetimeTooSmall DiffTime
+  -- | `scoreRate` must be non-negative
+  | ScoreRateTooSmall Double
+  -- | `scoreMax` must be non-negative
+  | ScoreMaxTooSmall Double
+  -- | `scoreAcceptDecrement` must be non-negative
+  | ScoreAcceptDecrementTooSmall Double
+  -- | `interTxSpace` must be non-negative
+  | InterTxSpaceTooSmall DiffTime
+  -- | `inflightTimeout` (the first field) must be at least `interTxSpace`
+  -- (the second field)
+  | InflightTimeoutTooSmall DiffTime DiffTime
+  -- | `maxPeerClaimDelay` must be non-negative
+  | MaxPeerClaimDelayTooSmall DiffTime
+  deriving (Eq, Show)
+
+instance Exception TxConfigurationError
+
+-- | Sanity check for a 'TxDecisionPolicy': 'Right' when every field lies
+-- in the range the decision logic assumes, otherwise the first violated
+-- bound as a 'TxConfigurationError'.
+--
+-- All window and size limits must be positive (otherwise the peer can make
+-- no progress), the rate, score and delay parameters must
 -- be non-negative, and 'inflightTimeout' must be at least 'interTxSpace'
 -- (their difference is used as a non-negative delay when bumping a stuck
--- entry's inflight-multiplicity cap).  'defaultTxDecisionPolicy' satisfies
--- it.
-saneTxDecisionPolicy :: TxDecisionPolicy -> Bool
-saneTxDecisionPolicy p =
-       maxNumTxIdsToRequest           p >= 1
-    && maxUnacknowledgedTxIds         p >= 1
-    && txsSizeInflightPerPeer         p >  0
-    && maxOutstandingTxBatchesPerPeer p >= 1
-    && txInflightMultiplicity         p >= 1
-    && bufferedTxsMinLifetime         p >= 0
-    && scoreRate                      p >= 0
-    && scoreMax                       p >= 0
-    && scoreAcceptDecrement           p >= 0
-    && interTxSpace                   p >= 0
-    && inflightTimeout                p >= interTxSpace p
-    && maxPeerClaimDelay              p >= 0
+-- entry's inflight-multiplicity cap).  'mkTxDecisionPolicy' satisfies
+-- it.  The reply to the largest batch MUST fit within the `StTxs` size
+-- limit.  A batch can exceed `txsSizePerBatch` by being a single tx (of at
+-- most `max_TX_SIZE`), so its advertised size is at most `max txsSizePerBatch
+-- max_TX_SIZE`.  It holds at most `maxNumUnacknowledgedTxIds` txs, and each
+-- received tx can be larger than advertised by up to
+-- `const_MAX_TX_SIZE_DISCREPANCY`. A `MsgRequestTxs` with
+-- `maxNumUnacknowledgedTxIds` txids of size `max_TXID_SIZE` MUST fit within
+-- the `StIdle` size limit. `max_TX_SIZE * maxNumTxIdsToRequest` MUST fit in
+-- `SizeInBytes`.
+saneTxDecisionPolicy :: TxDecisionPolicy
+                     -> TxSubmissionConfig
+                     -> Either TxConfigurationError ()
+saneTxDecisionPolicy TxDecisionPolicy {
+                       txsSizeInflightPerPeer,
+                       txsSizePerBatch,
+                       maxOutstandingTxBatchesPerPeer,
+                       txInflightMultiplicity,
+                       bufferedTxsMinLifetime,
+                       scoreRate,
+                       scoreMax,
+                       scoreAcceptDecrement,
+                       interTxSpace,
+                       inflightTimeout,
+                       maxPeerClaimDelay
+                     }
+                     TxSubmissionConfig {
+                       maxNumUnacknowledgedTxIds,
+                       maxNumTxIdsToRequest
+                     } = do
+    unless (maxNumUnacknowledgedTxIds >= 1)
+      $ Left (NumUnacknowledgedTxIdsTooSmall maxNumUnacknowledgedTxIds)
+    unless (   toInteger msgRequestTxsFraming
+             + toInteger max_TXID_SIZE * toInteger maxNumUnacknowledgedTxIds
+            <= toInteger stIdleSizeLimit)
+      $ Left (NumUnacknowledgedTxIdsTooLarge maxNumUnacknowledgedTxIds)
+    unless (maxNumTxIdsToRequest >= 1)
+      $ Left (MaxNumTxIdsToRequestTooSmall maxNumTxIdsToRequest)
+    unless (    toInteger max_TX_SIZE * toInteger maxNumTxIdsToRequest
+             <= toInteger (maxBound :: SizeInBytes))
+      $ Left (MaxNumTxIdsToRequestTooLarge maxNumTxIdsToRequest)
+    unless (txsSizeInflightPerPeer > 0)
+      $ Left (TxsSizeInflightPerPeerTooSmall txsSizeInflightPerPeer)
+    unless (txsSizePerBatch > 0)
+      $ Left (TxsSizePerBatchTooSmall txsSizePerBatch)
+    unless (   toInteger msgReplyTxsFraming
+             + toInteger (max txsSizePerBatch max_TX_SIZE)
+             + toInteger const_MAX_TX_SIZE_DISCREPANCY
+               * toInteger maxNumUnacknowledgedTxIds
+            <= toInteger stTxsSizeLimit)
+      $ Left (TxsSizePerBatchTooLarge txsSizePerBatch maxNumUnacknowledgedTxIds)
+    unless (maxOutstandingTxBatchesPerPeer >= 1)
+      $ Left (MaxOutstandingTxBatchesPerPeerTooSmall maxOutstandingTxBatchesPerPeer)
+    unless (txInflightMultiplicity >= 1)
+      $ Left (TxInflightMultiplicityTooSmall txInflightMultiplicity)
+    unless (bufferedTxsMinLifetime >= 0)
+      $ Left (BufferedTxsMinLifetimeTooSmall bufferedTxsMinLifetime)
+    unless (scoreRate >= 0)
+      $ Left (ScoreRateTooSmall scoreRate)
+    unless (scoreMax >= 0)
+      $ Left (ScoreMaxTooSmall scoreMax)
+    unless (scoreAcceptDecrement >= 0)
+      $ Left (ScoreAcceptDecrementTooSmall scoreAcceptDecrement)
+    unless (interTxSpace >= 0)
+      $ Left (InterTxSpaceTooSmall interTxSpace)
+    unless (inflightTimeout >= interTxSpace)
+      $ Left (InflightTimeoutTooSmall inflightTimeout interTxSpace)
+    unless (maxPeerClaimDelay >= 0)
+      $ Left (MaxPeerClaimDelayTooSmall maxPeerClaimDelay)

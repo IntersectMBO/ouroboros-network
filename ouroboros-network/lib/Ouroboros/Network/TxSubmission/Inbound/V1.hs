@@ -10,11 +10,18 @@
 
 module Ouroboros.Network.TxSubmission.Inbound.V1
   ( txSubmissionInbound
+  , defaultTxSubmissionConfigV1
+  , defaultMaxNumTxsToRequest
+  , maxSaneNumTxsToRequest
+  , saneMaxNumTxsToRequest
+  , clampMaxNumTxsToRequest
+    -- * Re-exports
   , TxSubmissionInitDelay (..)
   , TxSubmissionMempoolWriter (..)
   , TraceTxSubmissionInbound (..)
   , TxSubmissionProtocolError (..)
   , ProcessedTxCount (..)
+  , TxSubmissionConfig (..)
   ) where
 
 import Data.Foldable as Foldable (foldl', toList)
@@ -41,13 +48,68 @@ import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Core (N, Nat (..), natToInt)
 
+import Ouroboros.Network.Protocol.Limits (sizeLimitForState)
+import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (max_TX_SIZE)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
            TraceTxSubmissionInbound (..), TxSubmissionInitDelay (..),
-           TxSubmissionMempoolWriter (..), TxSubmissionProtocolError (..))
+           TxSubmissionMempoolWriter (..), TxSubmissionProtocolError (..),
+           const_MAX_TX_SIZE_DISCREPANCY)
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
+import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionConfig (..))
+
+
+-- | `TxSubmissionConfig` for `TxSubmissionLogicV1`.
+--
+defaultTxSubmissionConfigV1 :: TxSubmissionConfig
+defaultTxSubmissionConfigV1 = TxSubmissionConfig {
+    maxNumUnacknowledgedTxIds = NumTxIdsToAck 10,
+    maxNumTxIdsToRequest      = NumTxIdsToReq 3
+  }
+
+-- | The default number of txs to request.
+--
+defaultMaxNumTxsToRequest :: NumTxsToReq
+defaultMaxNumTxsToRequest = NumTxsToReq 2
+
+-- | The largest sane number of txs to request: a `MsgReplyTxs` with that many
+-- txs of `max_TX_SIZE`, each up to `const_MAX_TX_SIZE_DISCREPANCY` larger,
+-- fits within the `StTxs` size limit.  `txSubmissionInbound` selects txs by
+-- count only, without a limit on their size.
+--
+maxSaneNumTxsToRequest :: NumTxsToReq
+maxSaneNumTxsToRequest =
+    fromIntegral
+  $ (stTxsSizeLimit - msgReplyTxsFraming)
+    `div` fromIntegral (max_TX_SIZE + const_MAX_TX_SIZE_DISCREPANCY)
+  where
+    stTxsSizeLimit :: Word
+    stTxsSizeLimit =
+      sizeLimitForState
+        (byteLimitsTxSubmission2 (error "invariant violation!"))
+        SingTxs
+
+    -- `MsgReplyTxs` has four bytes of CBOR framing: the outer list, message
+    -- tag, indefinite transaction list and break marker.
+    msgReplyTxsFraming :: Word
+    msgReplyTxsFraming = 4
+
+-- | Sanity check for the number of txs to request: it must be positive (with
+-- `0` the inbound would send empty requests forever) and at most
+-- `maxSaneNumTxsToRequest` (otherwise an honest peer's reply can exceed the
+-- `StTxs` size limit).
+--
+saneMaxNumTxsToRequest :: NumTxsToReq -> Bool
+saneMaxNumTxsToRequest n = n >= 1 && n <= maxSaneNumTxsToRequest
+
+-- | Clamp the number of txs to request to the range checked by
+-- `saneMaxNumTxsToRequest`.
+--
+clampMaxNumTxsToRequest :: NumTxsToReq -> NumTxsToReq
+clampMaxNumTxsToRequest = min maxSaneNumTxsToRequest . max 1
 
 -- | Information maintained internally in the 'txSubmissionInbound' server
 -- implementation.
@@ -121,7 +183,7 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 
 
 txSubmissionInbound
-  :: forall txid tx idx m err version.
+  :: forall txid tx idx m err.
      ( Ord txid
      , NoThunks txid
      , NoThunks tx
@@ -131,23 +193,31 @@ txSubmissionInbound
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
   -> TxSubmissionInitDelay
-  -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
+  -> TxSubmissionConfig
+  -- ^ configuration, `defaultTxSubmissionConfigV1`
+  -> NumTxsToReq
+  -- ^ maximum number of txs to request, `defaultMaxNumTxsToRequest`; it is
+  -- clamped by `clampMaxNumTxsToRequest` to the range checked by
+  -- `saneMaxNumTxsToRequest`
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m err
-  -> version
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
+txSubmissionInbound tracer initDelay config maxNumTxsToRequest mpReader mpWriter =
     TxSubmissionServerPipelined $ do
+      unless (maxNumTxsToRequest == maxNumTxsToRequest') $
+        traceWith tracer (TraceTxInboundMaxNumTxsToRequestClamped maxNumTxsToRequest')
       case initDelay of
         TxSubmissionInitDelay delay -> threadDelay delay
         NoTxSubmissionInitDelay     -> return ()
       continueWithStateM (serverIdle Zero) initialServerState
   where
+    NumTxIdsToAck maxUnacked = maxNumUnacknowledgedTxIds config
     -- TODO #1656: replace these fixed limits by policies based on
     -- SizeInBytes and delta-Q and the bandwidth/delay product.
     -- These numbers are for demo purposes only, the throughput will be low.
-    maxTxIdsToRequest = 3 :: Word16
-    maxTxToRequest    = 2 :: Word16
+    NumTxIdsToReq maxTxIdsToRequest = maxNumTxIdsToRequest config
+    maxNumTxsToRequest'@(NumTxsToReq maxTxToRequest)
+      = clampMaxNumTxsToRequest maxNumTxsToRequest
 
     TxSubmissionMempoolReader{mempoolGetSnapshot} = mpReader
 

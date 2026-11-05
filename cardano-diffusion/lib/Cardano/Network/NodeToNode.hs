@@ -1,12 +1,13 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE NumericUnderscores    #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to node protocol, as a collection of mini-protocols.
@@ -24,7 +25,13 @@ module Cardano.Network.NodeToNode
   , peerSharingProtocolLimits
   , perasCertDiffusionProtocolLimits
   , perasVoteDiffusionProtocolLimits
-  , defaultMiniProtocolParameters
+  , mkDefaultMiniProtocolParameters
+  , NodeTxSubmissionConfig (..)
+  , mkNodeTxDecisionPolicy
+  , TxOutboundVersion (..)
+  , txOutboundVersion
+  , txSubmissionConfigForVersion
+  , txSubmissionMaxUnacknowledgedTxIdsV1
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , NetworkConnectTracers (..)
@@ -58,6 +65,10 @@ module Cardano.Network.NodeToNode
   , RemoteConnectionId
   , IsBigLedgerPeer (..)
   , NumTxIdsToAck (..)
+  , TxSubmissionConfig (..)
+  , TxSubmissionLogicVersion (..)
+  , defaultTxSubmissionConfigV1
+  , defaultTxSubmissionConfigV2
   , ProtocolLimitFailure
   , Handshake
   , Socket
@@ -80,6 +91,7 @@ import Control.DeepSeq (NFData)
 import Control.Exception (SomeException)
 
 import Data.ByteString.Lazy qualified as BL
+import Data.Foldable (traverse_)
 import Data.Set (Set)
 import Data.Word
 
@@ -112,13 +124,19 @@ import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
            (NumObjectsUnacknowledged)
-import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
+           NumTxIdsToReq (..))
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..),
-           defaultTxDecisionPolicy, max_TX_SIZE)
+import Ouroboros.Network.TxSubmission.Inbound.V1 (defaultTxSubmissionConfigV1)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+           (TxSubmissionConfig (..), defaultTxSubmissionConfigV2, max_TX_SIZE)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy qualified as V2
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (TxSubmissionLogicVersion (..))
+import Ouroboros.Network.TxSubmission.Outbound (TxOutboundVersion (..))
 
 
 data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
@@ -157,6 +175,10 @@ type NodeToNodeProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
     NodeToNodeProtocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr) bytes m a b
 
 
+-- | Configuration values needed to instrument mini-protocol limits.  This node
+-- wide configuration.  Per connection values for some protocols (e.g.
+-- tx-submission) will depend on both configuration and negotiated version.
+--
 data MiniProtocolParameters = MiniProtocolParameters {
       chainSyncPipeliningHighMark                :: !Word16,
       -- ^ high threshold for pipelining (we will never exceed that many
@@ -175,8 +197,15 @@ data MiniProtocolParameters = MiniProtocolParameters {
       blockFetchPipeliningMax                    :: !Word16,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
-      txDecisionPolicy                           :: !TxDecisionPolicy,
-      -- ^ tx submission protocol decision logic parameters
+      txSubmissionLogicVersion                   :: !TxSubmissionLogicVersion,
+      -- ^ tx-submission logic version used by the node.  It also selects the
+      -- connections' `TxSubmissionConfig`, see `txSubmissionConfigForVersion`.
+
+      nodeTxSubmissionConfig                     :: !NodeTxSubmissionConfig,
+      -- ^ the node's tx-submission settings, e.g. from its configuration.
+      -- A connection's `TxSubmissionConfig` is
+      -- `txSubmissionConfigForVersion` of its negotiated `NodeToNodeVersion`;
+      -- the node's `TxDecisionPolicy` is computed by `mkNodeTxDecisionPolicy`.
 
       perasCertDiffusionMaxObjectsUnacknowledged :: !NumObjectsUnacknowledged,
       -- ^ Maximum number of PerasCerts in the outbound peer's outstanding FIFO.
@@ -205,12 +234,38 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- understand why this indirectly limits the number of pipelined requests.
     }
 
-defaultMiniProtocolParameters :: MiniProtocolParameters
-defaultMiniProtocolParameters = MiniProtocolParameters {
+
+-- | The node's tx-submission settings, e.g. from its configuration, before
+-- they are applied to a connection's negotiated `NodeToNodeVersion` (see
+-- `txSubmissionConfigForVersion`).  They are not validated:
+-- `mkNodeTxDecisionPolicy` checks them.
+--
+-- NOTE: the values are only used by `TxSubmissionLogicV2` from
+-- `NodeToNodeV_16`; with `TxSubmissionLogicV1`, or before `NodeToNodeV_16`,
+-- `defaultTxSubmissionConfigV1` is used instead.
+--
+data NodeTxSubmissionConfig =
+    NodeTxSubmissionConfig {
+      maxNumUnacknowledgedTxIds :: !NumTxIdsToAck,
+      -- ^ maximum number of unacknowledged txids
+      maxNumTxIdsToRequest      :: !NumTxIdsToReq
+      -- ^ maximum number of txids an inbound client can request at a time.
+    }
+  deriving (Eq, Show)
+
+
+-- | The default `MiniProtocolParameters` with the node's tx-submission
+-- settings, e.g. from its configuration.
+--
+mkDefaultMiniProtocolParameters :: TxSubmissionLogicVersion
+                                -> NodeTxSubmissionConfig
+                                -> MiniProtocolParameters
+mkDefaultMiniProtocolParameters txSubmissionLogicVersion nodeTxSubmissionConfig = MiniProtocolParameters {
       chainSyncPipeliningLowMark      = 200
     , chainSyncPipeliningHighMark     = 300
     , blockFetchPipeliningMax         = 100
-    , txDecisionPolicy                = defaultTxDecisionPolicy
+    , txSubmissionLogicVersion
+    , nodeTxSubmissionConfig
     -- | TODO: this value is still being discussed.
     -- See https://github.com/tweag/cardano-peras/issues/97 for reference.
     , perasCertDiffusionMaxObjectsUnacknowledged = 10
@@ -247,7 +302,7 @@ nodeToNodeProtocols
   -- ^ negotiated version data
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
 nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
-                    _version NodeToNodeVersionData { peerSharing, perasSupport }
+                    version NodeToNodeVersionData { peerSharing, perasSupport }
                     =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
@@ -262,19 +317,19 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
             [ MiniProtocol {
                 miniProtocolNum    = chainSyncMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
+                miniProtocolLimits = chainSyncProtocolLimits version miniProtocolParameters,
                 miniProtocolRun    = chainSyncProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = blockFetchMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
+                miniProtocolLimits = blockFetchProtocolLimits version miniProtocolParameters,
                 miniProtocolRun    = blockFetchProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = txSubmissionMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
+                miniProtocolLimits = txSubmissionProtocolLimits version miniProtocolParameters,
                 miniProtocolRun    = txSubmissionProtocol
               }
             ]
@@ -286,13 +341,13 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
                [ MiniProtocol {
                    miniProtocolNum    = perasCertDiffusionMiniProtocolNum,
                    miniProtocolStart  = StartOnDemand,
-                   miniProtocolLimits = perasCertDiffusionProtocolLimits miniProtocolParameters,
+                   miniProtocolLimits = perasCertDiffusionProtocolLimits version miniProtocolParameters,
                    miniProtocolRun    = perasCertDiffusionProtocol
                  }
                , MiniProtocol {
                    miniProtocolNum    = perasVoteDiffusionMiniProtocolNum,
                    miniProtocolStart  = StartOnDemand,
-                   miniProtocolLimits = perasVoteDiffusionProtocolLimits miniProtocolParameters,
+                   miniProtocolLimits = perasVoteDiffusionProtocolLimits version miniProtocolParameters,
                    miniProtocolRun    = perasVoteDiffusionProtocol
                  }
                ])
@@ -308,7 +363,7 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
               MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
                 miniProtocolStart  = StartOnDemandAny,
-                miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
+                miniProtocolLimits = keepAliveProtocolLimits version miniProtocolParameters,
                 miniProtocolRun    = keepAliveProtocol
               }
             : case peerSharing of
@@ -316,7 +371,7 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
                   [ MiniProtocol {
                       miniProtocolNum    = peerSharingMiniProtocolNum,
                       miniProtocolStart  = StartOnDemand,
-                      miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
+                      miniProtocolLimits = peerSharingProtocolLimits version miniProtocolParameters,
                       miniProtocolRun    = peerSharingProtocol
                     }
                   ]
@@ -327,15 +382,82 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
 addSafetyMargin :: Int -> Int
 addSafetyMargin x = x + x `div` 10
 
+-- | Select `TxOutboundVersion` based on `NodeToNodeVersion`.
+--
+txOutboundVersion :: NodeToNodeVersion -> TxOutboundVersion
+txOutboundVersion v | v < NodeToNodeV_16 = TxOutboundV_1
+                    | otherwise          = TxOutboundV_2
+
+-- | Maximum number of unacknowledged txids before `NodeToNodeV_16`
+-- (`TxOutboundV_1`).  It is a protocol parameter shared by both sides: the
+-- outbound side terminates the connection if the inbound side exceeds it,
+-- thus it must not be changed.
+--
+txSubmissionMaxUnacknowledgedTxIdsV1 :: NumTxIdsToAck
+txSubmissionMaxUnacknowledgedTxIdsV1 = 10
+
+-- | `TxSubmissionConfig` of a connection, for its negotiated
+-- `NodeToNodeVersion`, used by both its inbound and outbound sides:
+--
+-- * with `TxSubmissionLogicV1`, or before `NodeToNodeV_16`:
+--   `defaultTxSubmissionConfigV1` (whose window is the protocol parameter
+--   `txSubmissionMaxUnacknowledgedTxIdsV1`);
+-- * otherwise the node's settings (`nodeTxSubmissionConfig`).
+--
+txSubmissionConfigForVersion :: NodeToNodeVersion
+                             -> MiniProtocolParameters
+                             -> TxSubmissionConfig
+txSubmissionConfigForVersion
+  version
+  MiniProtocolParameters {
+    txSubmissionLogicVersion,
+    nodeTxSubmissionConfig =
+      NodeTxSubmissionConfig {
+        maxNumUnacknowledgedTxIds,
+        maxNumTxIdsToRequest
+    }
+  }
+  =
+    case (txOutboundVersion version, txSubmissionLogicVersion) of
+      (_, TxSubmissionLogicV1) -> defaultTxSubmissionConfigV1
+      (TxOutboundV_1, _)       -> defaultTxSubmissionConfigV1
+      (TxOutboundV_2, _)       -> TxSubmissionConfig {
+                                    maxNumUnacknowledgedTxIds,
+                                    maxNumTxIdsToRequest
+                                  }
+
+-- | Compute the node's `TxDecisionPolicy` from its tx-submission settings,
+-- and check that it is sane for the `TxSubmissionConfig` of every
+-- `NodeToNodeVersion`, i.e. for every connection whatever version it
+-- negotiates (see `mkDefaultMiniProtocolParameters`).  The node should report
+-- a `Left` and halt.
+--
+-- The connections' configs can differ from the node's settings, e.g. before
+-- `NodeToNodeV_16` the window is the protocol parameter
+-- `txSubmissionMaxUnacknowledgedTxIdsV1`, and the size limit of a body batch
+-- depends on the window (see `V2.saneTxDecisionPolicy`).
+--
+mkNodeTxDecisionPolicy :: MiniProtocolParameters
+                       -> Either V2.TxConfigurationError V2.TxDecisionPolicy
+mkNodeTxDecisionPolicy params = do
+    -- the node's settings, as used from `NodeToNodeV_16`
+    policy <- V2.mkTxDecisionPolicy $
+                txSubmissionConfigForVersion
+                  maxBound
+                  params
+    policy <$ traverse_ (V2.saneTxDecisionPolicy policy
+                          . (`txSubmissionConfigForVersion` params))
+                        [minBound .. maxBound]
+
 chainSyncProtocolLimits
   , blockFetchProtocolLimits
   , txSubmissionProtocolLimits
   , keepAliveProtocolLimits
   , peerSharingProtocolLimits
   , perasCertDiffusionProtocolLimits
-  , perasVoteDiffusionProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
+  , perasVoteDiffusionProtocolLimits :: NodeToNodeVersion -> MiniProtocolParameters -> MiniProtocolLimits
 
-chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
+chainSyncProtocolLimits _v MiniProtocolParameters { chainSyncPipeliningHighMark } =
   MiniProtocolLimits {
       -- The largest message over ChainSync is @MsgRollForward@ which mainly
       -- consists of a BlockHeader.
@@ -345,7 +467,7 @@ chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
         fromIntegral chainSyncPipeliningHighMark * 1400
     }
 
-blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = MiniProtocolLimits {
+blockFetchProtocolLimits _v MiniProtocolParameters { blockFetchPipeliningMax } = MiniProtocolLimits {
     -- block-fetch client can pipeline at most 'blockFetchPipeliningMax'
     -- blocks (currently '10').  This is currently hard coded in
     -- 'Ouroboros.Network.BlockFetch.blockFetchLogic' (where
@@ -367,9 +489,7 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
       max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112)
   }
 
-txSubmissionProtocolLimits MiniProtocolParameters
-                             { txDecisionPolicy = TxDecisionPolicy { maxUnacknowledgedTxIds }
-                             } = MiniProtocolLimits {
+txSubmissionProtocolLimits v params = MiniProtocolLimits {
       -- tx-submission server can pipeline both 'MsgRequestTxIds' and
       -- 'MsgRequestTx'. This means that there can be many
       -- 'MsgReplyTxIds', 'MsgReplyTxs' messages in an inbound queue (their
@@ -379,17 +499,17 @@ txSubmissionProtocolLimits MiniProtocolParameters
       -- Each 'MsgRequestTx' can contain at max @maxTxIdsToRequest = 3@
       -- (defined in -- 'Ouroboros.Network.TxSubmission.Inbound.txSubmissionInbound')
       --
-      -- Each 'MsgRequestTx' can request at max @maxTxToRequest = 2@
-      -- (defined in -- 'Ouroboros.Network.TxSubmission.Inbound.txSubmissionInbound')
+      -- With 'TxSubmissionLogicV1', each 'MsgRequestTx' requests at most
+      -- @maxNumTxsToRequest@ txs, by default @2@
+      -- ('Ouroboros.Network.TxSubmission.Inbound.V1.defaultMaxNumTxsToRequest'),
+      -- and never more than
+      -- 'Ouroboros.Network.TxSubmission.Inbound.V1.maxSaneNumTxsToRequest'.
       --
       -- The 'txSubmissionInBound' server can at most put `100`
       -- unacknowledged transactions.  It also pipelines both 'MsgRequestTx`
       -- and `MsgRequestTx` in turn. This means that the inbound queue can
       -- have at most `100` `MsgRequestTxIds` and `MsgRequestTx` which will
       -- contain a single `TxId` / `Tx`.
-      --
-      -- TODO: the unacknowledged transactions are configured in `NodeArgs`,
-      -- and we should take this parameter as an input for this computation.
       --
       -- The upper bound of size of a single transaction is 64k, while the
       -- size of `TxId` is `34` bytes (`type TxId = Hash Tx`).
@@ -427,21 +547,27 @@ txSubmissionProtocolLimits MiniProtocolParameters
       -- queue of 'txSubmissionOutbound' is bounded by the ingress side of
       -- the 'txSubmissionInbound'
       --
-      -- Currently the value of 'txSubmissionMaxUnacked' is '10', for
-      -- which the upper bound is `10 * (44 + 65_540) = 655_840`, we add
-      -- 10% as a safety margin.
+      -- The maximum number of unacknowledged txids is given by
+      -- `txSubmissionConfigForVersion`.  For the default value of '10' the
+      -- upper bound is
+      -- `10 * (44 + 65_540) = 655_840`, we add 10% as a safety margin.
       --
       maximumIngressQueue = addSafetyMargin $
           fromIntegral maxUnacknowledgedTxIds * (44 + fromIntegral @SizeInBytes @Int max_TX_SIZE)
     }
+  where
+    maxUnacknowledgedTxIds =
+      V2.maxNumUnacknowledgedTxIds
+        (txSubmissionConfigForVersion v params)
 
-keepAliveProtocolLimits _ =
+
+keepAliveProtocolLimits _v _ =
   MiniProtocolLimits {
       -- One small outstanding message.
       maximumIngressQueue = addSafetyMargin 1280
     }
 
-peerSharingProtocolLimits _ =
+peerSharingProtocolLimits _v _ =
   MiniProtocolLimits {
   -- This protocol does not need to be pipelined and a peer can only ask
   -- for a maximum of 255 peers each time. Hence a reply can have up to
@@ -452,7 +578,7 @@ peerSharingProtocolLimits _ =
   maximumIngressQueue = 4 * 1440
   }
 
-perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxObjectsUnacknowledged } =
+perasCertDiffusionProtocolLimits _v MiniProtocolParameters { perasCertDiffusionMaxObjectsUnacknowledged } =
   MiniProtocolLimits {
       -- The reasoning here is very similar to the 'txSubmissionProtocolLimits'.
       --
@@ -463,7 +589,7 @@ perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxO
         fromIntegral perasCertDiffusionMaxObjectsUnacknowledged * 20_000
     }
 
-perasVoteDiffusionProtocolLimits MiniProtocolParameters { perasVoteDiffusionMaxObjectsUnacknowledged } =
+perasVoteDiffusionProtocolLimits _v MiniProtocolParameters { perasVoteDiffusionMaxObjectsUnacknowledged } =
   MiniProtocolLimits {
       -- Peras votes are expected to be much smaller than Peras certificates.
       -- We assume an upper bound of 1 kB per vote.

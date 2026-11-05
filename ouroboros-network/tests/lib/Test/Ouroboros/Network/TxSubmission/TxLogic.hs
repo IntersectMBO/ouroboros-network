@@ -1,6 +1,10 @@
-{-# LANGUAGE BangPatterns   #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes     #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.Ouroboros.Network.TxSubmission.TxLogic
   ( tests
@@ -29,27 +33,37 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
 import Control.DeepSeq (NFData (rnf))
 import Control.Exception (evaluate)
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime, diffTime)
+import Data.ByteString.Lazy qualified as BSL
+import Data.Either (isRight)
 import Data.Foldable (toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
-import Data.List (elemIndex, mapAccumL, nub, nubBy, sortBy)
+import Data.List (elemIndex, isPrefixOf, mapAccumL, nub, nubBy, sortBy)
 import Data.List as List (foldl')
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
-import Data.Word (Word64)
+import Data.Word (Word16, Word64)
 
 import NoThunks.Class (NoThunks, unsafeNoThunks)
 
 
+import Network.TypedProtocol.Codec (AnyMessage (..), CodecF (..))
+import Network.TypedProtocol.Core (StateToken, StateTokenI (..))
 
+import Ouroboros.Network.Protocol.Limits (sizeLimitForState)
+import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+import Test.Ouroboros.Network.TxSubmission.SizedBytes (SizedBytes,
+           TxSubmission2Bounds (..), codec_sized, genBoundedMessage,
+           shrinkBoundedMessage, withinBounds)
 
 import Test.Ouroboros.Network.TxSubmission.Types
 
@@ -78,6 +92,16 @@ tests =
                          prop_ArbTxDecisionPolicy_generatesSane
           , testProperty "shrinker produces sane policies"
                          prop_ArbTxDecisionPolicy_shrinkSane
+          , testProperty "default policy is sane up to the config bounds"
+                         prop_mkTxDecisionPolicy_saneAtBounds
+          , testProperty "sane policy accepts exactly the policies within the bounds"
+                         prop_saneTxDecisionPolicy_exactBounds
+          , testProperty "sane messages generator is valid"
+                         prop_ArbSaneMessages_generatesValid
+          , testProperty "sane messages shrinker is valid"
+                         prop_ArbSaneMessages_shrinkValid
+          , testProperty "messages within a sane policy fit within the size limits"
+                         prop_txSubmission2Messages_fitByteLimits
           ]
     , testProperty "nextPeerAction processes all multi-peer triggers" prop_nextPeerAction_processesAllTriggers
     , testCaseSteps "peerScore decays linearly over time at scoreRate" unit_peerScore_decaysOverTime
@@ -88,6 +112,7 @@ tests =
     , testProperty "handleSubmittedTxs retains accepted and drops rejected" prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
     , testProperty "nextPeerAction returns the current shared generation when idle" prop_nextPeerAction_returnsSharedGeneration
     , testProperty "nextPeerAction respects the inflight size budget" prop_nextPeerAction_picksTxsRespectingBudget
+    , testProperty "nextPeerAction caps each body batch independently of the inflight window" prop_nextPeerAction_capsBodyBatches
     , testProperty "nextPeerAction submits buffered owned txs before acking" prop_nextPeerAction_ownerSubmitsBuffered
     , testCase     "nextPeerAction claims a duplicated advertised txid only once" unit_nextPeerAction_dedupsBodyRequestOnDuplicateTxIds
     , testCase     "nextPeerAction submits a duplicated buffered txid only once"  unit_nextPeerAction_dedupsSubmitOnDuplicateTxIds
@@ -113,18 +138,365 @@ tests =
 
 -- | The 'ArbTxDecisionPolicy' generator only produces policies that pass
 -- 'saneTxDecisionPolicy'.
-prop_ArbTxDecisionPolicy_generatesSane :: ArbTxDecisionPolicy -> Property
-prop_ArbTxDecisionPolicy_generatesSane (ArbTxDecisionPolicy p) =
-    counterexample (show p) (saneTxDecisionPolicy p)
+prop_ArbTxDecisionPolicy_generatesSane :: ArbTxDecisionPolicy -> ArbTxSubmissionConfig -> Property
+prop_ArbTxDecisionPolicy_generatesSane (ArbTxDecisionPolicy p) (ArbTxSubmissionConfig c) =
+    saneTxDecisionPolicy p c === Right ()
 
--- | Shrinking an 'ArbTxDecisionPolicy' only yields policies that pass
--- 'saneTxDecisionPolicy'.
-prop_ArbTxDecisionPolicy_shrinkSane :: ArbTxDecisionPolicy -> Property
-prop_ArbTxDecisionPolicy_shrinkSane arb =
-    conjoin
-      [ counterexample (show p) (saneTxDecisionPolicy p)
-      | ArbTxDecisionPolicy p <- shrink arb
+-- | Shrinking an 'ArbTxDecisionPolicy' or an 'ArbTxSubmissionConfig' only
+-- yields policies and configs that pass 'saneTxDecisionPolicy'.  QuickCheck
+-- shrinks one argument at a time, so each shrink is checked with the other
+-- argument unchanged.
+prop_ArbTxDecisionPolicy_shrinkSane :: ArbTxDecisionPolicy -> ArbTxSubmissionConfig -> Property
+prop_ArbTxDecisionPolicy_shrinkSane policy@(ArbTxDecisionPolicy p)
+                                    config@(ArbTxSubmissionConfig c) =
+    let policies = [ p' | ArbTxDecisionPolicy p'   <- shrink policy ]
+        configs  = [ c' | ArbTxSubmissionConfig c' <- shrink config ]
+    in checkCoverage
+     . cover 80 (not (null policies)) "policy shrinks"
+     . cover 80 (not (null configs))  "config shrinks"
+     . conjoin
+     $ [ check p' c  | p' <- policies ]
+    ++ [ check p  c' | c' <- configs ]
+  where
+    check p' c' = counterexample (show (p', c'))
+                $ saneTxDecisionPolicy p' c' === Right ()
+
+-- | The largest window for which a `MsgRequestTxs` with txids of size
+-- `max_TXID_SIZE` fits within the `StIdle` size limit:
+-- @(65535 - 4) `div` max_TXID_SIZE@.
+--
+maxSaneNumUnacknowledgedTxIds :: Word16
+maxSaneNumUnacknowledgedTxIds = 1489
+
+-- | The largest `maxNumTxIdsToRequest` for which
+-- @max_TX_SIZE * maxNumTxIdsToRequest@ fits in `SizeInBytes`:
+-- @(2^32 - 1) `div` 65540@.
+--
+maxSaneNumTxIdsToRequest :: Word16
+maxSaneNumTxIdsToRequest = 65532
+
+-- | A `TxSubmissionConfig` with large values, mostly close to the bounds
+-- checked by 'saneTxDecisionPolicy'.
+--
+newtype ArbLargeTxSubmissionConfig =
+    ArbLargeTxSubmissionConfig TxSubmissionConfig
+  deriving Show
+
+instance Arbitrary ArbLargeTxSubmissionConfig where
+  arbitrary =
+    fmap ArbLargeTxSubmissionConfig $
+    TxSubmissionConfig
+      <$> frequency
+            [ (1, pure (NumTxIdsToAck maxSaneNumUnacknowledgedTxIds))
+            , (1, pure (NumTxIdsToAck (maxSaneNumUnacknowledgedTxIds + 1)))
+            , (3, NumTxIdsToAck <$> choose ( maxSaneNumUnacknowledgedTxIds - 10
+                                           , maxSaneNumUnacknowledgedTxIds + 10))
+            , (1, NumTxIdsToAck <$> arbitraryBoundedIntegral)
+            ]
+      <*> frequency
+            [ (1, pure (NumTxIdsToReq maxSaneNumTxIdsToRequest))
+            , (1, pure (NumTxIdsToReq (maxSaneNumTxIdsToRequest + 1)))
+            , (3, NumTxIdsToReq <$> choose ( maxSaneNumTxIdsToRequest - 10
+                                           , maxBound))
+            , (1, NumTxIdsToReq <$> arbitraryBoundedIntegral)
+            ]
+
+  -- shrink each field independently; the configs have no invariants
+  shrink (ArbLargeTxSubmissionConfig c) =
+       [ ArbLargeTxSubmissionConfig c { maxNumUnacknowledgedTxIds = NumTxIdsToAck w }
+       | w <- shrink (getNumTxIdsToAck (maxNumUnacknowledgedTxIds c)) ]
+    ++ [ ArbLargeTxSubmissionConfig c { maxNumTxIdsToRequest = NumTxIdsToReq r }
+       | r <- shrink (getNumTxIdsToReq (maxNumTxIdsToRequest c)) ]
+
+-- | 'mkTxDecisionPolicy' returns a (sane) policy for exactly those
+-- configs whose window and `maxNumTxIdsToRequest` are positive and within
+-- the bounds.  In
+-- particular the reply to the largest batch, with the
+-- `const_MAX_TX_SIZE_DISCREPANCY` tolerance for every txid in the window,
+-- fits within the `StTxs` size limit, and the default
+-- `txsSizeInflightPerPeer` doesn't saturate.
+--
+prop_mkTxDecisionPolicy_saneAtBounds :: ArbLargeTxSubmissionConfig
+                                          -> Property
+prop_mkTxDecisionPolicy_saneAtBounds (ArbLargeTxSubmissionConfig c) =
+    let window = getNumTxIdsToAck (maxNumUnacknowledgedTxIds c)
+        reqNo  = getNumTxIdsToReq (maxNumTxIdsToRequest c)
+        result = mkTxDecisionPolicy c
+        inBounds =
+             window >= 1 && window <= maxSaneNumUnacknowledgedTxIds
+          && reqNo  >= 1 && reqNo  <= maxSaneNumTxIdsToRequest
+    in checkCoverage
+     $ cover 1 (window == maxSaneNumUnacknowledgedTxIds)     "window at the bound"
+     $ cover 1 (window == maxSaneNumUnacknowledgedTxIds + 1) "window above the bound"
+     $ cover 1 (reqNo  == maxSaneNumTxIdsToRequest)          "request at the bound"
+     $ cover 1 (reqNo  == maxSaneNumTxIdsToRequest + 1)      "request above the bound"
+     $ cover 20 inBounds "within the bounds"
+     $ counterexample (show result)
+     $ case result of
+         Left _  -> counterexample "mkTxDecisionPolicy rejects the config"
+                      (not inBounds)
+         Right p ->
+           conjoin
+             [ counterexample "mkTxDecisionPolicy accepts the config"
+                 inBounds
+             , counterexample "txsSizeInflightPerPeer saturated"
+                 (   toInteger (txsSizeInflightPerPeer p)
+                  == toInteger max_TX_SIZE * toInteger reqNo)
+             ]
+
+-- | The largest `txsSizePerBatch` for which the reply to a batch with
+-- a full window of txs, each up to `const_MAX_TX_SIZE_DISCREPANCY` larger
+-- than advertised, fits within the `StTxs` size limit:
+-- @2500000 - 4 - 32 * window@.
+--
+maxSaneTxsSizePerBatch :: Word16 -> Integer
+maxSaneTxsSizePerBatch window = 2499996 - 32 * toInteger window
+
+-- | A policy field which `perturbPolicy` puts out of its range.
+--
+data PolicyField =
+    TxsSizeInflightPerPeer
+  | TxsSizePerBatch
+  | MaxOutstandingTxBatchesPerPeer
+  | TxInflightMultiplicity
+  | BufferedTxsMinLifetime
+  | ScoreRate
+  | ScoreMax
+  | ScoreAcceptDecrement
+  | InterTxSpace
+  | InflightTimeout
+  | MaxPeerClaimDelay
+  deriving (Show, Eq, Enum, Bounded)
+
+perturbPolicy :: PolicyField -> TxDecisionPolicy -> TxDecisionPolicy
+perturbPolicy field p = case field of
+    TxsSizeInflightPerPeer         -> p { txsSizeInflightPerPeer = 0 }
+    TxsSizePerBatch                -> p { txsSizePerBatch = 0 }
+    MaxOutstandingTxBatchesPerPeer -> p { maxOutstandingTxBatchesPerPeer = 0 }
+    TxInflightMultiplicity         -> p { txInflightMultiplicity = 0 }
+    BufferedTxsMinLifetime         -> p { bufferedTxsMinLifetime = -1 }
+    ScoreRate                      -> p { scoreRate = -1 }
+    ScoreMax                       -> p { scoreMax = -1 }
+    ScoreAcceptDecrement           -> p { scoreAcceptDecrement = -1 }
+    InterTxSpace                   -> p { interTxSpace = -1 }
+    InflightTimeout                -> p { inflightTimeout = interTxSpace p - 0.001 }
+    MaxPeerClaimDelay              -> p { maxPeerClaimDelay = -1 }
+
+-- | A policy and a config, mostly close to the bounds checked by
+-- 'saneTxDecisionPolicy'.  The policy is built by 'nearBoundsPolicy' from
+-- a base policy, a `txsSizePerBatch` and sometimes a field put out of its
+-- range, so that each part shrinks on its own.
+--
+data ArbPolicyNearBounds = ArbPolicyNearBounds {
+    apnBasePolicy      :: TxDecisionPolicy,
+    apnConfig          :: TxSubmissionConfig,
+    apnTxsSizePerBatch :: SizeInBytes,
+    apnPerturbed       :: Maybe PolicyField
+  }
+  deriving Show
+
+nearBoundsPolicy :: ArbPolicyNearBounds -> TxDecisionPolicy
+nearBoundsPolicy ArbPolicyNearBounds { apnBasePolicy, apnTxsSizePerBatch,
+                                       apnPerturbed } =
+    maybe id perturbPolicy apnPerturbed
+      apnBasePolicy { txsSizePerBatch = apnTxsSizePerBatch }
+
+nearBoundsSane :: ArbPolicyNearBounds -> Bool
+nearBoundsSane a = isRight (saneTxDecisionPolicy (nearBoundsPolicy a) (apnConfig a))
+
+instance Arbitrary ArbPolicyNearBounds where
+  arbitrary = do
+    ArbTxDecisionPolicy apnBasePolicy <- arbitrary
+    apnConfig <- frequency
+      [ (1, (\(ArbTxSubmissionConfig c) -> c) <$> arbitrary)
+      , (3, (\(ArbLargeTxSubmissionConfig c) -> c) <$> arbitrary)
       ]
+    let maxBatch = maxSaneTxsSizePerBatch
+                     (getNumTxIdsToAck (maxNumUnacknowledgedTxIds apnConfig))
+        discrepancy = toInteger const_MAX_TX_SIZE_DISCREPANCY
+    apnTxsSizePerBatch <- frequency
+      [ (2, pure (txsSizePerBatch apnBasePolicy))
+      , (1, pure (fromIntegral (max 1 maxBatch)))
+      , (1, pure (fromIntegral (max 1 (maxBatch + 1))))
+      , (4, fromIntegral <$> choose ( max 1 (maxBatch - discrepancy)
+                                    , maxBatch + discrepancy))
+      ]
+    apnPerturbed <- frequency
+      [ (4, pure Nothing)
+      , (1, Just <$> arbitraryBoundedEnum)
+      ]
+    pure ArbPolicyNearBounds { apnBasePolicy, apnConfig,
+                               apnTxsSizePerBatch, apnPerturbed }
+
+  shrink a@ArbPolicyNearBounds { apnBasePolicy, apnConfig,
+                                 apnTxsSizePerBatch, apnPerturbed } =
+       [ a { apnPerturbed = Nothing } | Just _ <- [apnPerturbed] ]
+    ++ [ a { apnConfig = c }
+       | ArbLargeTxSubmissionConfig c <- shrink (ArbLargeTxSubmissionConfig apnConfig) ]
+    ++ [ a { apnTxsSizePerBatch = SizeInBytes s }
+       | s <- shrink (getSizeInBytes apnTxsSizePerBatch) ]
+    ++ [ a { apnBasePolicy = p }
+       | ArbTxDecisionPolicy p <- shrink (ArbTxDecisionPolicy apnBasePolicy) ]
+
+-- | 'saneTxDecisionPolicy' accepts exactly the policies and configs within
+-- the bounds stated numerically here:
+--
+-- * window in @[1, 1489]@ (`MsgRequestTxs` within the `StIdle` size limit);
+-- * `maxNumTxIdsToRequest` in @[1, 65532]@ (no overflow of the in-flight
+--   size);
+-- * `txsSizePerBatch` in @[1, 2500000 - 4 - 32 * window]@ (`MsgReplyTxs`
+--   within the `StTxs` size limit);
+-- * the remaining fields positive or non-negative, and @inflightTimeout >=
+--   interTxSpace@.
+--
+-- 'prop_txSubmission2Messages_fitByteLimits' checks that these bounds keep
+-- the messages within the size limits.
+--
+prop_saneTxDecisionPolicy_exactBounds :: ArbPolicyNearBounds -> Property
+prop_saneTxDecisionPolicy_exactBounds a@ArbPolicyNearBounds { apnConfig = c,
+                                                              apnPerturbed } =
+    let p      = nearBoundsPolicy a
+        window = getNumTxIdsToAck (maxNumUnacknowledgedTxIds c)
+        reqNo  = getNumTxIdsToReq (maxNumTxIdsToRequest c)
+        batch  = toInteger (txsSizePerBatch p)
+        windowInBounds = window >= 1 && window <= maxSaneNumUnacknowledgedTxIds
+        inBounds =
+             windowInBounds
+          && reqNo  >= 1 && reqNo  <= maxSaneNumTxIdsToRequest
+          && batch  >= 1 && batch  <= maxSaneTxsSizePerBatch window
+          && txsSizeInflightPerPeer         p >  0
+          && maxOutstandingTxBatchesPerPeer p >= 1
+          && txInflightMultiplicity         p >= 1
+          && bufferedTxsMinLifetime         p >= 0
+          && scoreRate                      p >= 0
+          && scoreMax                       p >= 0
+          && scoreAcceptDecrement           p >= 0
+          && interTxSpace                   p >= 0
+          && inflightTimeout                p >= interTxSpace p
+          && maxPeerClaimDelay              p >= 0
+    in checkCoverage
+     $ cover 1 (window == maxSaneNumUnacknowledgedTxIds)     "window at the bound"
+     $ cover 1 (window == maxSaneNumUnacknowledgedTxIds + 1) "window above the bound"
+     $ cover 1 (reqNo  == maxSaneNumTxIdsToRequest)          "request at the bound"
+     $ cover 1 (reqNo  == maxSaneNumTxIdsToRequest + 1)      "request above the bound"
+     $ cover 1 (windowInBounds && batch == maxSaneTxsSizePerBatch window)
+               "batch at the bound"
+     $ cover 1 (windowInBounds && batch == maxSaneTxsSizePerBatch window + 1)
+               "batch above the bound"
+     $ cover 10 (apnPerturbed /= Nothing) "another field out of range"
+     $ cover 20 inBounds "within the bounds"
+     $ tabulate "out of range" (maybe [] (pure . show) apnPerturbed)
+     $ counterexample (show p)
+     $ counterexample (show (saneTxDecisionPolicy p c))
+     $ isRight (saneTxDecisionPolicy p c) === inBounds
+
+-- | The bounds on messages which a policy and a config allow:
+--
+-- * at most `maxNumUnacknowledgedTxIds` txids of up to `max_TXID_SIZE` in
+--   a message;
+-- * a `MsgReplyTxs` with a single tx of up to `max_TX_SIZE` (which can exceed
+--   `txsSizePerBatch`), or with txs advertised with up to `txsSizePerBatch`
+--   bytes in total.  Each tx can be up to `const_MAX_TX_SIZE_DISCREPANCY`
+--   larger than advertised.
+--
+policyBounds :: TxDecisionPolicy -> TxSubmissionConfig -> TxSubmission2Bounds
+policyBounds p c =
+    TxSubmission2Bounds {
+      tbMaxNumTxIds = window,
+      tbMaxTxIdSize = fromIntegral max_TXID_SIZE,
+      tbMaxTxSize   = fromIntegral max_TX_SIZE + discrepancy,
+      tbMaxTxsSize  = fromIntegral (txsSizePerBatch p)
+                    + discrepancy * fromIntegral window
+    }
+  where
+    window = getNumTxIdsToAck (maxNumUnacknowledgedTxIds c)
+    discrepancy = fromIntegral const_MAX_TX_SIZE_DISCREPANCY :: Word
+
+-- | A sane policy and config, and messages within the bounds they allow
+-- (see 'policyBounds').
+--
+data ArbSaneMessages =
+    ArbSaneMessages ArbPolicyNearBounds
+                    [AnyMessage (TxSubmission2 SizedBytes SizedBytes)]
+  deriving Show
+
+saneMessagesBounds :: ArbPolicyNearBounds -> TxSubmission2Bounds
+saneMessagesBounds a = policyBounds (nearBoundsPolicy a) (apnConfig a)
+
+instance Arbitrary ArbSaneMessages where
+  arbitrary = do
+    a <- arbitrary `suchThat` nearBoundsSane
+    ArbSaneMessages a <$> vectorOf 5 (genBoundedMessage (saneMessagesBounds a))
+
+  -- shrink the policy and config only while they stay sane and the messages
+  -- stay within their bounds
+  shrink (ArbSaneMessages a msgs) =
+       [ ArbSaneMessages a' msgs
+       | a' <- shrink a
+       , nearBoundsSane a'
+       , all (withinBounds (saneMessagesBounds a')) msgs
+       ]
+    ++ [ ArbSaneMessages a msgs'
+       | msgs' <- shrinkList shrinkBoundedMessage msgs
+       , not (null msgs')
+       ]
+
+-- | The 'ArbSaneMessages' generator only produces sane policies and messages
+-- within their bounds.
+--
+prop_ArbSaneMessages_generatesValid :: ArbSaneMessages -> Property
+prop_ArbSaneMessages_generatesValid (ArbSaneMessages a msgs) =
+         counterexample "not sane" (nearBoundsSane a)
+    .&&. counterexample "messages not within the bounds"
+           (all (withinBounds (saneMessagesBounds a)) msgs)
+
+-- | Shrinking an 'ArbSaneMessages' preserves its invariants.  Only the first
+-- 100 shrinks are checked: a message with many txids has many shrinks.
+--
+prop_ArbSaneMessages_shrinkValid :: ArbSaneMessages -> Property
+prop_ArbSaneMessages_shrinkValid x =
+    conjoin
+      [ prop_ArbSaneMessages_generatesValid x'
+      | x' <- take 100 (shrink x)
+      ]
+
+-- | Messages within the bounds which a sane policy and config allow (see
+-- 'policyBounds') fit within the size limits of 'byteLimitsTxSubmission2'
+-- when encoded with 'codecTxSubmission2'.
+--
+prop_txSubmission2Messages_fitByteLimits :: ArbSaneMessages -> Property
+prop_txSubmission2Messages_fitByteLimits (ArbSaneMessages _ msgs) =
+    let sizes = zip msgs (map messageSize msgs)
+    in checkCoverage
+     $ cover 5 (or [ isReplyTxs msg
+                     && limit - size < toInteger const_MAX_TX_SIZE_DISCREPANCY
+                   | (msg, (size, limit)) <- sizes ])
+               "MsgReplyTxs within const_MAX_TX_SIZE_DISCREPANCY of the limit"
+     $ cover 1 (or [ isRequestTxs msg
+                     && limit - size < toInteger max_TXID_SIZE
+                   | (msg, (size, limit)) <- sizes ])
+               "MsgRequestTxs within a txid of the limit"
+     $ conjoin
+         [ counterexample (show size ++ " > " ++ show limit)
+         $ size <= limit
+         | (_, (size, limit)) <- sizes
+         ]
+  where
+    -- encoded size and the size limit of its state
+    messageSize :: AnyMessage (TxSubmission2 SizedBytes SizedBytes)
+                -> (Integer, Integer)
+    messageSize (AnyMessage (msg :: Message (TxSubmission2 SizedBytes SizedBytes) st st')) =
+      ( toInteger (BSL.length (encode (codec_sized @IO) msg))
+      , toInteger (sizeLimitForState
+                     (byteLimitsTxSubmission2 (error "unused"))
+                     (stateToken :: StateToken st))
+      )
+
+    isReplyTxs, isRequestTxs :: AnyMessage (TxSubmission2 txid tx) -> Bool
+    isReplyTxs (AnyMessage MsgReplyTxs {}) = True
+    isReplyTxs _                           = False
+    isRequestTxs (AnyMessage MsgRequestTxs {}) = True
+    isRequestTxs _                             = False
 
 --
 -- NoThunks invariant checks
@@ -524,16 +896,21 @@ instance Arbitrary TxIdGroupTag where
 instance Arbitrary ArbTxDecisionPolicy where
     arbitrary =
       frequency
-        [ (1, pure (ArbTxDecisionPolicy defaultTxDecisionPolicy))
+        [ (1, pure (ArbTxDecisionPolicy (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)))
         , (9, do
             interTxSpaceVal <- realToFrac <$> choose (0 :: Double, 1)
             offset          <- choose (0.01 :: Double, 10)
             let inflightTimeoutVal = interTxSpaceVal + realToFrac offset
             ArbTxDecisionPolicy <$> (
-              TxDecisionPolicy . getSmall . getPositive
-                <$> arbitrary
-                <*> (getSmall . getPositive <$> arbitrary)
-                <*> (SizeInBytes . getPositive <$> arbitrary)
+              TxDecisionPolicy
+                <$> (SizeInBytes . getPositive <$> arbitrary)
+                -- biased towards values below `max_TX_SIZE`, for which
+                -- a larger tx is requested in a batch on its own
+                <*> (SizeInBytes <$> frequency
+                      [ (1, choose (1, getSizeInBytes max_TX_SIZE - 1))
+                      , (1, choose (getSizeInBytes max_TX_SIZE,
+                                    getSizeInBytes (txsSizePerBatch (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2))))
+                      ])
                 <*> choose (1, 10)
                 <*> (getSmall . getPositive <$> arbitrary)
                 <*> (realToFrac <$> choose (0 :: Double, 2))
@@ -547,17 +924,14 @@ instance Arbitrary ArbTxDecisionPolicy where
         ]
 
     shrink (ArbTxDecisionPolicy a)
-      | a == defaultTxDecisionPolicy = []
+      | a == unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2 = []
       | otherwise = nub $
-          ArbTxDecisionPolicy defaultTxDecisionPolicy
-        : [ ArbTxDecisionPolicy a { maxNumTxIdsToRequest = NumTxIdsToReq x }
-          | (Positive (Small x)) <- shrink (Positive (Small (getNumTxIdsToReq (maxNumTxIdsToRequest a))))
-          ]
-        ++ [ ArbTxDecisionPolicy a { maxUnacknowledgedTxIds = x }
-           | (Positive (Small x)) <- shrink (Positive (Small (maxUnacknowledgedTxIds a)))
-           ]
-        ++ [ ArbTxDecisionPolicy a { txsSizeInflightPerPeer = SizeInBytes s }
+          ArbTxDecisionPolicy (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
+        :  [ ArbTxDecisionPolicy a { txsSizeInflightPerPeer = SizeInBytes s }
            | Positive s <- shrink (Positive (getSizeInBytes (txsSizeInflightPerPeer a)))
+           ]
+        ++ [ ArbTxDecisionPolicy a { txsSizePerBatch = SizeInBytes s }
+           | Positive s <- shrink (Positive (getSizeInBytes (txsSizePerBatch a)))
            ]
         ++ [ ArbTxDecisionPolicy a { maxOutstandingTxBatchesPerPeer = x }
            | x <- shrink (maxOutstandingTxBatchesPerPeer a), x >= 1
@@ -625,7 +999,7 @@ unit_peerScore_decaysOverTime step = do
     -- Pin scoreRate to a value that makes the test arithmetic obvious;
     -- the production default may be tuned without affecting this
     -- formula-level invariant.
-    policy = defaultTxDecisionPolicy { scoreRate = 0.1 }
+    policy = (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2) { scoreRate = 0.1 }
     score0 = PeerScore { peerScoreValue = 10, peerScoreTs = Time 0 }
 
 -- | A new rejection drains the existing score at 'scoreRate' per second
@@ -637,7 +1011,7 @@ unit_applyPeerEvents_drainsThenAdds step = do
   where
     -- See 'unit_peerScore_decaysOverTime' for why the test pins
     -- scoreRate explicitly.
-    policy     = defaultTxDecisionPolicy { scoreRate = 0.1 }
+    policy     = (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2) { scoreRate = 0.1 }
     peerState0 = emptyPeerTxLocalState
                    { peerScore = PeerScore { peerScoreValue = 10
                                            , peerScoreTs    = Time 0 } }
@@ -781,7 +1155,7 @@ unit_handleReceivedTxIds_advertisesExistingEntry step = do
 
     step "Peer 1 advertises the same txid"
     let (peerState', peerInFlight', sharedState') =
-          handleReceivedTxIds (const False) now defaultTxDecisionPolicy
+          handleReceivedTxIds (const False) now (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
                               1 [(txid, 256)]
                               emptyPeerTxLocalState { peerRequestedTxIds = 1 }
                               emptyPeerTxInFlight
@@ -1044,16 +1418,18 @@ prop_nextPeerAction_returnsSharedGeneration
   :: ArbTxDecisionPolicy
   -> Word64
   -> Property
-prop_nextPeerAction_returnsSharedGeneration (ArbTxDecisionPolicy policy0) gen =
+prop_nextPeerAction_returnsSharedGeneration (ArbTxDecisionPolicy policy) gen =
   let
     -- A zero unack window forces 'pickRequestTxIdsAction' to return
-    -- 'Nothing', so the scheduler falls through to 'PeerDoNothing'.
-    policy = policy0 { maxUnacknowledgedTxIds = 0
-                     , maxNumTxIdsToRequest   = 0 }
+    -- 'Nothing', so the scheduler falls through to 'PeerDoNothing'.  The
+    -- config is deliberately out of the range 'saneTxDecisionPolicy' accepts:
+    -- this tests 'pickRequestTxIdsAction' in isolation.
+    config = TxSubmissionConfig { maxNumUnacknowledgedTxIds = 0
+                                , maxNumTxIdsToRequest      = 0 }
     sharedState :: SharedTxState PeerAddr TxId
     sharedState = emptySharedTxState { sharedGeneration = gen }
     (action, _, _, _) =
-      nextPeerAction now policy peerAddr emptyPeerTxLocalState
+      nextPeerAction now policy config peerAddr emptyPeerTxLocalState
                      emptyPeerTxInFlight sharedState
   in
     case action of
@@ -1069,9 +1445,11 @@ prop_nextPeerAction_returnsSharedGeneration (ArbTxDecisionPolicy policy0) gen =
 -- documented in 'pickRequestTxsAction').
 prop_nextPeerAction_picksTxsRespectingBudget
   :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
   -> NonEmptyList (TxId, Positive Int)
   -> Property
 prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
+                                             (ArbTxSubmissionConfig config)
                                              (NonEmpty rawInput) =
   let
     -- Tighten the budget so the test exercises the truncation path.
@@ -1093,7 +1471,7 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
                           peerState0 emptyPeerTxInFlight emptySharedTxState
 
     (action, _peerState', peerInFlight', sharedState') =
-      nextPeerAction now policy peerAddr peerState1 peerInFlight1 sharedState1
+      nextPeerAction now policy config peerAddr peerState1 peerInFlight1 sharedState1
 
     keyOrder = [ unTxKey (lookupKeyOrFail txid sharedState1)
                | (txid, _) <- txidsAndSizes ]
@@ -1102,9 +1480,6 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
         (IntMap.lookup k (peerAvailableTxIds peerState1))
 
     budget = getSizeInBytes (txsSizeInflightPerPeer policy)
-    isPrefix _ []          = True
-    isPrefix [] _          = False
-    isPrefix (x:xs) (y:ys) = x == y && isPrefix xs ys
   in
     case action of
       PeerRequestTxs picked ->
@@ -1116,7 +1491,7 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
             tailSize = pickedSize - maybe 0 sizeOf (listToMaybe pickedKeys)
         in conjoin
              [ counterexample "picked is not a prefix of the unacked queue"
-                 (pickedKeys `isPrefix` keyOrder)
+                 (pickedKeys `isPrefixOf` keyOrder)
              , counterexample
                  ("tail of picked exceeds budget: " ++ show pickedSize)
                  (tailSize <= budget)
@@ -1143,14 +1518,193 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
   where
     peerAddr = 1 :: PeerAddr
 
+-- | Advertised transaction sizes and a policy covering either a large
+-- inflight window, or a first transaction at the hard batch limit with
+-- a smaller soft inflight limit. Sizes are at least two so all policy limits
+-- can remain positive.
+--
+data ArbBodyBatchScenario = ArbBodyBatchScenario {
+      bbsTxSizes :: NonEmpty SizeInBytes,
+      bbsPolicy  :: TxDecisionPolicy
+    }
+  deriving Show
+
+instance Arbitrary ArbBodyBatchScenario where
+    arbitrary = do
+      otherCount <- choose (1, 199)
+      let genSize = chooseEnum (2, max_TX_SIZE)
+      sizes@(firstSize :| _) <-
+        (:|) <$> genSize <*> vectorOf otherCount genSize
+      -- Bound the count and sizes to keep their Word32 sum in range.
+      (txsSizePerBatch, txsSizeInflightPerPeer) <- oneof
+        [ (,) <$> frequency
+                    [ (1, pure (maximum sizes))
+                    , (1, pure (sum sizes - 1))
+                    , (3, chooseEnum (maximum sizes, sum sizes - 1))
+                    ]
+              <*> chooseEnum (sum sizes, 2 * sum sizes)
+        , (,) <$> pure firstSize <*> chooseEnum (1, firstSize - 1)
+          -- the batch limit is below the first tx's size
+        , (,) <$> chooseEnum (1, firstSize - 1)
+              <*> chooseEnum (sum sizes, 2 * sum sizes)
+        ]
+      pure ArbBodyBatchScenario {
+          bbsTxSizes = sizes,
+          bbsPolicy = (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
+            { txsSizePerBatch
+            , txsSizeInflightPerPeer
+            , maxOutstandingTxBatchesPerPeer = length sizes
+            }
+        }
+
+    shrink scenario@ArbBodyBatchScenario { bbsTxSizes, bbsPolicy } =
+        let TxDecisionPolicy { txsSizePerBatch, txsSizeInflightPerPeer } =
+              bbsPolicy
+        in filter validScenario $
+           [ scenario { bbsTxSizes = sizes }
+           | sizes <- shrinkMap (fmap SizeInBytes) (fmap getSizeInBytes)
+                                bbsTxSizes
+           , all (>= 2) sizes
+           ]
+        ++ [ scenario { bbsPolicy = bbsPolicy
+                          { txsSizePerBatch = limit } }
+           | limit <- shrinkIntegral txsSizePerBatch
+           ]
+        ++ [ scenario { bbsPolicy = bbsPolicy
+                          { txsSizeInflightPerPeer = limit } }
+           | limit <- shrinkIntegral txsSizeInflightPerPeer
+           ]
+      where
+        validScenario ArbBodyBatchScenario { bbsTxSizes = sizes@(firstSize :| _)
+                                          , bbsPolicy = policy
+                                          } =
+          let TxDecisionPolicy { txsSizePerBatch, txsSizeInflightPerPeer } =
+                policy
+          in txsSizePerBatch > 0 && txsSizeInflightPerPeer > 0
+          && (   (maximum sizes <= txsSizePerBatch
+               && txsSizePerBatch < sum sizes
+               && sum sizes <= txsSizeInflightPerPeer)
+               || (   txsSizePerBatch == firstSize
+                   && txsSizeInflightPerPeer < firstSize)
+               || (   txsSizePerBatch < firstSize
+                   && sum sizes <= txsSizeInflightPerPeer))
+
+
+-- | A large inflight window may span several batches. Each batch respects
+-- its hard limit, while all advertised transactions can still be requested
+-- in order. The first transaction is requested even when it exceeds the soft
+-- inflight limit.  A transaction above the hard limit is requested in a batch
+-- on its own.
+--
+prop_nextPeerAction_capsBodyBatches :: ArbBodyBatchScenario -> Property
+prop_nextPeerAction_capsBodyBatches ArbBodyBatchScenario {
+    bbsTxSizes = txSizes@(firstSize :| _),
+    bbsPolicy  = policy@TxDecisionPolicy { txsSizePerBatch, txsSizeInflightPerPeer }
+  } =
+    checkCoverage $
+    let sizes = toList txSizes
+        txCount = length sizes
+        config = defaultTxSubmissionConfigV2
+          { maxNumUnacknowledgedTxIds = fromIntegral txCount
+          , maxNumTxIdsToRequest = fromIntegral txCount
+          }
+        txidsAndSizes ::  [(TxId, SizeInBytes)]
+        txidsAndSizes = zip [1 ..] sizes
+
+        initialState@(peerState, _, sharedState) =
+          handleReceivedTxIds (const False) now policy
+            (fromIntegral txCount) txidsAndSizes
+            (emptyPeerTxLocalState
+              { peerRequestedTxIds = fromIntegral txCount })
+            emptyPeerTxInFlight emptySharedTxState
+
+        advertisedKeys :: [TxKey]
+        advertisedKeys =
+          [ lookupKeyOrFail txid sharedState | (txid, _) <- txidsAndSizes ]
+
+        expectedKeys :: [TxKey]
+        expectedKeys
+          | firstSize > txsSizeInflightPerPeer = take 1 advertisedKeys
+          | otherwise                          = advertisedKeys
+
+        sizeOf :: TxKey -> SizeInBytes
+        sizeOf key = peerAvailableTxIds peerState IntMap.! unTxKey key
+
+        step
+          :: (PeerTxLocalState tx, PeerTxInFlight, SharedTxState PeerAddr txid)
+          -> (  Time
+             -> TxDecisionPolicy
+             -> TxSubmissionConfig
+             -> PeerAddr
+             -> PeerTxLocalState tx
+             -> PeerTxInFlight
+             -> SharedTxState PeerAddr txid
+             -> ( PeerAction
+                , PeerTxLocalState tx
+                , PeerTxInFlight
+                , SharedTxState PeerAddr txid
+                )
+             )
+          -> ( (PeerTxLocalState tx, PeerTxInFlight, SharedTxState PeerAddr txid)
+             , PeerAction
+             )
+        step (ps, pif, ss) next =
+          let (action, ps', pif', ss') =
+                next now policy config peerAddr ps pif ss
+          in ((ps', pif', ss'), action)
+
+        -- At most one request per transaction is needed. Keep the run
+        -- bounded so a failure to make progress produces a counterexample.
+        ((finalPeerState, _, _), actions) =
+          mapAccumL step initialState
+            (nextPeerAction
+              : replicate (txCount - 1) nextPeerActionPipelined)
+
+        batches :: [[TxKey]]
+        batches = [keys | PeerRequestTxs keys <- actions]
+
+        batchSizes :: [SizeInBytes]
+        batchSizes = map (sum . map sizeOf) batches
+
+    in cover 20 (length batches > 1) "more than one batch"
+     $ cover 5  (length batches > 2) "more than two batches"
+     $ cover 20
+         (firstSize == txsSizePerBatch && firstSize > txsSizeInflightPerPeer)
+         "first transaction at the hard limit"
+     $ cover 20 (firstSize > txsSizePerBatch)
+         "first transaction above the hard limit"
+     $ cover 50 (length (nub sizes) > 1) "mixed transaction sizes"
+     $ conjoin
+         [ counterexample "batch exceeds the hard size limit"
+             (and [ batchSize <= txsSizePerBatch || length batch == 1
+                  | (batch, batchSize) <- zip batches batchSizes
+                  ])
+         , counterexample "empty body request"
+             (all (not . null) batches)
+         , counterexample "batch left room for the next transaction"
+             (and [ batchSize + sizeOf nextKey > txsSizePerBatch
+                  | (batchSize, nextKey : _) <-
+                      zip batchSizes (drop 1 batches)
+                  ])
+         , counterexample "requests must match the policy's allowed prefix"
+             (concat batches === expectedKeys)
+         , counterexample "incorrect total inflight size"
+             (peerRequestedTxsSize finalPeerState
+                === sum (map sizeOf expectedKeys))
+         ]
+  where
+    peerAddr = 1 :: PeerAddr
+
 -- | When the peer has buffered a downloaded body of which it owns the
 -- lease, 'nextPeerAction' submits before requesting more bodies or
 -- acking.
 prop_nextPeerAction_ownerSubmitsBuffered
   :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
   -> Positive Int
   -> Property
 prop_nextPeerAction_ownerSubmitsBuffered (ArbTxDecisionPolicy policy)
+                                         (ArbTxSubmissionConfig config)
                                          (Positive sizeBytes) =
   let
     txid :: TxId
@@ -1187,7 +1741,7 @@ prop_nextPeerAction_ownerSubmitsBuffered (ArbTxDecisionPolicy policy)
       }
 
     (action, _, _, _) =
-      nextPeerAction now policy peerAddr peerState2 peerInFlight2 sharedState2
+      nextPeerAction now policy config peerAddr peerState2 peerInFlight2 sharedState2
   in
     case action of
       PeerSubmitTxs ks -> ks === [txKey]
@@ -1212,11 +1766,13 @@ unit_nextPeerAction_dedupsBodyRequestOnDuplicateTxIds = do
         -- Widen the unack window so N copies fit; pin the size budget
         -- to two tx bodies so the test catches the inflated-size bug
         -- (a per-occurrence charge would block the second occurrence).
-        policy = defaultTxDecisionPolicy
-          { maxUnacknowledgedTxIds         = NumTxIdsToReq (fromIntegral (n + 1))
-          , maxNumTxIdsToRequest           = NumTxIdsToReq (fromIntegral (n + 1))
-          , txsSizeInflightPerPeer         = SizeInBytes (getSizeInBytes sz * 2)
+        policy = (unsafeMkTxDecisionPolicy config)
+          { txsSizeInflightPerPeer         = SizeInBytes (getSizeInBytes sz * 2)
           , maxOutstandingTxBatchesPerPeer = 4
+          }
+        config = defaultTxSubmissionConfigV2
+          { maxNumUnacknowledgedTxIds      = NumTxIdsToAck (fromIntegral (n + 1))
+          , maxNumTxIdsToRequest           = NumTxIdsToReq (fromIntegral (n + 1))
           }
 
         duplicated       = replicate n (txid, sz)
@@ -1234,7 +1790,7 @@ unit_nextPeerAction_dedupsBodyRequestOnDuplicateTxIds = do
         keyInt = unTxKey txKey
 
         (action, peerState', peerInFlight', sharedState') =
-          nextPeerAction now policy peerAddr peerState1 peerInFlight1 sharedState1
+          nextPeerAction now policy config peerAddr peerState1 peerInFlight1 sharedState1
 
     -- The queue must keep all N duplicates so the ack-by-count
     -- handshake stays in lockstep with the sender.
@@ -1269,10 +1825,11 @@ unit_nextPeerAction_dedupsSubmitOnDuplicateTxIds = do
         txid :: TxId
         txid = 1
 
-        policy = defaultTxDecisionPolicy
-          { maxUnacknowledgedTxIds = NumTxIdsToReq (fromIntegral (n + 1))
-          , maxNumTxIdsToRequest   = NumTxIdsToReq (fromIntegral (n + 1))
+        config = defaultTxSubmissionConfigV2
+          { maxNumUnacknowledgedTxIds = NumTxIdsToAck (fromIntegral (n + 1))
+          , maxNumTxIdsToRequest      = NumTxIdsToReq (fromIntegral (n + 1))
           }
+        policy = unsafeMkTxDecisionPolicy config
 
         duplicated       = replicate n (txid, sz)
         requestedToReply = fromIntegral n
@@ -1308,7 +1865,7 @@ unit_nextPeerAction_dedupsSubmitOnDuplicateTxIds = do
           }
 
         (action, _, _, _) =
-          nextPeerAction now policy peerAddr peerState2 peerInFlight2 sharedState2
+          nextPeerAction now policy config peerAddr peerState2 peerInFlight2 sharedState2
 
     StrictSeq.length (peerUnacknowledgedTxIds peerState2) @?= n
     case action of
@@ -1336,7 +1893,8 @@ unit_nextPeerAction_clearsInFlightForPrunedBody = do
     let sz = SizeInBytes 512
         txid :: TxId
         txid = 1
-        policy = defaultTxDecisionPolicy
+        config = defaultTxSubmissionConfigV2
+        policy = unsafeMkTxDecisionPolicy config
 
         -- Peer A receives the txid advertisement.
         (peerState1, peerInFlight1, sharedState1) =
@@ -1378,7 +1936,7 @@ unit_nextPeerAction_clearsInFlightForPrunedBody = do
           }
 
         (_action, peerState', peerInFlight', _sharedState') =
-          nextPeerAction now policy peerAddr peerState2 peerInFlight2 sharedState3
+          nextPeerAction now policy config peerAddr peerState2 peerInFlight2 sharedState3
 
     -- The orphaned body is pruned from the local buffer.
     assertBool "peerDownloadedTxs must drop the orphaned body"
@@ -1445,10 +2003,10 @@ prop_nextPeerAction_keepsRetained (ArbTxDecisionPolicy policy)
 prop_nextPeerActionPipelined_requestsTxIds
   :: ArbTxDecisionPolicy
   -> Property
-prop_nextPeerActionPipelined_requestsTxIds (ArbTxDecisionPolicy policy0) =
+prop_nextPeerActionPipelined_requestsTxIds (ArbTxDecisionPolicy policy) =
   let
-    policy = policy0 { maxUnacknowledgedTxIds = 8
-                     , maxNumTxIdsToRequest   = 4 }
+    config = TxSubmissionConfig { maxNumUnacknowledgedTxIds = 8
+                                , maxNumTxIdsToRequest      = 4 }
     -- Pre-state: two ackable retained txids (so the keep-one-unacked
     -- clamp on pipelined requests still leaves a non-zero ack) and an
     -- outstanding pipelined req (peerRequestedTxIds = 1) so the wire
@@ -1462,7 +2020,7 @@ prop_nextPeerActionPipelined_requestsTxIds (ArbTxDecisionPolicy policy0) =
         peerRequestedTxIds      = 1
       }
     (action, _, _, _) =
-      nextPeerActionPipelined now policy peerAddr peerState0
+      nextPeerActionPipelined now policy config peerAddr peerState0
                               emptyPeerTxInFlight sharedState0
   in
     counterexample ("got: " ++ show action) $
@@ -1487,7 +2045,8 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
     step "Set up a peer with one retained (ackable) txid and an outstanding body batch"
     let txid :: TxId
         txid = 1
-        policy = defaultTxDecisionPolicy
+        config = defaultTxSubmissionConfigV2
+        policy = unsafeMkTxDecisionPolicy config
         sharedState0 = seedRetainedTxids policy [(txid, 64)] emptySharedTxState
         keyInt = unTxKey (lookupKeyOrFail txid sharedState0)
         outstandingBatch = mkRequestedTxBatch [TxKey keyInt] 64
@@ -1500,7 +2059,7 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
 
     step "Run nextPeerActionPipelined"
     let (action, _, _, _) =
-          nextPeerActionPipelined now policy peerAddr peerState0
+          nextPeerActionPipelined now policy config peerAddr peerState0
                                   emptyPeerTxInFlight sharedState0
 
     step "Pipelined response must keep the txid unacked while the body batch is outstanding"
@@ -1523,11 +2082,11 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
 prop_nextPeerActionPipelined_allowsRequestOnly
   :: ArbTxDecisionPolicy
   -> Property
-prop_nextPeerActionPipelined_allowsRequestOnly (ArbTxDecisionPolicy policy0) =
+prop_nextPeerActionPipelined_allowsRequestOnly (ArbTxDecisionPolicy policy) =
   let
-    -- Cap to small windows so the property is easy to reason about.
-    policy = policy0 { maxUnacknowledgedTxIds = 4
-                     , maxNumTxIdsToRequest   = 4 }
+    -- Small windows, so the property is easy to reason about.
+    config = TxSubmissionConfig { maxNumUnacknowledgedTxIds = 4
+                                , maxNumTxIdsToRequest      = 4 }
     txid :: TxId
     txid = 1
     -- Pre-state: peer has one unacked txid that is *not* ackable
@@ -1558,7 +2117,7 @@ prop_nextPeerActionPipelined_allowsRequestOnly (ArbTxDecisionPolicy policy0) =
       }
 
     (action, _, _, _) =
-      nextPeerActionPipelined now policy peerAddr peerState0
+      nextPeerActionPipelined now policy config peerAddr peerState0
                               peerInFlight0 sharedState1
   in
     counterexample ("got: " ++ show action) $
@@ -1583,8 +2142,10 @@ unit_nextPeerActionPipelined_rejectsPureAck step = do
     step "Set up: two retained (ackable) txids in the unacked queue, request cap saturated"
     -- Make the per-message request cap small so we can saturate it with
     -- 'peerRequestedTxIds' and force the request count to zero.
-    let policy = defaultTxDecisionPolicy { maxUnacknowledgedTxIds = 8
-                                         , maxNumTxIdsToRequest   = 2 }
+    let config = defaultTxSubmissionConfigV2
+                  { maxNumUnacknowledgedTxIds = 8
+                  , maxNumTxIdsToRequest      = 2 }
+        policy = unsafeMkTxDecisionPolicy config
         txids = [(1, 64), (2, 64)] :: [(TxId, SizeInBytes)]
         sharedState0 = seedRetainedTxids policy txids emptySharedTxState
         keys = [ TxKey (unTxKey (lookupKeyOrFail txid sharedState0))
@@ -1600,7 +2161,7 @@ unit_nextPeerActionPipelined_rejectsPureAck step = do
 
     step "Run nextPeerActionPipelined"
     let (action, _, _, _) =
-          nextPeerActionPipelined now policy peerAddr peerState0
+          nextPeerActionPipelined now policy config peerAddr peerState0
                                   emptyPeerTxInFlight sharedState0
 
     step "Pure-ack pipelined message must not be emitted"
@@ -1616,8 +2177,9 @@ unit_nextPeerActionPipelined_rejectsPureAck step = do
 -- another, 'nextPeerActionPipelined' opens the second batch.
 prop_nextPeerActionPipelined_secondBodyBatch
   :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
   -> Property
-prop_nextPeerActionPipelined_secondBodyBatch (ArbTxDecisionPolicy basePolicy) =
+prop_nextPeerActionPipelined_secondBodyBatch (ArbTxDecisionPolicy basePolicy) (ArbTxSubmissionConfig config) =
   let
     policy = basePolicy
       { maxOutstandingTxBatchesPerPeer = max 2 (maxOutstandingTxBatchesPerPeer basePolicy)
@@ -1664,7 +2226,7 @@ prop_nextPeerActionPipelined_secondBodyBatch (ArbTxDecisionPolicy basePolicy) =
       }
 
     (action, _, peerInFlight', sharedState') =
-      nextPeerActionPipelined now policy peerAddr peerState0
+      nextPeerActionPipelined now policy config peerAddr peerState0
                               peerInFlight0 sharedState
   in
     counterexample ("got: " ++ show action) $
@@ -1693,8 +2255,9 @@ prop_nextPeerActionPipelined_secondBodyBatch (ArbTxDecisionPolicy basePolicy) =
 -- another even with available candidates.
 prop_nextPeerActionPipelined_noThirdBodyBatch
   :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
   -> Property
-prop_nextPeerActionPipelined_noThirdBodyBatch (ArbTxDecisionPolicy basePolicy) =
+prop_nextPeerActionPipelined_noThirdBodyBatch (ArbTxDecisionPolicy basePolicy) (ArbTxSubmissionConfig config) =
   let
     policy = basePolicy { maxOutstandingTxBatchesPerPeer = 2 }
     txSize :: SizeInBytes
@@ -1751,7 +2314,7 @@ prop_nextPeerActionPipelined_noThirdBodyBatch (ArbTxDecisionPolicy basePolicy) =
       }
 
     (action, _, _, _) =
-      nextPeerActionPipelined now policy peerAddr peerState0
+      nextPeerActionPipelined now policy config peerAddr peerState0
                               peerInFlight0 sharedState
   in
     counterexample ("got: " ++ show action) $
@@ -1768,7 +2331,8 @@ unit_nextPeerAction_skipsBlockedAvailableTxs
   :: (String -> IO ()) -> Assertion
 unit_nextPeerAction_skipsBlockedAvailableTxs step = do
     step "Set up two advertised txs: keyA leased to another peer with the cap full, keyB claimable"
-    let policy0     = defaultTxDecisionPolicy
+    let config      = defaultTxSubmissionConfigV2
+        policy0     = unsafeMkTxDecisionPolicy config
         policy      = policy0 { txInflightMultiplicity = 1 }
         peerAddr    = 7  :: PeerAddr
         otherPeer   = 8  :: PeerAddr
@@ -1806,7 +2370,7 @@ unit_nextPeerAction_skipsBlockedAvailableTxs step = do
 
     step "Run nextPeerAction"
     let (action, _, _, sharedState') =
-          nextPeerAction now policy peerAddr peerState peerInFlight sharedState
+          nextPeerAction now policy config peerAddr peerState peerInFlight sharedState
 
     step "The claimable tx is requested and leased; the blocked tx is skipped"
     case action of
@@ -1834,7 +2398,8 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
         kResolved   = unTxKey resolvedKey
         kBlocked    = unTxKey blockedKey
         blockedTx   = mkTx 2 (mkSize (Positive 10))
-        policy      = defaultTxDecisionPolicy
+        config      = defaultTxSubmissionConfigV2
+        policy      = unsafeMkTxDecisionPolicy config
         blockedEntry = TxEntry
           { txLease = TxLeased peerAddr (addTime 10 now)
           , txAttempt = 1
@@ -1864,7 +2429,7 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
 
     step "Run nextPeerAction (with the blocked tx in submission by another peer)"
     let (action, peerState', _, _) =
-          nextPeerAction now policy peerAddr peerState peerInFlight sharedState
+          nextPeerAction now policy config peerAddr peerState peerInFlight sharedState
 
     -- 'pickBufferedTxsToSubmit' finds the blocked tx buffered but in
     -- submission ('txInSubmission' set), so it skips it; the walk falls
@@ -1899,7 +2464,8 @@ unit_nextPeerAction_submitsBufferedAcrossResolvedGap step = do
         k3        = unTxKey key3
         body1     = mkTx 1 (mkSize (Positive 10))
         body3     = mkTx 3 (mkSize (Positive 10))
-        policy    = defaultTxDecisionPolicy
+        config    = defaultTxSubmissionConfigV2
+        policy    = unsafeMkTxDecisionPolicy config
         leaseTime = addTime 10 now
         entry     = TxEntry
           { txLease                        = TxLeased peerAddr leaseTime
@@ -1929,7 +2495,7 @@ unit_nextPeerAction_submitsBufferedAcrossResolvedGap step = do
 
     step "Run nextPeerAction"
     let (action, _, _, _) =
-          nextPeerAction now policy peerAddr peerState peerInFlight sharedState
+          nextPeerAction now policy config peerAddr peerState peerInFlight sharedState
 
     step "Both buffered bodies submitted in one batch"
     case action of
@@ -1944,14 +2510,14 @@ unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull
 unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
     step "Receive a fresh txid from peer A while A is already at its inflight size limit"
     let (peerAState1, peerAInFlight1, sharedState1) =
-          handleReceivedTxIds (const False) now defaultTxDecisionPolicy
+          handleReceivedTxIds (const False) now policy
             requestedToReply [(txid, txSize)]
             peerAState0 emptyPeerTxInFlight sharedState0
     txLease (lookupEntryOrFail key sharedState1) @?= TxClaimable now
 
     step "nextPeerAction for peer A: tx remains unclaimed because A is at the size cap"
     let (peerAAction, _, _, _) =
-          nextPeerAction now defaultTxDecisionPolicy peerA
+          nextPeerAction now policy config peerA
             peerAState1 peerAInFlight1 sharedState1
     case peerAAction of
       PeerDoNothing _ _ -> pure ()
@@ -1960,13 +2526,13 @@ unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
 
     step "Peer B advertises the same txid"
     let (peerBState1, peerBInFlight1, sharedState2) =
-          handleReceivedTxIds (const False) now defaultTxDecisionPolicy
+          handleReceivedTxIds (const False) now policy
             requestedToReply [(txid, txSize)]
             peerBState0 emptyPeerTxInFlight sharedState1
 
     step "nextPeerAction for peer B: claims and requests the fresh tx"
     let (peerBAction, peerBState2, peerBInFlight2, sharedState3) =
-          nextPeerAction now defaultTxDecisionPolicy peerB
+          nextPeerAction now policy config peerB
             peerBState1 peerBInFlight1 sharedState2
     case peerBAction of
       PeerRequestTxs txKeys -> do
@@ -1980,6 +2546,8 @@ unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
           Nothing -> assertFailure "entry vanished after B's claim"
       other -> assertFailure ("unexpected peer B action: " ++ show other)
   where
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
     peerA = 7 :: PeerAddr
     peerB = 8 :: PeerAddr
     txid :: TxId
@@ -1992,7 +2560,7 @@ unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
     sharedState0 = emptySharedTxState
     peerAState0 = emptyPeerTxLocalState
       { peerRequestedTxIds = requestedToReply
-      , peerRequestedTxsSize = txsSizeInflightPerPeer defaultTxDecisionPolicy
+      , peerRequestedTxsSize = txsSizeInflightPerPeer policy
       }
     peerBState0 = emptyPeerTxLocalState
       { peerRequestedTxIds = requestedToReply }
@@ -2005,7 +2573,9 @@ unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
   :: (String -> IO ()) -> Assertion
 unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
     step "Pre-state: tx leased to peer A, A is in mempoolAddTxs (post-markSubmittingTxs), B advertises the same key"
-    let txid :: TxId
+    let config = defaultTxSubmissionConfigV2
+        policy = unsafeMkTxDecisionPolicy config
+        txid :: TxId
         txid = 4
         txKeyInt :: Int
         txKeyInt = 0
@@ -2025,7 +2595,7 @@ unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
               , txAttempt = 0
               , txInSubmission = True
               , currentMaxInflightMultiplicity =
-                  txInflightMultiplicity defaultTxDecisionPolicy
+                  txInflightMultiplicity policy
               }
           }
         peerAState0 = emptyPeerTxLocalState
@@ -2047,7 +2617,7 @@ unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
 
     step "Peer A submits and the mempool rejects"
     let (peerAState', peerAInFlight', sharedStateAfter) =
-          handleSubmittedTxs now defaultTxDecisionPolicy peerA
+          handleSubmittedTxs now policy peerA
             [] [TxKey txKeyInt]
             peerAState0 peerAInFlight0 sharedState0
 
@@ -2065,7 +2635,7 @@ unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
 
     step "Peer B's nextPeerAction now claims the released tx"
     let (peerBAction, peerBState', peerBInFlight', sharedStateFinal) =
-          nextPeerAction now defaultTxDecisionPolicy peerB
+          nextPeerAction now policy config peerB
             peerBState0 peerBInFlight0 sharedStateAfter
     peerBAction @?= PeerRequestTxs [TxKey txKeyInt]
     peerRequestedTxs peerBState' @?= IntSet.singleton txKeyInt
@@ -2084,7 +2654,9 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold
   :: (String -> IO ()) -> Assertion
 unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
     step "Set up: claimableAt = now - 10ms, peer score = 20 (10ms floor claim delay), so claim at now is just allowed"
-    let peerAddr = 7 :: PeerAddr
+    let config = defaultTxSubmissionConfigV2
+        policy = unsafeMkTxDecisionPolicy config
+        peerAddr = 7 :: PeerAddr
         txid :: TxId
         txid = 1
         txSize = mkSize (Positive 10)
@@ -2100,7 +2672,7 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
               , txAttempt = 0
               , txInSubmission = False
               , currentMaxInflightMultiplicity =
-                  txInflightMultiplicity defaultTxDecisionPolicy
+                  txInflightMultiplicity policy
               }
           }
         peerState = emptyPeerTxLocalState
@@ -2114,7 +2686,7 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
 
     step "Run nextPeerAction"
     let (action, peerState', _, sharedState') =
-          nextPeerAction now defaultTxDecisionPolicy peerAddr
+          nextPeerAction now policy config peerAddr
             peerState peerInFlight sharedState
 
     step "Tx becomes claimable once the score-derived 10ms floor has elapsed"
@@ -2137,7 +2709,9 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx
   :: (String -> IO ()) -> Assertion
 unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
     step "Set up: blocked tx leased to me + buffered, but another peer is submitting it; second tx is claimable"
-    let peerAddr       = 7 :: PeerAddr
+    let config = defaultTxSubmissionConfigV2
+        policy = unsafeMkTxDecisionPolicy config
+        peerAddr       = 7 :: PeerAddr
         submittingPeer = 8 :: PeerAddr
         blockedTxid :: TxId
         blockedTxid = 1
@@ -2155,7 +2729,7 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
           , txAttempt = 1
           , txInSubmission = True   -- submittingPeer is in mempoolAddTxs
           , currentMaxInflightMultiplicity =
-              txInflightMultiplicity defaultTxDecisionPolicy
+              txInflightMultiplicity policy
           }
         sharedState = emptySharedTxState
           { sharedTxTable = IntMap.fromList
@@ -2165,7 +2739,7 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
                   , txAttempt = 0
                   , txInSubmission = False
                   , currentMaxInflightMultiplicity =
-                      txInflightMultiplicity defaultTxDecisionPolicy
+                      txInflightMultiplicity policy
                   })
               ]
           , sharedTxIdToKey = Map.fromList
@@ -2192,7 +2766,7 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
 
     step "Run nextPeerAction"
     let (action, peerState', _, sharedState') =
-          nextPeerAction now defaultTxDecisionPolicy peerAddr
+          nextPeerAction now policy config peerAddr
             peerState peerInFlight sharedState
 
     step "Blocked tx stays buffered while the claimable tx is requested"
@@ -2219,9 +2793,11 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
 -- 'nextPeerAction' call now ack-ifies the txid.
 prop_nextPeerAction_nonOwnerWaitsUntilResolved
   :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
   -> TxId
   -> Property
 prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
+                                               (ArbTxSubmissionConfig config)
                                                txid0 =
   let
     txid = abs txid0 + 1
@@ -2256,10 +2832,10 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
       }
 
     (unresolvedAction, unresolvedPeerState', _, _) =
-      nextPeerAction now policy peerAddr peerState0 peerInFlight0
+      nextPeerAction now policy config peerAddr peerState0 peerInFlight0
                      unresolvedSharedState
     (resolvedAction, resolvedPeerState', _, _) =
-      nextPeerAction now policy peerAddr peerState0 peerInFlight0
+      nextPeerAction now policy config peerAddr peerState0 peerInFlight0
                      resolvedSharedState
   in
     conjoin
@@ -2326,6 +2902,7 @@ instance Arbitrary PeerOrder where
 --     peerInFlight)@ snapshot of all three peers after each action.
 prop_nextPeerAction_claimsClaimableTx
   :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
   -> Positive Int
   -> Positive Int
   -> Positive Int
@@ -2338,6 +2915,7 @@ prop_nextPeerAction_claimsClaimableTx
   -> Property
 prop_nextPeerAction_claimsClaimableTx
     (ArbTxDecisionPolicy arbPolicy)
+    (ArbTxSubmissionConfig config)
     (Positive good0) (Positive bad0) (Positive conf0)
     txid0 txSize0 (Positive badScore0) (Positive tDecay0) (PeerOrder order)
     leaseStart =
@@ -2443,12 +3021,12 @@ prop_nextPeerAction_claimsClaimableTx
         -- Saturate the request cap so the txid picker has no work for
         -- Bad; the only relevant action is the score-derived wake from
         -- 'PeerDoNothing'.
-      , peerRequestedTxIds      = maxNumTxIdsToRequest policy
+      , peerRequestedTxIds      = maxNumTxIdsToRequest config
       }
     badInFlight0 = emptyPeerTxInFlight { pifAdvertised = IntSet.singleton k }
 
     confPeerState0 = emptyPeerTxLocalState
-      { peerRequestedTxIds = maxNumTxIdsToRequest policy
+      { peerRequestedTxIds = maxNumTxIdsToRequest config
       }
     confInFlight0 = emptyPeerTxInFlight
 
@@ -2464,7 +3042,7 @@ prop_nextPeerAction_claimsClaimableTx
     runOne (ss, acc) role =
       let (peer, ps0, pif0) = roleSetup role
           (action, ps', pif', ss') =
-            nextPeerAction now policy peer ps0 pif0 ss
+            nextPeerAction now policy config peer ps0 pif0 ss
       in (ss', (role, action, ps', pif') : acc)
 
     (sharedStateFinal, results) = List.foldl' runOne (sharedState0, []) order
@@ -2790,7 +3368,7 @@ normaliseScenario = dedupeAcrossPeers . Map.map normaliseTriggers
 
 -- | Policy used by the 'TriggerScenario' meta-tests.
 metaPolicy :: TxDecisionPolicy
-metaPolicy = defaultTxDecisionPolicy { txInflightMultiplicity = 2 }
+metaPolicy = (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2) { txInflightMultiplicity = 2 }
 
 prop_TriggerScenario_validInitialState :: TriggerScenario -> Property
 prop_TriggerScenario_validInitialState (TriggerScenario _ rawPerPeer) =
@@ -2834,10 +3412,13 @@ prop_TriggerScenario_shrinkExcludesOriginal ts =
 --      peer and after the acting peer's update at every step.
 prop_nextPeerAction_processesAllTriggers
   :: ArbTxDecisionPolicy
+  -> ArbTxSubmissionConfig
   -> TriggerScenario
   -> Property
 prop_nextPeerAction_processesAllTriggers
-    (ArbTxDecisionPolicy arbPolicy) (TriggerScenario mode rawPerPeer) =
+    (ArbTxDecisionPolicy arbPolicy)
+    (ArbTxSubmissionConfig config)
+    (TriggerScenario mode rawPerPeer) =
       tabulate "trigger count" [bucket totalTriggers]
     . tabulate "peer count"    [show nPeers]
     . tabulate "iterations"    [bucket iterations]
@@ -2986,7 +3567,7 @@ prop_nextPeerAction_processesAllTriggers
                            , [(stepD, p, drainInv)], stepD )
 
                   (action, ps', pif', ss') =
-                    nextPeerAction time policy p psPre pifPre ssPre
+                    nextPeerAction time policy config p psPre pifPre ssPre
                   oldUnacked = peerUnacknowledgedTxIds psPre
                   newUnacked = peerUnacknowledgedTxIds ps'
                   numAcked   = StrictSeq.length oldUnacked
@@ -3171,7 +3752,7 @@ genLeasedTxEntry peeraddrs = do
       txAttempt = if inSub then 0 else 1,
       txInSubmission = inSub,
       currentMaxInflightMultiplicity =
-        txInflightMultiplicity defaultTxDecisionPolicy
+        txInflightMultiplicity (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
     }
 
 -- Generate a claimable entry with no in-flight attempt.
@@ -3183,7 +3764,7 @@ genClaimableTxEntry = do
       txAttempt = 0,
       txInSubmission = False,
       currentMaxInflightMultiplicity =
-        txInflightMultiplicity defaultTxDecisionPolicy
+        txInflightMultiplicity (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
     }
 
 -- Rebuild a shared state from tx-centric fixtures while preserving interned keys.
@@ -3480,7 +4061,7 @@ runReceiveDuplicateLoop iterations ReceiveDuplicateFixture
             handleReceivedTxIds
               (const False)
               (iterationTime n)
-              defaultTxDecisionPolicy
+              (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
               rdfRequestedTxIds
               rdfTxidsAndSizes
               rdfPeerState
@@ -3497,10 +4078,12 @@ runPeerActionLoop iterations PeerActionFixture
   } =
     go iterations
   where
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
     go 0 = pure ()
     go n = do
       let result =
-            nextPeerAction (iterationTime n) defaultTxDecisionPolicy pafPeerAddr
+            nextPeerAction (iterationTime n) policy config pafPeerAddr
               pafPeerState emptyPeerTxInFlight pafSharedState
       _ <- evaluate (rnf result)
       go (n - 1)
@@ -3514,6 +4097,8 @@ runFanoutLoop iterations FanoutFixture
   } =
     go iterations
   where
+    config = defaultTxSubmissionConfigV2
+    policy = unsafeMkTxDecisionPolicy config
     go 0 = pure ()
     go n = do
       _ <- evaluate (rnf (roundResult (iterationTime n)))
@@ -3541,7 +4126,7 @@ runFanoutLoop iterations FanoutFixture
             handleReceivedTxIds
               (const False)
               iterNow
-              defaultTxDecisionPolicy
+              policy
               ffRequestedTxIds
               ffTxidsAndSizes
               peerState0
@@ -3556,7 +4141,7 @@ runFanoutLoop iterations FanoutFixture
       -> ([(PeerAddr, PeerAction, PeerTxLocalState (Tx TxId))], SharedTxState PeerAddr TxId)
     acknowledgeOne iterNow (!ackResultsAcc, !sharedStateAcc) (peeraddr, peerState0, peerInFlight0) =
       let !(peerAction, peerState', _peerInFlight', sharedStateAcc') =
-            nextPeerAction iterNow defaultTxDecisionPolicy peeraddr
+            nextPeerAction iterNow policy config peeraddr
               peerState0 peerInFlight0 sharedStateAcc
       in ( (peeraddr, peerAction, peerState') : ackResultsAcc
          , sharedStateAcc'
@@ -3592,7 +4177,7 @@ mkActiveSharedState _allPeers ownerPeer _resolvedAdvertisers txidsAndSizes =
       , txAttempt = 1
       , txInSubmission = False
       , currentMaxInflightMultiplicity =
-          txInflightMultiplicity defaultTxDecisionPolicy
+          txInflightMultiplicity (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
       }
 
 -- Resolve all active txs into retained entries so non-owner peers may safely
@@ -3605,7 +4190,7 @@ retainAllActiveTxs st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedGe
       sharedGeneration = sharedGeneration + 1
     }
   where
-    retainUntil = addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
+    retainUntil = addTime (bufferedTxsMinLifetime (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)) now
 
     retainOne retainedAcc k _ =
       retainedInsertMax k retainUntil retainedAcc

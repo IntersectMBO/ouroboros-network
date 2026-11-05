@@ -110,7 +110,8 @@ import System.IO qualified as IO
 import System.Random (initStdGen)
 import Text.Read (readMaybe)
 
-import Cardano.Network.Diffusion.Configuration (defaultChainSyncIdleTimeout)
+import Cardano.Network.Diffusion.Configuration (NodeTxSubmissionConfig (..),
+           defaultChainSyncIdleTimeout, mkDefaultMiniProtocolParameters)
 import Cardano.Network.NodeToClient qualified as NodeToClient
 import Cardano.Network.NodeToClient.Version
 import Cardano.Network.NodeToNode qualified as NodeToNode
@@ -1130,6 +1131,18 @@ pingClient stdout infoTracer headerTracer stderr opts addrInfo = do
   pingClient' stdout infoTracer headerTracer stderr opts signalVar addrInfo
 
 
+-- | `MiniProtocolParameters` used by ping.  Ping only uses the chain-sync and
+-- keep-alive limits, which don't depend on the tx-submission settings.
+--
+pingMiniProtocolParameters :: NodeToNode.MiniProtocolParameters
+pingMiniProtocolParameters =
+    mkDefaultMiniProtocolParameters
+    minBound -- ping doesn't run even the tx-submission outbound side
+    NodeTxSubmissionConfig {
+      maxNumUnacknowledgedTxIds = 1,
+      maxNumTxIdsToRequest      = 1
+    }
+
 -- | Low level API to run a single ping client.
 --
 pingClient'
@@ -1249,7 +1262,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                      query         = case pingOptsMode of
                                         QueryMode -> True
                                         _         -> False,
-                     perasSupport  = if versionNumber >= NodeToNodeV_16
+                     perasSupport  = if versionNumber >= minPerasVersion
                                      then PerasSupported
                                      else PerasUnsupported
                    }
@@ -1319,7 +1332,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                                                        NodeToClient -> NodeToClient.localChainSyncMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
                             miniProtocolLimits     = case protocol of
-                                                       NodeToNode -> NodeToNode.chainSyncProtocolLimits NodeToNode.defaultMiniProtocolParameters
+                                                       NodeToNode -> NodeToNode.chainSyncProtocolLimits version pingMiniProtocolParameters
                                                        NodeToClient -> NodeToClient.maximumMiniProtocolLimits,
                             miniProtocolCapability = Nothing
                           }]
@@ -1350,7 +1363,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
 
                 (NodeToNode, PingMode) -> do
                   --
-                  -- run keepalive client to get RTT samples
+                  -- run keep-alive client to get RTT samples
                   --
                   mx <- Mx.new
                           Mx.nullTracers
@@ -1358,7 +1371,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                           [MiniProtocolInfo {
                             miniProtocolNum        = NodeToNode.keepAliveMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
-                            miniProtocolLimits     = NodeToNode.keepAliveProtocolLimits NodeToNode.defaultMiniProtocolParameters,
+                            miniProtocolLimits     = NodeToNode.keepAliveProtocolLimits version pingMiniProtocolParameters,
                             miniProtocolCapability = Nothing
                           }]
                   withAsync (Mx.run mx bearer) $ \_ ->

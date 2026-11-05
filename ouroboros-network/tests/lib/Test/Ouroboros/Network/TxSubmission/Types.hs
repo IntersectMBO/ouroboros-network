@@ -26,6 +26,15 @@ module Test.Ouroboros.Network.TxSubmission.Types
   , txSubmissionCodec2
   , evaluateTrace
   , verboseTracer
+  , TxSubmissionConfig (..)
+  , ArbTxSubmissionConfig (..)
+  , ArbTxOutboundVersion (..)
+  , ArbTxSubmissionConfigs (..)
+  , RequestTxIdsEvent (..)
+  , OutboundRequest (..)
+  , requestTxIdsEvents
+  , traceOutboundRequests
+  , unsafeMkTxDecisionPolicy
   ) where
 
 import Prelude hiding (seq)
@@ -43,7 +52,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
-import Control.Tracer (Tracer)
+import Control.Tracer (Tracer, traceWith)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -56,16 +65,21 @@ import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+import GHC.Stack (HasCallStack)
 
 import Network.TypedProtocol.Codec
 
+import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V1
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy,
+           mkTxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
+import Ouroboros.Network.TxSubmission.Outbound (TxOutboundVersion (..))
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.Ouroboros.Network.Utils (WithThreadAndTime (..), sayTracer,
@@ -322,3 +336,173 @@ verboseTracer :: forall a m.
                        )
                => Tracer m a
 verboseTracer = tracerWithThreadAndTime sayTracer
+
+
+newtype ArbTxSubmissionConfig = ArbTxSubmissionConfig TxSubmissionConfig
+  deriving Show
+
+instance Arbitrary ArbTxSubmissionConfig where
+  arbitrary =
+    fmap ArbTxSubmissionConfig $
+    TxSubmissionConfig <$> (getSmall . getPositive <$> arbitrary)
+                       <*> (getSmall . getPositive <$> arbitrary)
+
+  shrink (ArbTxSubmissionConfig config) =
+    fmap ArbTxSubmissionConfig $
+    [ config { maxNumUnacknowledgedTxIds = x }
+    | (Positive (Small x)) <- shrink (Positive (Small (maxNumUnacknowledgedTxIds config)))
+    ]
+    ++
+    [ config { maxNumTxIdsToRequest = x }
+    | (Positive (Small x)) <- shrink (Positive (Small (maxNumTxIdsToRequest config)))
+    ]
+
+
+
+newtype ArbTxOutboundVersion = ArbTxOutboundVersion TxOutboundVersion
+  deriving Show
+
+instance Arbitrary ArbTxOutboundVersion  where
+  arbitrary = ArbTxOutboundVersion <$> elements [minBound..maxBound]
+  shrink (ArbTxOutboundVersion v) =
+    fmap ArbTxOutboundVersion $
+    case v of
+      TxOutboundV_1 -> []
+      TxOutboundV_2 -> [TxOutboundV_1]
+
+
+-- | A `TxOutboundVersion` and two configs, e.g. the inbound's and the
+-- outbound's, or two nodes'.  Under `TxOutboundV_1` the window is a protocol
+-- parameter, so both share the config.  Under `TxOutboundV_2` the second has
+-- its own window, mostly not larger than the first's, so that the second
+-- clamps the first's requests.
+--
+data ArbTxSubmissionConfigs =
+    ArbTxSubmissionConfigs TxOutboundVersion
+                           TxSubmissionConfig
+                           -- ^ the first config, e.g. the inbound's
+                           TxSubmissionConfig
+                           -- ^ the second config, e.g. the outbound's
+  deriving Show
+
+instance Arbitrary ArbTxSubmissionConfigs where
+  arbitrary = do
+    ArbTxOutboundVersion version <- arbitrary
+    ArbTxSubmissionConfig inboundConfig <- arbitrary
+    case version of
+      TxOutboundV_1 ->
+        pure (ArbTxSubmissionConfigs version inboundConfig inboundConfig)
+      TxOutboundV_2 -> do
+        let NumTxIdsToAck window = maxNumUnacknowledgedTxIds inboundConfig
+        outboundWindow <- frequency
+          [ (3, choose (1, window))
+          , (1, choose (1, 2 * window))
+          ]
+        pure $ ArbTxSubmissionConfigs version inboundConfig
+                 inboundConfig { maxNumUnacknowledgedTxIds =
+                                   NumTxIdsToAck outboundWindow }
+
+  shrink (ArbTxSubmissionConfigs version inboundConfig outboundConfig) =
+    case version of
+      TxOutboundV_1 ->
+        [ ArbTxSubmissionConfigs version config config
+        | ArbTxSubmissionConfig config <-
+            shrink (ArbTxSubmissionConfig inboundConfig)
+        ]
+      TxOutboundV_2 ->
+           [ ArbTxSubmissionConfigs TxOutboundV_1 inboundConfig inboundConfig ]
+        ++ [ ArbTxSubmissionConfigs version inboundConfig outboundConfig
+               { maxNumUnacknowledgedTxIds = NumTxIdsToAck window }
+           | window <- shrink (getNumTxIdsToAck
+                                 (maxNumUnacknowledgedTxIds outboundConfig))
+           , window >= 1
+           ]
+        ++ [ ArbTxSubmissionConfigs version config outboundConfig
+           | ArbTxSubmissionConfig config <-
+               shrink (ArbTxSubmissionConfig inboundConfig)
+           ]
+
+
+-- | How the outbound handles a `MsgRequestTxIds`, given its own window.
+--
+data RequestTxIdsEvent =
+    NotClamped
+    -- ^ the requested txids fit within the window
+  | Clamped
+    -- ^ the request is clamped to the room left in the window
+  | ClampedToZero
+    -- ^ the window is full: the request is clamped to no txids
+  deriving (Eq, Show)
+
+-- | A request received by the outbound, traced by
+-- `traceOutboundRequests`.
+--
+data OutboundRequest =
+    RequestTxIds Bool NumTxIdsToAck NumTxIdsToReq RequestTxIdsEvent Int
+    -- ^ a `MsgRequestTxIds`: whether it is blocking, the acknowledged and
+    -- requested numbers, how the outbound handles it given its window, and
+    -- the number of txids in the reply
+  | RequestTxs Int
+    -- ^ a `MsgRequestTxs`, with the number of txs in the reply
+  deriving (Eq, Show)
+
+requestTxIdsEvents :: [OutboundRequest] -> [RequestTxIdsEvent]
+requestTxIdsEvents requests =
+    [ event | RequestTxIds _ _ _ event _ <- requests ]
+
+-- | Wrap an outbound, tracing every request it receives.  The number of
+-- unacknowledged txids is tracked from the acknowledged and requested
+-- numbers and the lengths of the replies, as the outbound does.
+--
+traceOutboundRequests :: forall txid tx m a.
+                         Monad m
+                      => Tracer m OutboundRequest
+                      -> NumTxIdsToAck
+                      -- ^ the outbound's window
+                      -> TxSubmissionClient txid tx m a
+                      -> TxSubmissionClient txid tx m a
+traceOutboundRequests tracer (NumTxIdsToAck window) (TxSubmissionClient client) =
+    TxSubmissionClient (go 0 <$> client)
+  where
+    go :: Int -> ClientStIdle txid tx m a -> ClientStIdle txid tx m a
+    go unacked ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs } =
+      ClientStIdle {
+        recvMsgRequestTxIds = \blocking ackNo reqNo -> do
+          let unacked' = unacked - fromIntegral ackNo
+              room     = fromIntegral window - unacked'
+              event | fromIntegral reqNo <= room = NotClamped
+                    | room <= 0                  = ClampedToZero
+                    | otherwise                  = Clamped
+              isBlocking = case blocking of
+                SingBlocking    -> True
+                SingNonBlocking -> False
+          reply <- recvMsgRequestTxIds blocking ackNo reqNo
+          case reply of
+            SendMsgReplyTxIds txids k -> do
+              let n = case txids of
+                        BlockingReply    txids' -> length txids'
+                        NonBlockingReply txids' -> length txids'
+              traceWith tracer (RequestTxIds isBlocking ackNo reqNo event n)
+              pure (SendMsgReplyTxIds txids (go (unacked' + n) k))
+            SendMsgDone a -> do
+              traceWith tracer (RequestTxIds isBlocking ackNo reqNo event 0)
+              pure (SendMsgDone a),
+
+        recvMsgRequestTxs = \txids -> do
+          reply <- recvMsgRequestTxs txids
+          case reply of
+            SendMsgReplyTxs txs k -> do
+              traceWith tracer (RequestTxs (length txs))
+              pure (SendMsgReplyTxs txs (go unacked k))
+      }
+
+
+-- | `mkTxDecisionPolicy` for a config which a test knows to be sane.
+--
+unsafeMkTxDecisionPolicy :: HasCallStack
+                         => TxSubmissionConfig
+                         -> TxDecisionPolicy
+unsafeMkTxDecisionPolicy config =
+    case mkTxDecisionPolicy config of
+      Right policy -> policy
+      Left err     -> error ("mkTxDecisionPolicy: " ++ show err)

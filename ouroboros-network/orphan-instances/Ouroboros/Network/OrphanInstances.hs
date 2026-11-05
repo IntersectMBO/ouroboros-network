@@ -1853,6 +1853,11 @@ instance ( ToJSON txid
     object
       [ "kind" .= String "TxInboundTerminated"
       ]
+  toJSON (TraceTxInboundMaxNumTxsToRequestClamped (Tx.NumTxsToReq reqs)) =
+    object
+      [ "kind" .= String "TxInboundMaxNumTxsToRequestClamped"
+      , "numTxsToRequest" .= reqs
+      ]
 
 traceSharedTxStateToJSON
   :: (Show addr, Show txid, HasRawTxId txid)
