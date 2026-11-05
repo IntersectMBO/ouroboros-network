@@ -1,26 +1,57 @@
--- Register delay, API around `GHC.Conc.registerDelay`
+{-# LANGUAGE NamedFieldPuns #-}
+
+-- | A registered delay: an API around the timer library's cancellable
+-- delay, 'registerDelayCancellable'.  For any delay an 'Int' of
+-- microseconds holds, which on a 64-bit machine is every delay there is,
+-- the library's IO instance registers one timeout with GHC's timer
+-- manager and a cancel unregisters it, on the platforms that have the
+-- manager; on Windows the timeout is a thread of the runtime's, which a
+-- cancel leaves to run out, marking the delay cancelled.  Beyond that
+-- bound it forks a thread, and a cancel only stops that thread's write.
 --
 -- The module should be imported qualified.
 module Ouroboros.Network.RegisteredDelay where
 
-import Control.Concurrent.Class.MonadSTM as LazySTM
+import Control.Concurrent.Class.MonadSTM
 import Control.Monad ((>=>))
 import Control.Monad.Class.MonadTimer.SI
 import Prelude hiding (read)
 
-newtype RegisteredDelay m = RegisteredDelay { registeredDelayVar :: LazySTM.TVar m Bool }
+-- | A delay registered with the timer manager: its state, and its
+-- cancellation.
+data RegisteredDelay m = RegisteredDelay {
+    registeredDelayState :: STM m TimeoutState,
+    cancelRegistered     :: m ()
+  }
 
+-- | Register a delay.  A non-positive one is fired at birth and registers
+-- nothing.
 new :: MonadTimer m
     => DiffTime
     -> m (RegisteredDelay m)
-new = fmap RegisteredDelay . registerDelay
+new d
+  | d <= 0    = pure RegisteredDelay { registeredDelayState = pure TimeoutFired
+                                     , cancelRegistered     = pure () }
+  | otherwise = do
+      (state, cancelIt) <- registerDelayCancellable d
+      pure RegisteredDelay { registeredDelayState = state, cancelRegistered = cancelIt }
 
+-- | Whether the delay has fired; a cancelled one never has.
 read :: MonadSTM m
      => RegisteredDelay m
      -> STM m Bool
-read = LazySTM.readTVar . registeredDelayVar
+read = fmap (== TimeoutFired) . registeredDelayState
 
 await :: MonadSTM m
       => RegisteredDelay m
       -> STM m ()
 await = read >=> check
+
+-- | Cancel the delay while it is pending; one fired or cancelled already
+-- is left as it is.
+cancel :: MonadSTM m
+       => RegisteredDelay m
+       -> m ()
+cancel RegisteredDelay { registeredDelayState, cancelRegistered } = do
+    pending <- atomically ((== TimeoutPending) <$> registeredDelayState)
+    if pending then cancelRegistered else pure ()
