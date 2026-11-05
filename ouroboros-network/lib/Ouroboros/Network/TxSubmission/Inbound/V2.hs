@@ -204,24 +204,16 @@ txSubmissionInboundV2
           (State.drainPeerScore policy now peerState')
       case peerAction of
            ResolvedDoNothing mDelay counter seen -> do
-             -- An Active->Idle transition means this peer has just become
-             -- eligible for actions it could not take before (e.g. claiming
-             -- expired leases as an idle claimant). Re-run the scheduler
-             -- immediately rather than parking on a wake condition that may
-             -- not fire.
-             let cameToIdle = peerPhase peerState' /= PeerIdle
-                           && peerPhase peerState'' == PeerIdle
-             if cameToIdle
-                then continueWithStateM serverIdle peerState''
-                else do
-                  mRegisteredDelay <- traverse RegisteredDelay.new mDelay
-                  -- on the counter the decision chose: the claimable one
-                  -- when the slow tier's gate alone held a txid request, so
-                  -- that the peer waits for the gate or for an entry
-                  -- becoming claimable, not for every move of the wake
-                  -- counter
-                  atomically $ awaitPark counter seen mRegisteredDelay
-                  continueWithStateM serverIdle peerState''
+             -- Park at once: a second decision could find nothing this
+             -- one did not, since the counter's value was read in its
+             -- transaction and its delay is the earliest timed wake.  On
+             -- the counter the decision chose: the claimable one when the
+             -- slow tier's gate alone held a txid request, so that the
+             -- peer waits for the gate or for an entry becoming claimable,
+             -- not for every move of the wake counter.
+             mRegisteredDelay <- traverse RegisteredDelay.new mDelay
+             atomically $ awaitPark counter seen mRegisteredDelay
+             continueWithStateM serverIdle peerState''
            ResolvedSubmitTxs bufferedTxs ->
              continueWithStateM (submitBufferedTxs bufferedTxs serverIdle) peerState''
            ResolvedRequestTxs txsToRequest ->
