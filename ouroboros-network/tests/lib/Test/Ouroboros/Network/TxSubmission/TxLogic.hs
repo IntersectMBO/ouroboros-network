@@ -234,6 +234,8 @@ tests =
         , testProperty "a resolved decision carries no thunk" prop_resolve_noThunks
         , testProperty "the server parks straight after a decision with nothing to do" prop_server_oneDecisionPerWake
         , testProperty "the slow gate runs from the send: the second txid request goes out a wait after the first whatever held the first decision's trace" prop_server_gateFromSend
+        , testProperty "a park keeps its timer across wakes, registers one for a later deadline, swaps it for an earlier one, cancels the one it leaves" prop_server_parkKeepsTimer
+        , testProperty "a registered delay fires at its time, a cancelled one never, a non-positive one at birth" prop_registeredDelay
         , testProperty "the counters thread refuses a policy that fails the sanity check" prop_countersThread_refusesInsane
         ]
     , testGroup "Claimable"
@@ -8670,7 +8672,6 @@ prop_server_gateFromSend (ArbTxDecisionPolicy policy0) (NonNegative hold0) =
       , sharedNextTxKey   = 1
       }
 
-
 -- | The stretches of a sim trace one after the other, each the events
 -- between a 'StretchStart' and the 'StretchEnd' after it and whether it
 -- ended; one that never ends is the last.
@@ -8780,6 +8781,216 @@ prop_server_oneDecisionPerWake (ArbTxDecisionPolicy policy0) isRoot (Positive re
                     Nothing -> traceM Returned
                 Nothing -> traceM Returned
           Nothing -> pure ()
+
+-- | The shared state's entry for a key released: claimable long ago, its
+-- attempt taken back, both counters moved, as a rejection does, through
+-- the registry.
+releaseLease :: PeerTxRegistry (IOSim s) PeerAddr
+             -> SharedTxStateVar (IOSim s) PeerAddr TxId
+             -> Int
+             -> IOSim s ()
+releaseLease registry sharedVar k = atomically $ do
+    st <- readTVar sharedVar
+    writeSharedStateIfChanged (registryMirrors registry) sharedVar (sharedRevision st)
+      st { sharedTxTable    = IntMap.adjust released k (sharedTxTable st)
+         , sharedGeneration = sharedGeneration st + 1
+         , sharedClaimable  = sharedClaimable st + 1
+         , sharedRevision   = sharedRevision st + 1 }
+  where
+    released e = e { txLease = TxClaimable (Time 0), txAttempt = 0 }
+
+-- | Timers registered and cancelled in a stretch of a sim trace, the
+-- registered delays of the old wrapper counted as registrations too.
+timerOps :: [SimEventType] -> (Int, Int)
+timerOps inside =
+    ( length [ () | e <- inside, created e ]
+    , length [ () | EventTimerCancelled {} <- inside ] )
+  where
+    created EventTimerCreated {}         = True
+    created EventRegisterDelayCreated {} = True
+    created _                            = False
+
+-- | The expiry times of the timers registered in a stretch of a sim
+-- trace, the registered delays of the old wrapper included, in order.
+timerExpiries :: [SimEventType] -> [Time]
+timerExpiries inside =
+    [ expiry | e <- inside, expiry <- case e of
+                                        EventTimerCreated _ _ expiry         -> [expiry]
+                                        EventRegisterDelayCreated _ _ expiry -> [expiry]
+                                        _                                    -> [] ]
+
+-- | The shared state's entry for a key leased elsewhere until a given
+-- time, the wake counter moved, through the registry: the claim time an
+-- advertiser waits for moves with the lease.
+shortenLease :: PeerTxRegistry (IOSim s) PeerAddr
+             -> SharedTxStateVar (IOSim s) PeerAddr TxId
+             -> Int
+             -> Time
+             -> IOSim s ()
+shortenLease registry sharedVar k leaseUntil = atomically $ do
+    st <- readTVar sharedVar
+    writeSharedStateIfChanged (registryMirrors registry) sharedVar (sharedRevision st)
+      st { sharedTxTable    = IntMap.adjust shortened k (sharedTxTable st)
+         , sharedGeneration = sharedGeneration st + 1
+         , sharedRevision   = sharedRevision st + 1 }
+  where
+    shortened e = e { txLease = TxLeased 9 leaseUntil }
+
+-- | A gated park's trial: the claimable bumps while the gate holds, how
+-- many txids one request asks for and how many the reply brings, up to
+-- that, the cadence in seconds, longer than the bumps take, and the time
+-- in seconds a lease is shortened to, past the end of the stretch that
+-- shortens it and before the leases' own end.
+data ParkTimerCase = ParkTimerCase Int Int Int Int Int
+  deriving Show
+
+instance Arbitrary ParkTimerCase where
+  arbitrary = do
+    bumps     <- choose (1, 8)
+    req       <- choose (1, 10)
+    k         <- choose (1, req)
+    cadence   <- choose (2, 10)
+    shortened <- choose (cadence + 3, 99)
+    pure (ParkTimerCase bumps req k cadence shortened)
+  shrink (ParkTimerCase bumps req k cadence shortened) =
+       [ ParkTimerCase bumps' req k cadence shortened | bumps' <- shrink bumps, bumps' >= 1 ]
+    ++ [ ParkTimerCase bumps req' (min k req') cadence shortened | req' <- shrink req, req' >= 1 ]
+    ++ [ ParkTimerCase bumps req k' cadence shortened | k' <- shrink k, k' >= 1 ]
+    ++ [ ParkTimerCase bumps req k cadence' shortened | cadence' <- shrink cadence, cadence' >= 2 ]
+    ++ [ ParkTimerCase bumps req k cadence shortened' | shortened' <- shrink shortened, shortened' >= cadence + 3 ]
+
+-- | A gated slow peer's park keeps its timer across claimable bumps: over
+-- so many bumps one timer is registered, for the gate, and none
+-- cancelled; once the gate passes the peer, its txids still unacked,
+-- parks again until a lease's claim time, a later deadline, so one more
+-- timer, for that time, the fired one left alone; a lease shortened
+-- moves that deadline earlier, so the timer it held is cancelled and one
+-- registered for the new deadline; and when a released lease lets it
+-- leave the park with a body request, the timer it held is cancelled.
+-- Four stretches of one run, from the sim trace: the timers registered
+-- in each, by their expiry, and the ones cancelled.
+prop_server_parkKeepsTimer :: ParkTimerCase -> Property
+prop_server_parkKeepsTimer (ParkTimerCase bumps req k cadence shortened) =
+    counterexample (show (ended, ops, expiries, decided)) $
+      conjoin (map property ended) .&&. ops === [(1, 0), (1, 0), (1, 1), (0, 1)]
+      .&&. counterexample "the timers registered, by expiry: the gate, the claim time, the shortened lease's, none"
+             (expiries === [[gateAt], [claimAt], [shortenedAt], []])
+      .&&. counterexample "the first stretch's decisions: one per bump and the park's own"
+             (take 1 decided === [bumps + 1])
+  where
+    decided = [ length [ () | EventLog dyn <- inside, fromDynamic dyn == Just Decided ]
+              | (_, inside) <- stretches ]
+    -- the deadlines: the gate the first request sets at time zero, the
+    -- claim time of the leases 'leasedElsewhere' gives, and the
+    -- shortened lease's
+    gateAt      = Time (fromIntegral cadence)
+    claimAt     = Time 100
+    shortenedAt = Time (fromIntegral shortened)
+    txids  = [1 .. k]
+    config = defaultTxSubmissionConfigV2 { maxNumTxIdsToRequest = fromIntegral req }
+    policy = (unsafeMkTxDecisionPolicy config)
+               { txFastPeers = 0, txSourceCount = 0
+               , txSlowCadence = fromIntegral cadence, txSlowJitter = 0 }
+    stretches = unfoldStretches (traceEvents trace)
+    ended = map fst stretches
+    ops   = map (timerOps . snd) stretches
+    expiries = map (timerExpiries . snd) stretches
+    -- the stretches one after the other; one that never ends is the last,
+    -- since the run has not come to rest
+    unfoldStretches events = case stretchOf events of
+      (False, inside) | null inside -> []
+      (False, inside) -> [(False, inside)]
+      (True, inside)  -> (True, inside) : unfoldStretches (drop 1 (dropWhile (not . isEnd) events))
+    isEnd (_, _, _, EventLog dyn) = fromDynamic dyn == Just StretchEnd
+    isEnd _                       = False
+    reply = NonEmpty.fromList [ (txid, 100) | txid <- txids ]
+    trace = runSimTrace $ do
+      registry  <- newPeerAddrRegistry (mkStdGen 7)
+      sharedVar <- newSharedTxStateVar (leasedElsewhere txids)
+      retired   <- newTxSubmissionCountersVar mempty
+      mempool   <- emptyMempool
+      withPeer policy config (getMempoolReader mempool)
+               sharedVar registry retired (0 :: PeerAddr) $
+        \api -> do
+        st <- startServer api policy mempool
+        case blockingTxIdRequest st of
+          Just answer -> do
+            -- 1: the reply's continuation parks on the gate; each bump
+            -- wakes it and it parks again on the same gate
+            traceM StretchStart
+            withAsync (answer reply) $ \parked -> do
+              forM_ [1 .. bumps] $ \_ -> do
+                threadDelay 0.1
+                bumpCounter registry sharedVar ClaimableCounter
+              threadDelay 0.1
+              traceM StretchEnd
+              -- 2: the gate passes and its timer fires; with the txids
+              -- still unacked there is nothing to request, and the peer
+              -- parks on the wake counter until a lease's claim time
+              traceM StretchStart
+              threadDelay (fromIntegral cadence + 1)
+              traceM StretchEnd
+              -- 3: the last key's lease shortened, the wake counter moved
+              -- with it: the peer parks again until the earlier claim
+              -- time, cancelling the timer it held for the later one
+              traceM StretchStart
+              shortenLease registry sharedVar (k - 1) shortenedAt
+              threadDelay 0.1
+              traceM StretchEnd
+              -- 4: a lease released wakes it to a body request: it leaves
+              -- the park and cancels the timer it held
+              traceM StretchStart
+              releaseLease registry sharedVar 0
+              _ <- Async.wait parked
+              traceM StretchEnd
+          Nothing -> pure ()
+
+-- | A registered delay fires at its time and not before: the one timer
+-- it registers expires exactly the delay after its birth; a cancelled
+-- one never, its timer cancelled; a non-positive one at birth, whatever
+-- is done to it, with no timer registered.
+prop_registeredDelay :: DelayMs -> Bool -> Property
+prop_registeredDelay (DelayMs ms) cancelled =
+      checkCoverage
+    $ cover 10 (d <= 0) "non-positive"
+    $ cover 20 (d > 0 && cancelled) "cancelled"
+    $ cover 20 (d > 0 && not cancelled) "fires"
+    $ counterexample (show (d, cancelled, registered, cancellations))
+    $ case traceResult False trace of
+        Left e -> counterexample (show e) False
+        Right (start, atBirth, halfway, after) -> conjoin
+          [ counterexample "at birth" (atBirth === (d <= 0))
+          , counterexample "halfway" (halfway === (d <= 0))
+          , counterexample "after" (after === (d <= 0 || not cancelled))
+          , counterexample "the timer registered, by expiry"
+              (registered === [ d `addTime` start | d > 0 ])
+          , counterexample "the timer cancelled"
+              (cancellations === length [ () | d > 0, cancelled ])
+          ]
+  where
+    d = fromIntegral ms / 1000 :: DiffTime
+    trace = runSimTrace $ do
+      start <- getMonotonicTime
+      delay <- RegisteredDelay.new d
+      atBirth <- atomically (RegisteredDelay.read delay)
+      when cancelled (RegisteredDelay.cancel delay)
+      threadDelay (max 0 d / 2)
+      halfway <- atomically (RegisteredDelay.read delay)
+      threadDelay (max 0 d / 2 + 0.001)
+      after <- atomically (RegisteredDelay.read delay)
+      pure (start, atBirth, halfway, after)
+    events        = [ e | (_, _, _, e) <- traceEvents trace ]
+    registered    = timerExpiries events
+    cancellations = length [ () | EventTimerCancelled {} <- events ]
+
+-- | A delay in milliseconds: zero, a few, up to three seconds, or
+-- negative.
+newtype DelayMs = DelayMs Int
+  deriving Show
+
+instance Arbitrary DelayMs where
+  arbitrary = DelayMs <$> frequency [ (1, pure 0), (2, choose (1, 50)), (4, choose (51, 2999)), (1, choose (-500, -1)) ]
+  shrink (DelayMs ms) = [ DelayMs ms' | ms' <- shrink ms ]
 
 -- | The census counts each standing once and classifies root before coin
 -- before source, against explicit counts over generated peers, the
