@@ -11,22 +11,24 @@ module Cardano.Network.Diffusion.Configuration
   , defaultSyncTargets
   , defaultNumberOfBigLedgerPeers
   , defaultChainSyncIdleTimeout
-  , defaultBlockFetchConfiguration
-  , defaultMiniProtocolParameters
+  , mkDefaultBlockFetchConfiguration
+  , mkDefaultMiniProtocolParameters
   , TxSubmissionLogicVersion (..)
   , defaultTxSubmissionLogicVersion
+  , defaultNodeTxSubmissionConfig
   , srvPrefix
     -- * Re-exports
   , ChainSyncIdleTimeout (..)
   , BlockFetchConfiguration (..)
   , MiniProtocolParameters (..)
+  , NodeTxSubmissionConfig (..)
   , Salt
   , mkSalt
   , mkSaltIO
   ) where
 
 import Cardano.Network.NodeToNode (MiniProtocolParameters (..),
-           defaultMiniProtocolParameters)
+           NodeTxSubmissionConfig (..), mkDefaultMiniProtocolParameters)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (NumberOfBigLedgerPeers (..))
 
@@ -37,6 +39,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
 import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncIdleTimeout (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy qualified as V2
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TxSubmissionLogicVersion (..))
 
@@ -84,14 +87,19 @@ srvPrefix :: SRVPrefix
 srvPrefix = "_cardano._tcp"
 
 
--- | Configuration for FetchDecisionPolicy.
+-- | Configuration for FetchDecisionPolicy.  The maximal number of requests in
+-- flight is the `blockFetchPipeliningMax` of the given
+-- `MiniProtocolParameters`.
 --
-defaultBlockFetchConfiguration :: Salt -> BlockFetchConfiguration
-defaultBlockFetchConfiguration bfcSalt =
+mkDefaultBlockFetchConfiguration :: MiniProtocolParameters
+                                 -> Salt
+                                 -> BlockFetchConfiguration
+mkDefaultBlockFetchConfiguration MiniProtocolParameters { blockFetchPipeliningMax }
+                                 bfcSalt =
   BlockFetchConfiguration {
     bfcMaxConcurrencyBulkSync = 1,
     bfcMaxConcurrencyDeadline = 1,
-    bfcMaxRequestsInflight    = fromIntegral $ blockFetchPipeliningMax defaultMiniProtocolParameters,
+    bfcMaxRequestsInflight    = fromIntegral blockFetchPipeliningMax,
     bfcDecisionLoopIntervalGenesis = 0.04,  -- 40ms
     bfcDecisionLoopIntervalPraos = 0.01,  -- 10ms
     bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
@@ -102,3 +110,19 @@ defaultBlockFetchConfiguration bfcSalt =
 -- experimental.
 defaultTxSubmissionLogicVersion :: TxSubmissionLogicVersion
 defaultTxSubmissionLogicVersion = TxSubmissionLogicV1
+
+
+-- | The default `NodeTxSubmissionConfig`: the settings of
+-- `defaultTxSubmissionConfigV2`.
+--
+-- It will be overwritten if `TxSubmissionLogicV1` is used or negotiated version
+-- is before `NodeToNodeV_16`, see `txSubmissionConfigForVersion`.
+--
+defaultNodeTxSubmissionConfig :: NodeTxSubmissionConfig
+defaultNodeTxSubmissionConfig =
+    NodeTxSubmissionConfig {
+      maxNumUnacknowledgedTxIds =
+        V2.maxNumUnacknowledgedTxIds V2.defaultTxSubmissionConfigV2,
+      maxNumTxIdsToRequest =
+        V2.maxNumTxIdsToRequest V2.defaultTxSubmissionConfigV2
+    }

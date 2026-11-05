@@ -230,7 +230,7 @@ tests CDDLSpecs { cddlChainSync
       , testCase "PeerSharing V14 to Last" (unit_decodePeerSharingV14ToLast
                                                 cddlPeerSharingNodeToNodeV14ToLast)
 
-      , testCase "NodeToNodeVersionData V14 to V15"  (unit_decodeNodeToNodeVersionDataV14ToV16
+      , testCase "NodeToNodeVersionData V14 to V16"  (unit_decodeNodeToNodeVersionDataV14ToV16
                                                         cddlNodeToNodeVersionDataV14ToV16)
       , testCase "NodeToNodeVersionData V17 to Last" (unit_decodeNodeToNodeVersionDataV17ToLast
                                                         cddlNodeToNodeVersionDataV17ToLast)
@@ -996,7 +996,7 @@ unit_decodeNodeToNodeVersionDataV14ToV16
     :: CDDLSpec NodeToNodeVersionData
     -> Assertion
 unit_decodeNodeToNodeVersionDataV14ToV16 spec =
-    forM_ [NodeToNodeV_14 .. NodeToNodeV_15] $
+    forM_ [NodeToNodeV_14 .. pred NtNVersion.minPerasVersion] $
       validateVersionDataDecoder Nothing 100 spec nodeToNodeVersionDataCodec
 
 unit_decodeNodeToNodeVersionDataV17ToLast
