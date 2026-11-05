@@ -7,6 +7,7 @@
 module Ouroboros.Network.KeepAlive
   ( KeepAliveInterval (..)
   , keepAliveClient
+  , keepAliveClientWithRtt
   , keepAliveServer
   , TraceKeepAliveClient (..)
   , module Registry
@@ -52,7 +53,40 @@ keepAliveClient
     -- ^ available from `KeepAliveRegistry`
     -> KeepAliveInterval
     -> KeepAliveClient m ()
-keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { keepAliveInterval } =
+keepAliveClient tracer inRng controlMessageSTM peer dqCtx keepAliveInterval =
+  keepAliveClientWithSample tracer inRng controlMessageSTM peer dqCtx
+    (const (pure ())) keepAliveInterval
+
+-- | KeepAlive client which publishes the latest successful raw RTT and its
+-- completion time through a connection-scoped context. GSV smoothing, tracing
+-- and probe cadence retain the behavior of 'keepAliveClient'.
+-- Rationale: @docs/keepalive-rtt.md#observation@.
+keepAliveClientWithRtt
+    :: (MonadTimer m, Ord peer)
+    => Tracer m (TraceKeepAliveClient peer)
+    -> StdGen
+    -> ControlMessageSTM m
+    -> peer
+    -> KeepAliveClientContext peer m
+    -> KeepAliveInterval
+    -> KeepAliveClient m ()
+keepAliveClientWithRtt tracer rng controlMessageSTM peer context =
+  keepAliveClientWithSample tracer rng controlMessageSTM peer
+    (keepAliveGsvContext context) (publishKeepAliveRtt context)
+
+keepAliveClientWithSample
+    :: forall m peer.
+       (MonadTimer m, Ord peer)
+    => Tracer m (TraceKeepAliveClient peer)
+    -> StdGen
+    -> ControlMessageSTM m
+    -> peer
+    -> StrictTVar m (M.Map peer PeerGSV)
+    -> (KeepAliveRtt -> STM m ())
+    -> KeepAliveInterval
+    -> KeepAliveClient m ()
+keepAliveClientWithSample tracer inRng controlMessageSTM peer dqCtx publish
+                          KeepAliveInterval { keepAliveInterval } =
     let (cookie, rng) = random inRng in
     KeepAliveClient $ do
       startTime <- getMonotonicTime
@@ -88,6 +122,7 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
                                 else Just $ sample <> a
                     ) peer m
             writeTVar dqCtx m'
+            publish (KeepAliveRtt rtt endTime)
             return $ fromJust gsv'
       traceWith tracer $ AddSample peer rtt gsv'
 

@@ -584,14 +584,14 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                                (keepAliveTimeLimits limits)
                                channel
                                (keepAliveClientPeer $
-                                  keepAliveClient
+                                  keepAliveClientWithRtt
                                     nullTracer
                                     aaKeepAliveStdGen
                                     controlMessageSTM
                                     remoteAddress
                                     ctxVar
                                     (KeepAliveInterval aaKeepAliveInterval))
-            bracketKeepAliveClient (nkKeepAliveRegistry nodeKernel)
+            bracketKeepAliveClientWithRtt (nkKeepAliveRegistry nodeKernel)
                                    remoteAddress
                                    kacApp
 

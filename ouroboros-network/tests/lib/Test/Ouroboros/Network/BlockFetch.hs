@@ -906,7 +906,8 @@ unit_bracketSyncWithFetchClient step = do
                 dr <- readTVar $ dqRegistry    keepAliveRegistry
                 kr <- readTVar $ keepRegistry  keepAliveRegistry
                 yr <- readTVar $ dyingRegistry keepAliveRegistry
-                if and [Map.null fr, Map.null sr, Map.null dr, Map.null kr, Set.null yr]
+                rr <- readTVar $ rttRegistry   keepAliveRegistry
+                if and [Map.null fr, Map.null sr, Map.null dr, Map.null kr, Set.null yr, Map.null rr]
                    then return ()
                    else error "state leak"
               return (fetchRes, syncRes)
