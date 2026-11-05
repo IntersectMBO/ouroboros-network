@@ -234,6 +234,8 @@ tests =
         , testProperty "the counters thread follows a root flip within a sweep interval and places" prop_countersThread_refreshesRoots
         , testProperty "a decision is one transaction" prop_decision_oneTransaction
         , testProperty "the server parks straight after a decision with nothing to do" prop_server_oneDecisionPerWake
+        , testProperty "a park keeps its timer across wakes, registers one for a new deadline, cancels the one it leaves" prop_server_parkKeepsTimer
+        , testProperty "a registered delay fires at its time, a cancelled one never, a non-positive one at birth" prop_registeredDelay
         , testProperty "the counters thread refuses a policy that fails the sanity check" prop_countersThread_refusesInsane
         ]
     , testGroup "Claimable"
@@ -7206,6 +7208,118 @@ prop_server_oneDecisionPerWake isRoot (Positive n0) =
               threadDelay 1
               traceM StretchEnd
           Nothing -> pure ()
+
+-- | The shared state's entry for a key released: claimable long ago, its
+-- attempt taken back, both counters moved, as a rejection does, through
+-- the registry.
+releaseLease :: PeerTxRegistry (IOSim s) PeerAddr
+             -> SharedTxStateVar (IOSim s) PeerAddr TxId
+             -> Int
+             -> IOSim s ()
+releaseLease registry sharedVar k = atomically $ do
+    st <- readTVar sharedVar
+    writeSharedStateIfChanged (registryMirrors registry) sharedVar (sharedRevision st)
+      st { sharedTxTable    = IntMap.adjust released k (sharedTxTable st)
+         , sharedGeneration = sharedGeneration st + 1
+         , sharedClaimable  = sharedClaimable st + 1
+         , sharedRevision   = sharedRevision st + 1 }
+  where
+    released e = e { txLease = TxClaimable (Time 0), txAttempt = 0 }
+
+-- | Timers registered and cancelled in a stretch of a sim trace, the
+-- registered delays of the old wrapper counted as registrations too.
+timerOps :: [SimEventType] -> (Int, Int)
+timerOps inside =
+    ( length [ () | e <- inside, created e ]
+    , length [ () | EventTimerCancelled {} <- inside ] )
+  where
+    created EventTimerCreated {}         = True
+    created EventRegisterDelayCreated {} = True
+    created _                            = False
+
+-- | A gated slow peer's park keeps its timer across claimable bumps: over
+-- so many bumps one timer is registered and none cancelled; once the
+-- gate passes the peer, its txids still unacked, parks again until a
+-- lease's claim time, a new deadline, so one more timer, the fired one
+-- left alone; and when a released lease lets it leave the park with a
+-- body request, the timer it held is cancelled.  Three stretches of one
+-- run, from the sim trace.
+prop_server_parkKeepsTimer :: Positive Int -> Property
+prop_server_parkKeepsTimer (Positive bumps0) =
+    counterexample (show (ended, ops)) $
+      conjoin (map property ended) .&&. ops === [(1, 0), (1, 0), (0, 1)]
+  where
+    bumps  = bumps0 `mod` 8 + 1
+    txids  = [1, 2]
+    policy = (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
+               { txFastPeers = 0, txSourceCount = 0, txSlowCadence = 10, txSlowJitter = 0 }
+    stretches = unfoldStretches (traceEvents trace)
+    ended = map fst stretches
+    ops   = map (timerOps . snd) stretches
+    -- the stretches one after the other; one that never ends is the last,
+    -- since the run has not come to rest
+    unfoldStretches events = case stretchOf events of
+      (False, inside) | null inside -> []
+      (False, inside) -> [(False, inside)]
+      (True, inside)  -> (True, inside) : unfoldStretches (drop 1 (dropWhile (not . isEnd) events))
+    isEnd (_, _, _, EventLog dyn) = fromDynamic dyn == Just StretchEnd
+    isEnd _                       = False
+    reply = NonEmpty.fromList [ (txid, 100) | txid <- txids ]
+    trace = runSimTrace $ do
+      registry  <- newPeerAddrRegistry (mkStdGen 7)
+      sharedVar <- newSharedTxStateVar (leasedElsewhere txids)
+      retired   <- newTxSubmissionCountersVar mempty
+      mempool   <- emptyMempool
+      withPeer policy defaultTxSubmissionConfigV2 (getMempoolReader mempool)
+               sharedVar registry retired (0 :: PeerAddr) $
+        \api -> do
+        st <- startServer api policy mempool
+        case blockingTxIdRequest st of
+          Just k -> do
+            -- 1: the reply's continuation parks on the gate; each bump
+            -- wakes it and it parks again on the same gate
+            traceM StretchStart
+            withAsync (k reply) $ \parked -> do
+              forM_ [1 .. bumps] $ \_ -> do
+                threadDelay 0.1
+                bumpCounter registry sharedVar ClaimableCounter
+              threadDelay 0.1
+              traceM StretchEnd
+              -- 2: the gate passes and its timer fires; with the txids
+              -- still unacked there is nothing to request, and the peer
+              -- parks on the wake counter until a lease's claim time
+              traceM StretchStart
+              threadDelay 11
+              traceM StretchEnd
+              -- 3: a lease released wakes it to a body request: it leaves
+              -- the park and cancels the timer it held
+              traceM StretchStart
+              releaseLease registry sharedVar 0
+              _ <- Async.wait parked
+              traceM StretchEnd
+          Nothing -> pure ()
+
+-- | A registered delay fires at its time and not before; a cancelled one
+-- never; a non-positive one at birth, whatever is done to it.
+prop_registeredDelay :: Int -> Bool -> Property
+prop_registeredDelay ms cancelled =
+      cover 10 (d <= 0) "non-positive"
+    $ cover 20 (d > 0 && cancelled) "cancelled"
+    $ runSimOrThrow $ do
+        delay <- RegisteredDelay.new d
+        atBirth <- atomically (RegisteredDelay.read delay)
+        when cancelled (RegisteredDelay.cancel delay)
+        threadDelay (max 0 d / 2)
+        halfway <- atomically (RegisteredDelay.read delay)
+        threadDelay (max 0 d / 2 + 0.001)
+        after <- atomically (RegisteredDelay.read delay)
+        pure $ conjoin
+          [ counterexample "at birth" (atBirth === (d <= 0))
+          , counterexample "halfway" (halfway === (d <= 0))
+          , counterexample "after" (after === (d <= 0 || not cancelled))
+          ]
+  where
+    d = fromIntegral (ms `mod` 3000 - 500) / 1000 :: DiffTime
 
 -- | The census counts each standing once and classifies root before coin
 -- before source, against explicit counts over generated peers.

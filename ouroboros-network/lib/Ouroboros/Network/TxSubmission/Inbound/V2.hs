@@ -167,7 +167,7 @@ txSubmissionInboundV2
         NoTxSubmissionInitDelay     -> return ()
       -- in the order from here on: a peer not polling yet holds no fast slot
       joinTiers
-      continueWithStateM serverIdle
+      continueWithStateM (serverIdle Nothing)
         emptyPeerTxLocalState { peerJitterSeed = apiJitterSeed }
   where
 
@@ -186,9 +186,11 @@ txSubmissionInboundV2
     -- This function is called when:
     --   1. The server first starts
     --   2. All pipelined requests have completed and the counter returns to zero
-    --   3. An idle peer wakes up after a @ResolvedDoNothing@ wait
-    serverIdle :: StatefulM (PeerTxLocalState tx) Z txid tx m
-    serverIdle = StatefulM $ \peerState -> do
+    --   3. An idle peer wakes up after a @ResolvedDoNothing@ wait, with the
+    --      timer of the park it wakes from and that park's deadline
+    serverIdle :: Maybe (Time, RegisteredDelay m)
+               -> StatefulM (PeerTxLocalState tx) Z txid tx m
+    serverIdle held = StatefulM $ \peerState -> do
       now <- getMonotonicTime
       -- When the pipeline fully drains, report the body-download episode
       -- duration (covers all overlapping body and txid pipelined requests).
@@ -210,16 +212,35 @@ txSubmissionInboundV2
              -- the counter the decision chose: the claimable one when the
              -- slow tier's gate alone held a txid request, so that the
              -- peer waits for the gate or for an entry becoming claimable,
-             -- not for every move of the wake counter.
-             mRegisteredDelay <- traverse RegisteredDelay.new mDelay
-             atomically $ awaitPark counter seen mRegisteredDelay
-             continueWithStateM serverIdle peerState''
-           ResolvedSubmitTxs bufferedTxs ->
-             continueWithStateM (submitBufferedTxs bufferedTxs serverIdle) peerState''
-           ResolvedRequestTxs txsToRequest ->
+             -- not for every move of the wake counter.  With the timer of
+             -- the park woken from when the deadline is the same, as it
+             -- is for a gate a wake left unchanged: a wake registers no
+             -- timer of its own then.
+             timer <- parkTimer now held ((`addTime` now) <$> mDelay)
+             atomically $ awaitPark counter seen (snd <$> timer)
+             continueWithStateM (serverIdle timer) peerState''
+           ResolvedSubmitTxs bufferedTxs -> leaving $
+             continueWithStateM (submitBufferedTxs bufferedTxs (serverIdle Nothing)) peerState''
+           ResolvedRequestTxs txsToRequest -> leaving $
              continueWithStateM (requestTxBodies Zero txsToRequest) peerState''
-           ResolvedRequestTxIds txIdsToAck txIdsToReq ->
+           ResolvedRequestTxIds txIdsToAck txIdsToReq -> leaving $
              continueWithStateM (serverReqTxIds Zero txIdsToAck txIdsToReq) peerState''
+      where
+        -- the park's timer is of no use to a peer leaving the idle loop
+        leaving k = mapM_ (RegisteredDelay.cancel . snd) held >> k
+
+    -- | A park's timer: the one held when its deadline is the park's,
+    -- else a new one for the deadline, the held one cancelled; none for
+    -- a park without a deadline.
+    parkTimer :: Time
+              -> Maybe (Time, RegisteredDelay m)
+              -> Maybe Time
+              -> m (Maybe (Time, RegisteredDelay m))
+    parkTimer now held deadline_m = case (held, deadline_m) of
+      (Just (d, timer), Just d') | d == d' -> pure (Just (d, timer))
+      _ -> do
+        mapM_ (RegisteredDelay.cancel . snd) held
+        traverse (\d -> (,) d <$> RegisteredDelay.new (d `diffTime` now)) deadline_m
 
     -- | Submit buffered transaction bodies to the mempool.
     submitBufferedTxs :: forall (n :: N).
@@ -289,7 +310,7 @@ txSubmissionInboundV2
     continueAfterReplies :: forall (n :: N).
                             Nat n
                          -> StatefulM (PeerTxLocalState tx) n txid tx m
-    continueAfterReplies Zero = serverIdle
+    continueAfterReplies Zero = serverIdle Nothing
     continueAfterReplies n@Succ{} = StatefulM $ \peerState -> do
       now <- getMonotonicTime
       traceCanRequest n peerState
@@ -329,7 +350,7 @@ txSubmissionInboundV2
                    -> NumTxIdsToReq
                    -> StatefulM (PeerTxLocalState tx) n txid tx m
     -- No requests pending; transitions back to @serverIdle@
-    serverReqTxIds Zero 0 0 = serverIdle
+    serverReqTxIds Zero 0 0 = serverIdle Nothing
 
     -- Requests complete but pipeline not empty, continues to
     -- @handleReplies@ to process remaining in-flight replies
@@ -353,7 +374,7 @@ txSubmissionInboundV2
                         peerState' <- applyReceivedTxIds now
                                         (Just (now `diffTime` sendTime))
                                         txIdsToReq txids' peerState
-                        continueWithStateM serverIdle peerState')
+                        continueWithStateM (serverIdle Nothing) peerState')
          else
            pure $ SendMsgRequestTxIdsPipelined
                     txIdsToAck
