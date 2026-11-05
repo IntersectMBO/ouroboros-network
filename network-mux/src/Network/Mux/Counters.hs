@@ -1,8 +1,10 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Node-wide mux counters: how the muxes of one set have failed, counted
--- once per mux as it dies; a remote set and a local one, traced
+-- once per mux as it dies, and the bytes they sent and read, by
+-- mini-protocol and direction; a remote set and a local one, traced
 -- periodically.
 --
 module Network.Mux.Counters
@@ -14,25 +16,34 @@ module Network.Mux.Counters
   , Failures (..)
   , noFailures
   , noCounts
+  , ByteCounts
     -- * Tracing
   , CountersTrace (..)
   , countersInterval
     -- * Internal, for the mux and the tests
   , newCounters
   , countersLoop
+  , ByteSlots
+  , withByteCells
+  , newByteSlots
+  , readSlots
   , countMuxerFailure
   , countDemuxerFailure
   , countMiniProtocolFailure
+  , snapshotCountersWith
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException, SomeException, fromException)
-import Control.Monad (forM_, forever, unless)
+import Control.Monad (forM_, forever, unless, (<$!>))
 import Control.Monad.Class.MonadAsync (MonadAsync, race)
 import Control.Monad.Class.MonadFork (labelThisThread)
+import Control.Monad.Class.MonadThrow (MonadMask, bracket)
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
+import Data.IntMap.Strict (IntMap)
+import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
@@ -42,7 +53,8 @@ import Foreign.C.Error (Errno (..), eCONNRESET, ePIPE)
 import GHC.IO.Exception (IOException (..))
 
 import Network.Mux.Trace (Error (..))
-import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum, RuntimeError)
+import Network.Mux.Types (IngressQueue, IngressQueueState (..), MiniProtocolDir,
+           MiniProtocolNum, RuntimeError)
 
 -- | How the muxes have failed, each failure counted once, as the mux died
 -- of it.
@@ -88,28 +100,167 @@ noFailures :: Failures
 noFailures = Failures 0 0 0 0 0 0 0 0 Map.empty
 
 -- | One side's counters at an instant.
-newtype Counts = Counts {
-    mcFailures :: Failures
+data Counts = Counts {
+    mcFailures :: !Failures,
+    mcSent     :: !ByteCounts,  -- ^ bytes written, by mini-protocol and direction
+    mcReceived :: !ByteCounts   -- ^ bytes read, likewise
   }
   deriving (Eq, Show)
 
 -- | Nothing counted.
 noCounts :: Counts
-noCounts = Counts noFailures
+noCounts = Counts noFailures Map.empty Map.empty
 
--- | Counters shared by every mux of one set.
-newtype Counters m = Counters {
-    countersFailures :: StrictTVar m Failures
-    -- ^ how the muxes have failed, bumped by each as it dies
+-- | Bytes on the wire, SDU headers included, by mini-protocol number and the
+-- direction of our side of it: what our initiators and our responders sent,
+-- or what was read for them. The handshake's bytes, run on the bearer before
+-- the mux, are not among them.
+type ByteCounts = Map (MiniProtocolNum, MiniProtocolDir) Word64
+
+-- | One mux's byte counters, one per mini-protocol and direction it runs,
+-- written only by its own muxer or demuxer, so no two connections share a
+-- variable on the data path; made by 'newByteSlots'.
+type ByteSlots m = Map (MiniProtocolNum, MiniProtocolDir) (StrictTVar m Word64)
+
+-- | What one mux sent and read: a slot per mini-protocol and direction the
+-- muxer writes into, and the mini-protocols' ingress queues themselves,
+-- each carrying what the demuxer read for its mini-protocol, counted in
+-- the write that queued it so that a read costs nothing beyond that write.
+-- The queues are only ever read here, for that count, never written.
+data ByteCells m = ByteCells {
+    mbcSent :: !(ByteSlots m),
+    -- ^ the muxer's slots
+    mbcRecv :: !(Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m))
+    -- ^ the ingress queues, read for their 'iqReceived'
   }
+
+-- | The counts in the slots, leaving out the ones still at zero: a protocol
+-- appears once it has carried something.
+readSlots :: MonadSTM m => ByteSlots m -> STM m ByteCounts
+readSlots = fmap nonZero . traverse readTVar
+
+-- | The counts that are not zero.
+nonZero :: ByteCounts -> ByteCounts
+nonZero = Map.filter (/= 0)
+
+-- | Counters shared by every mux of one set: the failures, and the byte
+-- cells of the live muxes beside the totals of the ones that have ended, so
+-- a total never goes down when a connection closes.
+data Counters m = Counters {
+    countersFailures :: !(StrictTVar m Failures),
+    -- ^ how the muxes have failed, bumped by each as it dies
+    countersLive     :: !(StrictTVar m (IntMap (ByteCells m))),
+    -- ^ the byte cells of the muxes running, each under the key it
+    -- registered with
+    countersNext     :: !(StrictTVar m Int),
+    -- ^ the key the next mux registers under, counted up by each
+    countersRetired  :: !(StrictTVar m Retired)
+    -- ^ sent and read by the muxes that have ended, summed in as each
+    -- retired
+  }
+
+-- | What the muxes that have ended sent and read.
+data Retired = Retired !ByteCounts !ByteCounts
 
 -- | A fresh set, nothing counted.
 newCounters :: MonadSTM m => m (Counters m)
-newCounters = Counters <$> newTVarIO noFailures
+newCounters =
+  Counters <$> newTVarIO noFailures
+              <*> newTVarIO IntMap.empty
+              <*> newTVarIO 0
+              <*> newTVarIO (Retired Map.empty Map.empty)
 
--- | The failures counted so far.
+-- | The failures with the bytes of every mux, ended or live, summed in, in
+-- one transaction: for tests and small sets, as a transaction over every
+-- live mux's counters is restarted by any muxer or demuxer writing one it
+-- has read, and reads them all over again; a node reads with the loop's
+-- snapshot, a transaction per counter.
 readCounters :: MonadSTM m => Counters m -> STM m Counts
-readCounters Counters { countersFailures } = Counts <$> readTVar countersFailures
+readCounters = snapshotCountersWith id
+
+-- | The same, with each read run by @runTx@: in a transaction for the totals
+-- and one per counter of each live mux, so no transaction spans more than
+-- one variable a muxer or a demuxer writes, and a busy connection makes it
+-- rerun at most the read of one. The totals and the live set go together,
+-- before the cells: a mux that ends in between is in the live set and not
+-- yet in the totals, and its cells, which ending leaves as they were, count
+-- it once; a sum never goes down across snapshots.
+snapshotCountersWith :: (MonadSTM m, Monad n)
+                        => (forall a. STM m a -> n a)
+                        -> Counters m
+                        -> n Counts
+snapshotCountersWith runTx Counters { countersFailures, countersLive, countersRetired } = do
+  (failures, Retired sent received, live) <- runTx $
+    (,,) <$> readTVar countersFailures
+         <*> readTVar countersRetired
+         <*> (IntMap.elems <$> readTVar countersLive)
+  cells <- mapM (readByteCellsWith runTx) live
+  -- Built lazily: a tracer that drops the snapshot sums nothing, and one
+  -- that renders it forces the whole, the fields being strict; the counts
+  -- read above are forced already, so an unforced snapshot holds numbers,
+  -- not queues.
+  return Counts {
+      mcFailures = failures,
+      mcSent     = Map.unionsWith (+) (sent : map fst cells),
+      mcReceived = Map.unionsWith (+) (received : map snd cells)
+    }
+
+-- | One mux's bytes sent and read, each counter read in a transaction of
+-- its own by @runTx@: the slots, and the bytes read for each queue's
+-- mini-protocol, leaving out the ones still at zero. A queue's count is
+-- forced in its transaction, so a snapshot kept unforced holds the number,
+-- not the queue.
+readByteCellsWith :: (MonadSTM m, Monad n)
+                 => (forall a. STM m a -> n a)
+                 -> ByteCells m
+                 -> n (ByteCounts, ByteCounts)
+readByteCellsWith runTx ByteCells { mbcSent, mbcRecv } =
+  (,) <$> (nonZero <$> traverse (runTx . readTVar) mbcSent)
+      <*> (nonZero <$> traverse (\q -> runTx (iqReceived <$!> readTVar q)) mbcRecv)
+
+-- | Byte cells for a mux for the duration of @k@, which is given the muxer's
+-- slots: one per mini-protocol and direction, beside the ingress queues
+-- given, which count what the demuxer reads whether or not anyone looks.
+-- With counters the slots are made and the cells registered as the mux
+-- starts, and on the way out their counts move into the retired totals in
+-- the same transaction that unregisters them; without, there are no slots,
+-- so the muxer counts nothing.
+withByteCells :: forall m a. (MonadSTM m, MonadMask m)
+              => Maybe (Counters m)
+              -> Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m)
+              -> (ByteSlots m -> m a)
+              -> m a
+withByteCells counters queues k = case counters of
+    Nothing -> k Map.empty
+    Just c  -> do
+      slots <- atomically $ newByteSlots (Map.keys queues)
+      let cells = ByteCells { mbcSent = slots, mbcRecv = queues }
+      bracket (register c cells) (retire c cells) (const (k slots))
+  where
+    -- The cells among the live muxes' under the next key, which is returned.
+    register :: Counters m -> ByteCells m -> m Int
+    register Counters { countersLive, countersNext } cells = atomically $ do
+      i <- stateTVar countersNext (\n -> (n, n + 1))
+      modifyTVar countersLive (IntMap.insert i cells)
+      return i
+
+    -- The cells' counts into the retired totals and the cells out of the live
+    -- set, in one transaction. The cells themselves are left as they were: a
+    -- snapshot that read the live set before the mux ended reads them after,
+    -- and counts the mux once. So the queues keep what the run read, and a
+    -- 'Network.Mux.Mux' is run once, as its status has it.
+    retire :: Counters m -> ByteCells m -> Int -> m ()
+    retire Counters { countersLive, countersRetired } cells i = atomically $ do
+      (sent, received) <- readByteCellsWith id cells
+      modifyTVar countersRetired $ \(Retired s r) ->
+        Retired (Map.unionWith (+) s sent) (Map.unionWith (+) r received)
+      modifyTVar countersLive (IntMap.delete i)
+
+-- | A slot per mini-protocol and direction given, at zero. A mux makes its
+-- muxer's for every mini-protocol it runs; an SDU for a key not among them
+-- is not counted.
+newByteSlots :: MonadSTM m => [(MiniProtocolNum, MiniProtocolDir)] -> STM m (ByteSlots m)
+newByteSlots keys = Map.fromList <$> sequence [ (,) key <$> newTVar 0 | key <- keys ]
 
 -- | What a muxer's death counts as, if anything: the peer closing, which a
 -- write meets as a reset or a broken pipe; an asynchronous exception is the
@@ -248,8 +399,13 @@ countersLoop :: (MonadDelay m, MonadSTM m)
              -> m void
 countersLoop remote local interval tracer = forever $ do
   threadDelay delay
-  forM_ remote $ \c -> atomically (readCounters c) >>= traceWith tracer . TraceRemoteCounters
-  forM_ local  $ \c -> atomically (readCounters c) >>= traceWith tracer . TraceLocalCounters
+  -- Small transactions, one for the totals and one per counter: the counters
+  -- need no consistency across them, and one over everything the muxes write
+  -- would be restarted by every batch.
+  forM_ remote $ \c ->
+    snapshotCountersWith atomically c >>= traceWith tracer . TraceRemoteCounters
+  forM_ local  $ \c ->
+    snapshotCountersWith atomically c >>= traceWith tracer . TraceLocalCounters
   where
     -- A second at least: a zero or a negative interval would make the loop
     -- spin.
