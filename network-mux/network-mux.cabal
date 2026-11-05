@@ -71,7 +71,6 @@ library
     quiet,
     scientific,
     statistics-linreg >=0.3 && <0.4,
-    strict,
     time >=1.9.1 && <1.16,
     vector >=0.12 && <0.14,
 
@@ -93,6 +92,7 @@ library
     Network.Mux.Bearer.Socket
     Network.Mux.Channel
     Network.Mux.Codec
+    Network.Mux.Counters
     Network.Mux.DeltaQ.TraceStats
     Network.Mux.DeltaQ.TraceStatsSupport
     Network.Mux.DeltaQ.TraceTransformer
@@ -280,7 +280,6 @@ benchmark socket-read-write-benchmarks
     io-classes:{io-classes, si-timers, strict-stm},
     network,
     network-mux,
-    strict,
     tasty-bench,
 
   default-extensions: ImportQualifiedPost

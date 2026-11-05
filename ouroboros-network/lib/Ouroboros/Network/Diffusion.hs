@@ -45,7 +45,7 @@ import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, isJust)
 import Data.Typeable (Proxy (..), Typeable)
 import Data.Void (Void)
 import System.Exit (ExitCode)
@@ -201,6 +201,7 @@ runM Interfaces
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
+       , dtMuxCountersTracer
        }
      Arguments
        { daNtnDataFlow
@@ -239,6 +240,7 @@ runM Interfaces
        , dcReadLedgerPeerSnapshot
        , dcMuxForkPolicy
        , dcLocalMuxForkPolicy
+       , dcMuxCountersInterval
        }
      Applications
        { daApplicationInitiatorMode
@@ -252,19 +254,25 @@ runM Interfaces
        , daPeerSharingRegistry
        }
   = do
-    -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
-    mainThreadId <- myThreadId
-
-    -- If we have a local address, race the remote and local threads. Otherwise
+    -- The mux counters, traced every interval for as long as diffusion runs:
+    -- a set for the node-to-node muxes and, with a local address, one for
+    -- the node-to-client muxes; at an interval of zero, or less, none. If we
+    -- have a local address, race the remote and local threads. Otherwise
     -- just launch the remote thread.
-    case dcLocalAddress of
-      Just addr ->
-        fmap (either id id) $
-          mkRemoteThread mainThreadId
-          `Async.race`
-          mkLocalThread mainThreadId addr
-      Nothing ->
-          mkRemoteThread mainThreadId
+    Mx.withCounters dcMuxCountersInterval (isJust dcLocalAddress) dtMuxCountersTracer $
+      \muxCounters localMuxCounters -> do
+        -- Thread to which 'RethrowPolicy' will throw fatal exceptions: the
+        -- one that runs the remote thread, or waits on its race with the
+        -- local one; with counters kept, a child of the race with their loop.
+        mainThreadId <- myThreadId
+        case dcLocalAddress of
+          Just addr ->
+            fmap (either id id) $
+              mkRemoteThread mainThreadId muxCounters
+              `Async.race`
+              mkLocalThread mainThreadId addr localMuxCounters
+          Nothing ->
+              mkRemoteThread mainThreadId muxCounters
 
   where
     (ledgerPeersRng, rng1) = splitGen diRng
@@ -324,8 +332,8 @@ runM Interfaces
 
     -- | mkLocalThread - create local connection manager
     --
-    mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
-    mkLocalThread mainThreadId localAddr = do
+    mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> Maybe (Mx.Counters m) -> m Void
+    mkLocalThread mainThreadId localAddr localMuxCounters = do
      labelThisThread "diffusion-local"
      withLocalSocket tracer diNtcGetFileDescriptor
                      diNtcConfigureSocketFile
@@ -345,6 +353,7 @@ runM Interfaces
                   Mx.bearerTracer  = dtLocalBearerTracer
                 }
                 dcLocalMuxForkPolicy
+                localMuxCounters
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -414,8 +423,8 @@ runM Interfaces
 
     -- | mkRemoteThread - create remote connection manager
     --
-    mkRemoteThread :: ThreadId m -> m Void
-    mkRemoteThread mainThreadId = do
+    mkRemoteThread :: ThreadId m -> Maybe (Mx.Counters m) -> m Void
+    mkRemoteThread mainThreadId muxCounters = do
       labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
@@ -528,6 +537,7 @@ runM Interfaces
                 Mx.bearerTracer  = dtBearerTracer
               }
               dcMuxForkPolicy
+              muxCounters
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)

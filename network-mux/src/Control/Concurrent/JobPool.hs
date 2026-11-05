@@ -21,7 +21,6 @@ module Control.Concurrent.JobPool
   , forkJob
   , forkJobOn
   , readSize
-  , readGroupSize
   , waitForJob
   , cancelGroup
   ) where
@@ -192,15 +191,6 @@ forkJobOn cap = forkJob' (asyncOnWithUnmask cap)
 
 readSize :: MonadSTM m => JobPool q group m a -> STM m Int
 readSize JobPool{jobsVar} = Map.size <$> readTVar jobsVar
-
-readGroupSize :: ( MonadSTM m
-                 , Eq group
-                 )
-              => JobPool q group m a -> group -> STM m Int
-readGroupSize JobPool{jobsVar} group =
-      Map.size
-    . Map.filterWithKey (\(group', _) _ -> group' == group)
-  <$> readTVar jobsVar
 
 -- | Wait for next successfully completed job.  Unlike 'wait' it will not throw
 -- if a job errors.
