@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -31,7 +32,6 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Function (on)
 import Data.List (intercalate, nubBy)
 import Data.Maybe (fromMaybe)
-import Data.Word (Word16)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
@@ -54,7 +54,9 @@ import Test.Ouroboros.Network.Utils
 
 tests :: TestTree
 tests = testGroup "AppV1"
-  [ testProperty "txSubmission" prop_txSubmission
+  [ testProperty "txSubmission" (checkCoverage prop_txSubmission)
+  , testProperty "maxNumTxsToRequest is clamped to the sane range"
+                 prop_clampMaxNumTxsToRequest
   ]
 
 data TestVersion = TestVersion
@@ -84,7 +86,14 @@ txSubmissionSimulation
      , txid ~ Int
      )
   => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
-  -> NumTxIdsToAck
+  -> Tracer m OutboundRequest
+  -- ^ requests received by the outbound, see `traceOutboundRequests`
+  -> TxSubmissionConfig
+  -- ^ inbound config
+  -> TxSubmissionConfig
+  -- ^ outbound config
+  -> NumTxsToReq
+  -> TxOutboundVersion
   -> [Tx txid]
   -> Maybe Int
   -- ^ number of txs expected in the inbound mempool; the simulation stops
@@ -94,9 +103,17 @@ txSubmissionSimulation
   -> Maybe DiffTime
   -> Maybe DiffTime
   -> m ([Tx txid], [Tx txid])
-txSubmissionSimulation tracer maxUnacked outboundTxs
+txSubmissionSimulation tracer
+                       requestTracer
+                       inboundConfig
+                       outboundConfig
+                       maxNumTxsToRequest
+                       version
+                       outboundTxs
                        expectedTxs
-                       deadline inboundDelay outboundDelay = do
+                       deadline
+                       inboundDelay
+                       outboundDelay = do
 
     controlMessageVar <- newTVarIO Continue
     let controlMessageSTM = readTVar controlMessageVar
@@ -111,7 +128,11 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                 timeLimitsTxSubmission2
                 (maybe id delayChannel outboundDelay outboundChannel)
-                (txSubmissionClientPeer (outboundPeer controlMessageSTM outboundMempool))
+                (txSubmissionClientPeer
+                  (traceOutboundRequests
+                    requestTracer
+                    (maxNumUnacknowledgedTxIds outboundConfig)
+                    (outboundPeer controlMessageSTM outboundMempool)))
 
     inboundAsync <-
       async $ runPipelinedPeerWithLimits
@@ -148,9 +169,9 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
     outboundPeer controlMessageSTM outboundMempool =
       txSubmissionOutbound
         nullTracer
-        maxUnacked
+        outboundConfig
         (getMempoolReader outboundMempool)
-        (maxBound :: TestVersion)
+        version
         controlMessageSTM
 
     inboundPeer :: TVar m [txid]
@@ -160,19 +181,27 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
       txSubmissionInbound
         (("INBOUND",) `contramap` verboseTracer)
         NoTxSubmissionInitDelay
-        maxUnacked
+        inboundConfig
+        maxNumTxsToRequest
         (getMempoolReader inboundMempool)
         (getMempoolWriter duplicateTxIdsVar inboundMempool)
-        (maxBound :: TestVersion)
 
-prop_txSubmission :: Positive Word16
+
+
+prop_txSubmission :: ArbTxSubmissionConfigs
+                  -> ArbNumTxsToRequest
                   -> NonEmptyList (Tx Int)
                   -> Maybe (Positive SmallDelay)
                   -- ^ The delay must be smaller (<) than 5s, so that overall
                   -- delay is less than 10s, otherwise 'smallDelay' in
                   -- 'timeLimitsTxSubmission2' will kick in.
                   -> Property
-prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
+prop_txSubmission
+    (ArbTxSubmissionConfigs version inboundConfig outboundConfig)
+    (ArbNumTxsToRequest maxNumTxsToRequest)
+    (NonEmpty outboundTxs)
+    delay
+    =
     let mbDelayTime = getSmallDelay . getPositive <$> delay
         outUniqueTxIds = nubBy (on (==) getTxId) outboundTxs
         outValidTxs    = filter getTxValid outboundTxs
@@ -187,12 +216,24 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
         tr = runSimTrace $
                txSubmissionSimulation
                  verboseTracer
-                 (NumTxIdsToAck maxUnacked) outboundTxs
+                 dynamicTracer
+                 inboundConfig
+                 outboundConfig
+                 maxNumTxsToRequest
+                 version
+                 outboundTxs
                  expectedTxs
                  deadline
                  mbDelayTime
                  mbDelayTime
+        -- `selectTraceEventsDynamic'` doesn't throw if the simulation
+        -- failed; failures are reported by `evaluateTrace`
+        events = requestTxIdsEvents (selectTraceEventsDynamic' tr)
+        inboundWindow  = maxNumUnacknowledgedTxIds inboundConfig
+        outboundWindow = maxNumUnacknowledgedTxIds outboundConfig
     in
+    label (show version) $
+    classify (outboundWindow < inboundWindow) "smaller outbound window" $
     ioProperty $ do
         tr' <- evaluateTrace tr
         case tr' of
@@ -201,8 +242,12 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
              SimDeadLock trace -> do
                  return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
              SimReturn (inmp, outmp) trace -> do
-                 -- the protocol only reads the outbound mempool
-                 case (uniqueTxIds, length outValidTxs == length outmp) of
+                 fmap ( tabulate "MsgRequestTxIds" (show <$> events)
+                      . cover 10 (Clamped `elem` events) "clamped"
+                      . cover 10 (ClampedToZero `elem` events) "clamped to zero"
+                      ) $
+                   -- the protocol only reads the outbound mempool
+                   case (uniqueTxIds, length outValidTxs == length outmp) of
                       a@(True, True) ->
                           -- If we are presented with a stream of unique txids for valid
                           -- transactions the inbound transactions should match the outbound
@@ -229,3 +274,33 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
                            -- duplicate txids we're content with completing the protocol
                            -- without error.
                            -> return $ property True
+
+
+-- | The number of txs the inbound requests at a time, including values
+-- outside of the range checked by `saneMaxNumTxsToRequest`: `0` and values
+-- above `maxSaneNumTxsToRequest`.
+--
+newtype ArbNumTxsToRequest = ArbNumTxsToRequest NumTxsToReq
+  deriving Show
+
+instance Arbitrary ArbNumTxsToRequest where
+  arbitrary = ArbNumTxsToRequest . NumTxsToReq <$> frequency
+    [ (3, pure (getNumTxsToReq defaultMaxNumTxsToRequest))
+    , (1, pure 0)
+    , (2, choose (1, getNumTxsToReq maxSaneNumTxsToRequest))
+    , (1, choose (getNumTxsToReq maxSaneNumTxsToRequest + 1, maxBound))
+    ]
+  shrink (ArbNumTxsToRequest (NumTxsToReq n)) =
+    ArbNumTxsToRequest . NumTxsToReq <$> shrink n
+
+
+-- | `clampMaxNumTxsToRequest` returns a value accepted by
+-- `saneMaxNumTxsToRequest`, and keeps such values unchanged.
+--
+prop_clampMaxNumTxsToRequest :: ArbNumTxsToRequest -> Property
+prop_clampMaxNumTxsToRequest (ArbNumTxsToRequest n) =
+    let sane = saneMaxNumTxsToRequest n
+    in classify sane "sane" $
+       counterexample (show (clampMaxNumTxsToRequest n)) $
+            saneMaxNumTxsToRequest (clampMaxNumTxsToRequest n)
+       .&&. (not sane || clampMaxNumTxsToRequest n == n)

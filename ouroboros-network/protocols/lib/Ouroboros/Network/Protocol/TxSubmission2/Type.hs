@@ -26,6 +26,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Type
   , BlockingReplyList (..)
   , NumTxIdsToAck (..)
   , NumTxIdsToReq (..)
+  , NumTxsToReq (..)
     -- re-exports
   , SizeInBytes (..)
   ) where
@@ -150,6 +151,16 @@ newtype NumTxIdsToReq = NumTxIdsToReq { getNumTxIdsToReq :: Word16 }
   deriving Semigroup via (Sum Word16)
   deriving Monoid via (Sum Word16)
   deriving Show via (Quiet NumTxIdsToReq)
+
+-- | A configuration value (rather than a protocol exchanged parameter), which
+-- describes how many txs to request.
+--
+newtype NumTxsToReq = NumTxsToReq { getNumTxsToReq :: Word16 }
+  deriving (Eq, Ord, NFData, Generic)
+  deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
+  deriving Semigroup via (Sum Word16)
+  deriving Monoid via (Sum Word16)
+  deriving Show via (Quiet NumTxsToReq)
 
 
 -- | There are some constraints of the protocol that are not captured in the

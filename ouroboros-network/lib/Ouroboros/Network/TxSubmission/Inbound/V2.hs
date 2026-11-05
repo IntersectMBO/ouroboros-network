@@ -12,8 +12,11 @@ module Ouroboros.Network.TxSubmission.Inbound.V2
     -- * Supporting types and APIs
   , module V2
   , TxDecisionPolicy (..)
-  , defaultTxDecisionPolicy
+  , mkTxDecisionPolicy
+  , TxConfigurationError (..)
   , TxSubmissionInitDelay (..)
+  , TxSubmissionConfig (..)
+  , defaultTxSubmissionConfigV2
   ) where
 
 import Data.List.NonEmpty qualified as NonEmpty

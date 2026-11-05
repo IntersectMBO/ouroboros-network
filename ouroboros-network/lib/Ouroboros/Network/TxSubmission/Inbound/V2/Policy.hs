@@ -1,17 +1,24 @@
+{-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
-  , defaultTxDecisionPolicy
+  , mkTxDecisionPolicy
   , saneTxDecisionPolicy
+  , TxConfigurationError (..)
+  , TxSubmissionConfig (..)
+  , defaultTxSubmissionConfigV2
   , max_TX_SIZE
     -- * Re-exports
   , NumTxIdsToReq (..)
   ) where
 
 import Control.DeepSeq
+import Control.Exception (Exception)
+import Control.Monad (unless)
 import Control.Monad.Class.MonadTime.SI
-import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
+           NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 
@@ -30,14 +37,6 @@ max_TX_SIZE = 65_540
 -- | Policy for making decisions
 --
 data TxDecisionPolicy = TxDecisionPolicy {
-      maxNumTxIdsToRequest           :: !NumTxIdsToReq,
-      -- ^ a maximal number of txids requested at once.
-
-      maxUnacknowledgedTxIds         :: !NumTxIdsToReq,
-      -- ^ maximal number of unacknowledgedTxIds.  Measured in `NumTxIdsToReq`
-      -- since we enforce this policy by requesting not more txids than what
-      -- this limit allows.
-
       --
       -- Configuration of tx decision logic.
       --
@@ -87,44 +86,137 @@ data TxDecisionPolicy = TxDecisionPolicy {
 instance NFData TxDecisionPolicy where
   rnf TxDecisionPolicy{} = ()
 
-defaultTxDecisionPolicy :: TxDecisionPolicy
-defaultTxDecisionPolicy =
-  TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 6,
-    maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
-    txsSizeInflightPerPeer = max_TX_SIZE * 6,
-    maxOutstandingTxBatchesPerPeer = 4,
-    txInflightMultiplicity = 2,
-    bufferedTxsMinLifetime = 2,
-    scoreRate              = 0.001,
-    scoreMax               = 15 * 60,
-    scoreAcceptDecrement   = 3,
-    interTxSpace           = 0.250,
-    inflightTimeout        = 0.600,
-    maxPeerClaimDelay      = 0.250,
-    disablePipelinedTxIdRequests = False
+-- | The default policy for the given config.  Returns a `TxConfigurationError`
+-- if it isn't sane (see `saneTxDecisionPolicy`); the node should then report
+-- it and halt.
+--
+mkTxDecisionPolicy
+  :: TxSubmissionConfig
+  -> Either TxConfigurationError TxDecisionPolicy
+mkTxDecisionPolicy config =
+    policy <$ saneTxDecisionPolicy policy config
+  where
+    policy = TxDecisionPolicy {
+      txsSizeInflightPerPeer = max_TX_SIZE * (fromIntegral (maxNumTxIdsToRequest config)),
+      maxOutstandingTxBatchesPerPeer = 4,
+      txInflightMultiplicity = 2,
+      bufferedTxsMinLifetime = 2,
+      scoreRate              = 0.001,
+      scoreMax               = 15 * 60,
+      scoreAcceptDecrement   = 3,
+      interTxSpace           = 0.250,
+      inflightTimeout        = 0.600,
+      maxPeerClaimDelay      = 0.250,
+      disablePipelinedTxIdRequests = False
+    }
+
+-- | Shared options between the inbound and outbound side.
+--
+data TxSubmissionConfig =
+    TxSubmissionConfig {
+      maxNumUnacknowledgedTxIds :: !NumTxIdsToAck,
+      -- ^ maximum number of unacknowledged txids; it MUST be positive.
+      -- Before `NodeToNodeV_16` it is a protocol parameter and must not be
+      -- changed; since `NodeToNodeV_16` it is a local setting.
+      maxNumTxIdsToRequest      :: !NumTxIdsToReq
+      -- ^ maximum number of txids an inbound client can request at a time.
+    }
+  deriving (Eq, Show)
+
+instance NFData TxSubmissionConfig where
+  rnf TxSubmissionConfig{} = ()
+
+-- | `TxSubmissionConfig` for `TxSubmissionLogicV2`.
+--
+defaultTxSubmissionConfigV2 :: TxSubmissionConfig
+defaultTxSubmissionConfigV2 = TxSubmissionConfig {
+    maxNumUnacknowledgedTxIds = NumTxIdsToAck 10,
+    maxNumTxIdsToRequest      = NumTxIdsToReq 6
   }
 
--- | Sanity check for a 'TxDecisionPolicy': 'True' when every field lies
--- in the range the decision logic assumes.
+-- | Why a `TxDecisionPolicy` with a `TxSubmissionConfig` isn't sane, see
+-- `saneTxDecisionPolicy`.  Each constructor carries the offending values.
+--
+data TxConfigurationError
+  -- | `maxNumUnacknowledgedTxIds` must be positive
+  = NumUnacknowledgedTxIdsTooSmall NumTxIdsToAck
+  -- | `maxNumTxIdsToRequest` must be positive
+  | MaxNumTxIdsToRequestTooSmall NumTxIdsToReq
+  -- | `txsSizeInflightPerPeer` must be positive
+  | TxsSizeInflightPerPeerTooSmall SizeInBytes
+  -- | `maxOutstandingTxBatchesPerPeer` must be positive
+  | MaxOutstandingTxBatchesPerPeerTooSmall Int
+  -- | `txInflightMultiplicity` must be positive
+  | TxInflightMultiplicityTooSmall Int
+  -- | `bufferedTxsMinLifetime` must be non-negative
+  | BufferedTxsMinLifetimeTooSmall DiffTime
+  -- | `scoreRate` must be non-negative
+  | ScoreRateTooSmall Double
+  -- | `scoreMax` must be non-negative
+  | ScoreMaxTooSmall Double
+  -- | `scoreAcceptDecrement` must be non-negative
+  | ScoreAcceptDecrementTooSmall Double
+  -- | `interTxSpace` must be non-negative
+  | InterTxSpaceTooSmall DiffTime
+  -- | `inflightTimeout` (the first field) must be at least `interTxSpace`
+  -- (the second field)
+  | InflightTimeoutTooSmall DiffTime DiffTime
+  -- | `maxPeerClaimDelay` must be non-negative
+  | MaxPeerClaimDelayTooSmall DiffTime
+  deriving (Eq, Show)
+
+instance Exception TxConfigurationError
+
+-- | Sanity check for a 'TxDecisionPolicy': 'Right' when every field lies
+-- in the range the decision logic assumes, otherwise the first violated
+-- bound as a 'TxConfigurationError'.
 --
 -- The window and per-peer limit fields must be positive (otherwise the
 -- peer can make no progress), the rate, score and delay parameters must
 -- be non-negative, and 'inflightTimeout' must be at least 'interTxSpace'
 -- (their difference is used as a non-negative delay when bumping a stuck
--- entry's inflight-multiplicity cap).  'defaultTxDecisionPolicy' satisfies
+-- entry's inflight-multiplicity cap).  'mkTxDecisionPolicy' satisfies
 -- it.
-saneTxDecisionPolicy :: TxDecisionPolicy -> Bool
-saneTxDecisionPolicy p =
-       maxNumTxIdsToRequest           p >= 1
-    && maxUnacknowledgedTxIds         p >= 1
-    && txsSizeInflightPerPeer         p >  0
-    && maxOutstandingTxBatchesPerPeer p >= 1
-    && txInflightMultiplicity         p >= 1
-    && bufferedTxsMinLifetime         p >= 0
-    && scoreRate                      p >= 0
-    && scoreMax                       p >= 0
-    && scoreAcceptDecrement           p >= 0
-    && interTxSpace                   p >= 0
-    && inflightTimeout                p >= interTxSpace p
-    && maxPeerClaimDelay              p >= 0
+saneTxDecisionPolicy :: TxDecisionPolicy
+                     -> TxSubmissionConfig
+                     -> Either TxConfigurationError ()
+saneTxDecisionPolicy TxDecisionPolicy {
+                       txsSizeInflightPerPeer,
+                       maxOutstandingTxBatchesPerPeer,
+                       txInflightMultiplicity,
+                       bufferedTxsMinLifetime,
+                       scoreRate,
+                       scoreMax,
+                       scoreAcceptDecrement,
+                       interTxSpace,
+                       inflightTimeout,
+                       maxPeerClaimDelay
+                     }
+                     TxSubmissionConfig {
+                       maxNumUnacknowledgedTxIds,
+                       maxNumTxIdsToRequest
+                     } = do
+    unless (maxNumUnacknowledgedTxIds >= 1)
+      $ Left (NumUnacknowledgedTxIdsTooSmall maxNumUnacknowledgedTxIds)
+    unless (maxNumTxIdsToRequest >= 1)
+      $ Left (MaxNumTxIdsToRequestTooSmall maxNumTxIdsToRequest)
+    unless (txsSizeInflightPerPeer > 0)
+      $ Left (TxsSizeInflightPerPeerTooSmall txsSizeInflightPerPeer)
+    unless (maxOutstandingTxBatchesPerPeer >= 1)
+      $ Left (MaxOutstandingTxBatchesPerPeerTooSmall maxOutstandingTxBatchesPerPeer)
+    unless (txInflightMultiplicity >= 1)
+      $ Left (TxInflightMultiplicityTooSmall txInflightMultiplicity)
+    unless (bufferedTxsMinLifetime >= 0)
+      $ Left (BufferedTxsMinLifetimeTooSmall bufferedTxsMinLifetime)
+    unless (scoreRate >= 0)
+      $ Left (ScoreRateTooSmall scoreRate)
+    unless (scoreMax >= 0)
+      $ Left (ScoreMaxTooSmall scoreMax)
+    unless (scoreAcceptDecrement >= 0)
+      $ Left (ScoreAcceptDecrementTooSmall scoreAcceptDecrement)
+    unless (interTxSpace >= 0)
+      $ Left (InterTxSpaceTooSmall interTxSpace)
+    unless (inflightTimeout >= interTxSpace)
+      $ Left (InflightTimeoutTooSmall inflightTimeout interTxSpace)
+    unless (maxPeerClaimDelay >= 0)
+      $ Left (MaxPeerClaimDelayTooSmall maxPeerClaimDelay)

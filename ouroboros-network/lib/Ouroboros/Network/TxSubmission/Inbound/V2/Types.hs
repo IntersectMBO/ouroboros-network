@@ -806,6 +806,7 @@ data TraceTxSubmissionInbound txid tx =
   | TraceTxInboundRejectedFromMempool [txid] DiffTime
   | TraceTxInboundError TxSubmissionProtocolError
   | TraceTxInboundRequestTxs [txid]
+  | TraceTxInboundMaxNumTxsToRequestClamped NumTxsToReq
 
   --
   -- messages emitted by the new implementation of the server in

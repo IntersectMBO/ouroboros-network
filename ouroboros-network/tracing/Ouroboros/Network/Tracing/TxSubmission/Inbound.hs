@@ -8,6 +8,7 @@ import Data.Aeson
 import Data.Text qualified as Text
 
 import Cardano.Logging
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxsToReq (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 --------------------------------------------------------------------------------
@@ -81,6 +82,11 @@ instance (Show txid, Show tx)
     <> case dtal of
          DDetailed  -> "txIds" .= Text.pack (show txids)
          _otherwise -> mempty
+  forMachine _dtal (TraceTxInboundMaxNumTxsToRequestClamped numTxsToReq) =
+    mconcat [
+        "kind" .= String "TraceTxInboundMaxNumTxsToRequestClamped"
+      , "numTxsToRequest" .= getNumTxsToReq numTxsToReq
+      ]
 
   asMetrics (TraceTxSubmissionCollected txids) =
     [CounterM "submissions.submitted" (Just (length txids))]
@@ -111,6 +117,8 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
       Namespace [] ["Error"]
     namespaceFor TraceTxInboundRequestTxs {} =
       Namespace [] ["RequestTxs"]
+    namespaceFor TraceTxInboundMaxNumTxsToRequestClamped {} =
+      Namespace [] ["MaxNumTxsToRequestClamped"]
 
     severityFor (Namespace _ ["Collected"]) _            = Just Debug
     severityFor (Namespace _ ["Processed"]) _            = Just Debug
@@ -121,7 +129,8 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
     severityFor (Namespace _ ["RejectedFromMempool"]) _  = Just Debug
     severityFor (Namespace _ ["Error"]) _                = Just Debug
     severityFor (Namespace _ ["RequestTxs"]) _           = Just Debug
-
+    severityFor (Namespace _ ["MaxNumTxsToRequestClamped"]) _
+                                                         = Just Notice
     severityFor _ _                                      = Nothing
 
     metricsDocFor (Namespace _ ["Collected"]) =
@@ -156,6 +165,8 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
       "Protocol violation causing connection reset"
     documentFor (Namespace _ ["RequestTxs"]) = Just
       "Transactions requested from the remote peer"
+    documentFor (Namespace _ ["MaxNumTxsToRequestClamped"]) = Just
+      "MaxNumTxsToReq was clamped"
     documentFor _ = Nothing
 
     allNamespaces = [
@@ -168,4 +179,5 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
         , Namespace [] ["RejectedFromMempool"]
         , Namespace [] ["Error"]
         , Namespace [] ["RequestTxs"]
+        , Namespace [] ["MaxNumTxsToRequestClamped"]
         ]
