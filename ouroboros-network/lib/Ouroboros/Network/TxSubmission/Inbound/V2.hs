@@ -205,26 +205,19 @@ txSubmissionInboundV2
           (State.drainPeerScore policy now peerState')
       case peerAction of
            ResolvedDoNothing mDelay counter seen -> do
-             -- An Active->Idle transition means this peer has just become
-             -- eligible for actions it could not take before (e.g. claiming
-             -- expired leases as an idle claimant). Re-run the scheduler
-             -- immediately rather than parking on a wake condition that may
-             -- not fire.
-             let cameToIdle = peerPhase peerState' /= PeerIdle
-                           && peerPhase peerState'' == PeerIdle
-             if cameToIdle
-                then continueWithStateM serverIdle peerState''
-                else do
-                  mRegisteredDelay <- traverse RegisteredDelay.new mDelay
-                  -- on the counter the decision chose: the claimable one
-                  -- when the slow tier's gate alone held a txid request, so
-                  -- that the peer waits for the gate or for an entry
-                  -- becoming claimable, not for every move of the wake
-                  -- counter; none when nothing it advertises is live, the
-                  -- gate alone; and on the tier the decision was served
-                  -- on: a promotion or a demotion ends the park
-                  atomically $ awaitPark counter seen mRegisteredDelay (peerTier peerState'')
-                  continueWithStateM serverIdle peerState''
+             -- Park at once: a second decision could find nothing this
+             -- one did not, since the counter's value was read in its
+             -- transaction and its delay is the earliest timed wake.  On
+             -- the counter the decision chose: the claimable one when the
+             -- slow tier's gate alone held a txid request, so that the
+             -- peer waits for the gate or for an entry becoming claimable,
+             -- not for every move of the wake counter; none when nothing
+             -- it advertises is live, the gate alone.  And on the tier
+             -- the decision was served on: a promotion or a demotion ends
+             -- the park.
+             mRegisteredDelay <- traverse RegisteredDelay.new mDelay
+             atomically $ awaitPark counter seen mRegisteredDelay (peerTier peerState'')
+             continueWithStateM serverIdle peerState''
            ResolvedSubmitTxs bufferedTxs ->
              continueWithStateM (submitBufferedTxs bufferedTxs serverIdle) peerState''
            ResolvedRequestTxs txsToRequest ->
@@ -357,7 +350,7 @@ txSubmissionInboundV2
            pure $ SendMsgRequestTxIdsPipelined
                     txIdsToAck
                     txIdsToReq
-                    (pure $ continueWithState (handleReplies (Succ Zero)) peerState)
+                    (continueWithState (handleReplies (Succ Zero)) <$> sentTxIdRequest peerState)
 
     -- Pipelined request at depth > 0. Sends a pipelined message and continues
     -- to @handleReplies@.
@@ -365,7 +358,20 @@ txSubmissionInboundV2
       pure $ SendMsgRequestTxIdsPipelined
                txIdsToAck
                txIdsToReq
-               (pure $ continueWithState (handleReplies (Succ n)) peerState)
+               (continueWithState (handleReplies (Succ n)) <$> sentTxIdRequest peerState)
+
+    -- The continuation of a pipelined txid request runs once the driver
+    -- has sent it: a request off the slow tier sets the gate its wait
+    -- past the send, since the decision's clock read is behind by what
+    -- the trace, the transaction and the write took, and a body reply
+    -- collected before this request's reply gives the idle loop a
+    -- decision meanwhile; the reply moves the gate later again.
+    sentTxIdRequest :: PeerTxLocalState tx -> m (PeerTxLocalState tx)
+    sentTxIdRequest ps = case peerTxIdRequests ps of
+      _ StrictSeq.:|> TxIdsOnSlow wait -> do
+        sent <- getMonotonicTime
+        pure $! ps { peerSlowGate = Just $! wait `addTime` sent }
+      _ -> pure ps
 
     -- Prepare to collect pipelined replies from the peer.
     handleReplies :: forall (n :: N).

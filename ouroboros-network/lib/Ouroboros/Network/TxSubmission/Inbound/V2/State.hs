@@ -178,8 +178,7 @@ nextPeerActionPipelined = nextPeerActionWithMode AllowPipelinedTxIdRequests
 -- messages.  Before picking an action it runs 'bumpStuckEntries' over this
 -- peer's buffered bodies to raise the inflight cap on entries whose
 -- leaseholder has stalled, letting other peers claim them on their next pass.
--- Updates 'peerPhase' on the returned 'PeerTxLocalState' to reflect the
--- chosen action and threads the per-peer 'PeerTxInFlight' counters.
+-- Threads the per-peer 'PeerTxInFlight' counters.
 nextPeerActionWithMode :: Ord peeraddr
                        => TxIdRequestMode
                        -> Time
@@ -191,30 +190,10 @@ nextPeerActionWithMode :: Ord peeraddr
                        -> SharedTxState peeraddr txid
                        -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 nextPeerActionWithMode txIdRequestMode now policy config peeraddr peerState peerInFlight sharedState =
-    let (action, peerState', peerInFlight', sharedState'') =
-          applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
-        newPhase = phaseForAction txIdRequestMode (peerPhase peerState) action
-        peerState'' = if newPhase == peerPhase peerState'
-                         then peerState'
-                         else peerState' { peerPhase = newPhase }
-    in (action, peerState'', peerInFlight', sharedState'')
+    applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
   where
     sharedState' = bumpStuckEntries now policy (peerDownloadedTxs peerState) sharedState
     ctx = mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedState'
-
--- | Compute the new 'PeerPhase' for the chosen 'PeerAction'.
---
--- In pipelined mode a 'PeerDoNothing' keeps the current phase (the peer
--- is still mid-pipeline, just waiting for replies). In non-pipelined mode
--- a 'PeerDoNothing' transitions to 'PeerIdle'.
-phaseForAction :: TxIdRequestMode -> PeerPhase -> PeerAction -> PeerPhase
-phaseForAction txIdRequestMode currentPhase action = case action of
-    PeerDoNothing {}    -> case txIdRequestMode of
-                             AllowPipelinedTxIdRequests -> currentPhase
-                             AllowAnyTxIdRequests       -> PeerIdle
-    PeerSubmitTxs {}    -> PeerSubmittingToMempool
-    PeerRequestTxs {}   -> PeerWaitingTxs
-    PeerRequestTxIds {} -> PeerWaitingTxIds
 
 -- | Pick which action to perform next.
 --
