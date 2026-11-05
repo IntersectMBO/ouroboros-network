@@ -281,7 +281,7 @@ clientServerSimulation payloads =
                    `contramap`
                    traceTime sayTracer)
           bracket
-            (Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
+            (Mx.new (Mx.Tracers mxTracer mxTracer mxTracer) Nothing
                     [ MiniProtocolInfo {
                         miniProtocolNum        = reqRespProtocolNum,
                         miniProtocolDir        = Mx.ResponderDirectionOnly,
@@ -335,7 +335,7 @@ clientServerSimulation payloads =
                            `contramap`
                            traceTime sayTracer)
 
-                  mux <- Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
+                  mux <- Mx.new (Mx.Tracers mxTracer mxTracer mxTracer) Nothing
                                 [ MiniProtocolInfo {
                                     miniProtocolNum        = reqRespProtocolNum,
                                     miniProtocolDir        = Mx.InitiatorDirectionOnly,

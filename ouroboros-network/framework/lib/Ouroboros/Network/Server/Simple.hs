@@ -142,7 +142,7 @@ with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions n
                                                         Inbound
                                                         (negotiatedDataFlow vData)
                                                         app
-                      mux <- Mx.new (connId `Mx.tracersWithBearer` muxTracers)
+                      mux <- Mx.new (connId `Mx.tracersWithBearer` muxTracers) Nothing
                                    mpInfos
                       withAsync (Mx.run mux bearer) $ \aid -> do
                         void $ simpleMuxCallback connId vNumber vData app mux aid
