@@ -127,7 +127,7 @@ server = do
 
 serverWorker :: Bearer IO -> IO ()
 serverWorker bearer = do
-    mux <- Mx.new Mx.nullTracers ptcls
+    mux <- Mx.new Mx.nullTracers Nothing ptcls
 
     void $ forkIO $ do
       awaitResult <-
@@ -187,7 +187,7 @@ client n msg = do
 
 clientWorker :: Mx.Bearer IO -> Int -> String -> IO ()
 clientWorker bearer n msg = do
-    mux <- Mx.new Mx.nullTracers ptcls
+    mux <- Mx.new Mx.nullTracers Nothing ptcls
 
     void $ forkIO $ do
       awaitResult <-

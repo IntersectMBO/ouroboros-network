@@ -499,7 +499,7 @@ connectToNodeWithMux'
                                              Outbound
                                              (negotiatedDataFlow agreedOptions)
                                              app
-           mux <- Mx.new muxTracers mpInfos
+           mux <- Mx.new muxTracers Nothing mpInfos
            withAsync (Mx.run mux bearer) $ \aid ->
              k connectionId versionNumber agreedOptions app mux aid
 

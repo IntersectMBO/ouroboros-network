@@ -182,7 +182,7 @@ server ct ip port num len1 len2 =
 serverWorkerSequential :: Bearer IO -> Int -> Int -> IO ()
 serverWorkerSequential bearer len1 len2 = do
     debugPutStrLn_ $ "server: " ++ show (len1, len2)
-    mux <- Mx.new Mx.nullTracers (protocols ResponderDirectionOnly)
+    mux <- Mx.new Mx.nullTracers Nothing (protocols ResponderDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
           runMiniProtocol
@@ -224,7 +224,7 @@ serverWorkerSequential bearer len1 len2 = do
 serverWorkerBursty :: Bearer IO -> (Int, Int) -> Int -> Int -> IO ()
 serverWorkerBursty bearer (n1, n2) len1 len2 = do
     debugPutStrLn_ $ "server: " ++ show (len1, len2)
-    mux <- Mx.new Mx.nullTracers (protocols ResponderDirectionOnly)
+    mux <- Mx.new Mx.nullTracers Nothing (protocols ResponderDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
           runMiniProtocol
@@ -301,7 +301,7 @@ clientWorkerSequential
   -- ^ number of requests to send over `MiniProtocolNum 3`
   -> IO ()
 clientWorkerSequential bearer len n1 n2 = do
-    mux <- Mx.new Mx.nullTracers (protocols InitiatorDirectionOnly)
+    mux <- Mx.new Mx.nullTracers Nothing (protocols InitiatorDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
            runMiniProtocol
@@ -341,7 +341,7 @@ clientWorkerSequential bearer len n1 n2 = do
 
 clientWorkerBursty :: Mx.Bearer IO -> IO ()
 clientWorkerBursty bearer = do
-    mux <- Mx.new Mx.nullTracers (protocols InitiatorDirectionOnly)
+    mux <- Mx.new Mx.nullTracers Nothing (protocols InitiatorDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
            runMiniProtocol

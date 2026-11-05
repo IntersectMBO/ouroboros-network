@@ -227,6 +227,12 @@ data MiniProtocolStatus = StatusIdle
                         | StatusStartOnDemand
                         | StatusRunning
                         | StatusStartOnDemandAny
+                        | StatusKilled
+                        -- ^ The thread was killed from outside, by an
+                        -- asynchronous exception the job pool does not
+                        -- report: not running, and not to be started again
+                        -- on this mux, the peer's side of the protocol being
+                        -- wherever the kill left it.
   deriving (Eq, Show)
 
 data SDUHeader = SDUHeader {
