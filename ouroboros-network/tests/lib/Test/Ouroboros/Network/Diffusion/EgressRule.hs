@@ -33,13 +33,13 @@ tests =
     ]
 
 -- | What happens to a connection, at a time in seconds: its rank is asked,
--- its scheduled bytes on a protocol are reported, or the pool list is
+-- a scheduled batch's bytes per protocol are reported, or the pool list is
 -- rebuilt under it. A partner's own bucket starts under the same lock as a
 -- stranger's, so a partner asked early falls through to what it otherwise
 -- is, and one asked after the lock holds the partner tier until it has
 -- spent two refills.
 data Op = Ask Double
-        | Charge Double Word16 Int
+        | Charge Double [(Word16, Int)]
         | Rebuild Double
   deriving Show
 
@@ -76,10 +76,14 @@ instance Arbitrary Case where
     deltas     <- vectorOf n (choose (0, 5 :: Double))
     cOps       <- forM (scanl1 (+) deltas) $ \t -> frequency
                     [ (3, pure (Ask t))
-                    , (3, Charge t <$> elements [2, 3, 4, 8, 10, 18, 19] <*> choose (1, 2 * freshMax))
+                    , (3, Charge t <$> batch)
                     , (1, pure (Rebuild t)) ]
     return Case { cStanding, cPools, cUncharged, cLock, cOps }
     where cap = capacity allowance
+          -- one to three protocols, a protocol possibly more than once
+          batch = do
+            k <- frequency [ (2, pure 1), (3, choose (2, 3)) ]
+            vectorOf k ((,) <$> elements [2, 3, 4, 8, 10, 18, 19] <*> choose (1, 2 * freshMax))
   shrink c@Case { cStanding, cPools, cUncharged, cLock, cOps } =
        [ c { cOps = ops }         | ops <- shrinkList (const []) cOps ]
     ++ [ c { cPools = ps }        | ps  <- shrinkList (const []) cPools ]
@@ -91,7 +95,8 @@ instance Arbitrary Case where
 -- 'rankFor' is judged rather than echoed: ranks at every ask and the pool
 -- buckets at the end. The sink charges whichever bucket the last answer
 -- came from: a partner's own at tier 1, the pool's at tier 2, the own at
--- tier 3, nothing at rest; before any answer, as a non-partner.
+-- tier 3, nothing at rest; before any answer, as a non-partner. A batch is
+-- charged once, its charged protocols' bytes summed.
 model :: Case -> ([Rank], [Charged])
 model Case { cStanding, cPools, cUncharged, cLock, cOps } =
     go (map Charged cPools) Nothing False cOps
@@ -109,7 +114,7 @@ model Case { cStanding, cPools, cUncharged, cLock, cOps } =
     go pools own0 asPartner (op : ops) =
       let own = case op of
                   Ask t | cStanding /= LocalRoot -> openAt t own0
-                  Charge t num _ | num `notElem` cUncharged, asPartner || not matched -> openAt t own0
+                  Charge t batch | charged batch > 0, asPartner || not matched -> openAt t own0
                   _ -> own0
       in case op of
            Ask t ->
@@ -126,13 +131,15 @@ model Case { cStanding, cPools, cUncharged, cLock, cOps } =
                              Other -> other
                  (ranks, final) = go pools own (rank == Rank 1) ops
              in (rank : ranks, final)
-           Charge t num n
-             | num `elem` cUncharged -> go pools own asPartner ops
+           Charge t batch
+             | n <= 0    -> go pools own asPartner ops
              | asPartner -> go pools (charge allowance (clock (at t)) n <$> own) asPartner ops
              | matched   -> go (map (charge allowance (clock (at t)) n) pools) own asPartner ops
              | otherwise -> go pools (charge allowance (clock (at t)) n <$> own) asPartner ops
+             where n = charged batch
            Rebuild t ->
              go (map (const (Charged (kappa (clock (at t))))) pools) own asPartner ops
+    charged batch = sum [ n | (num, n) <- batch, num `notElem` cUncharged ]
 
 -- | The same, through 'mkEgressRule' and the buckets in IOSim.
 run :: Case -> ([Rank], [Charged])
@@ -150,7 +157,8 @@ run Case { cStanding, cPools, cUncharged, cLock, cOps } = runSimOrThrow $ do
     ranks <- fmap concat . forM cOps $ \op ->
       case op of
            Ask t          -> (: []) <$> atomically (rule (at t))
-           Charge t num n -> [] <$ atomically (sink (at t) (MiniProtocolNum num) n)
+           Charge t batch -> [] <$ atomically (sink (at t) (Map.fromListWith (+)
+                               [ (MiniProtocolNum num, n) | (num, n) <- batch ]))
            Rebuild t      -> [] <$ atomically (rebuild pa (at t) k index)
     buckets <- readTVarIO (paBuckets pa)
     final   <- mapM readTVarIO (IntMap.elems buckets)
@@ -168,6 +176,7 @@ prop_rule c@Case { cStanding, cPools, cLock, cOps } =
   . classify lockedStranger "a locked stranger"
   . classify (lockedStranger && any askedAfter cOps) "a stranger asked after its lock"
   . classify (any isRebuild cOps) "the list is rebuilt under it"
+  . classify (any spansProtocols cOps) "a batch spans protocols"
   . classify (Rank 4 `elem` fst got) "goes to rest at some point"
   . classify (Rank 2 `elem` fst got) "served as a pool relay at some point"
   . classify (Rank 3 `elem` fst got) "served as a stranger at some point"
@@ -179,6 +188,8 @@ prop_rule c@Case { cStanding, cPools, cLock, cOps } =
     askedAfter _       = False
     isRebuild Rebuild {} = True
     isRebuild _          = False
+    spansProtocols (Charge _ batch) = length (Map.fromList batch) > 1
+    spansProtocols _                = False
 
 -- | A pool relay queues for a batch while its allowance is spent, behind two
 -- local roots that keep the budget busy, so at rest it never reaches the
@@ -201,7 +212,7 @@ prop_refill_reaches_queued = once $ runSimOrThrow $ do
     h <- Bucket.registerBearer budget
     now <- getMonotonicTime
     entry <- atomically $ do
-      sink now (MiniProtocolNum 2) 10        -- spent: the small initial credit is gone
+      sink now (Map.singleton (MiniProtocolNum 2) 10)  -- spent: the small initial credit is gone
       Bucket.setRankSource h rule
       rule now
     victim <- async $ Bucket.awaitGrant h 10 >> getMonotonicTime
@@ -313,7 +324,7 @@ prop_allowance_follows_reading (Positive big) (Positive small0) (Positive extra)
       -- switch, charge, ask
       a <- atomically $ do
         writeTVar alVar tiny
-        sink (at 0) (MiniProtocolNum 2) n
+        sink (at 0) (Map.singleton (MiniProtocolNum 2) n)
         rule (at 0)
       -- the same from a full bucket under the large allowance alone
       pa' <- newPoolAllowances (return large) (return . reading) 0
@@ -323,6 +334,6 @@ prop_allowance_follows_reading (Positive big) (Positive small0) (Positive extra)
       (rule', sink') <- mkEgressRule pa' [] key (const (return Other)) (at 0)
       b <- atomically $ do
         _ <- rule' (at 0)
-        sink' (at 0) (MiniProtocolNum 2) n
+        sink' (at 0) (Map.singleton (MiniProtocolNum 2) n)
         rule' (at 0)
       return (if r0 == Rank 2 then a else Rank 0, b)

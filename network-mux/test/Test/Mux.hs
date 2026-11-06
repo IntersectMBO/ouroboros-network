@@ -4438,8 +4438,8 @@ runLanes laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSimOrThrow $ do
     serverMux <- Mx.newWithEgress policy Mx.nullTracers
                    [ info bulkN Mx.ResponderDirection, info probeN Mx.InitiatorDirection
                    , info sliceN Mx.InitiatorDirection ]
-    atomically $ Mx.setEgressChargeSink serverMux $ \_ num n ->
-      modifyTVar chargedVar (M.insertWith (+) num n)
+    atomically $ Mx.setEgressChargeSink serverMux $ \_ batch ->
+      modifyTVar chargedVar (M.unionWith (+) batch)
     clientMux <- Mx.new Mx.nullTracers
                    [ info bulkN Mx.InitiatorDirection, info probeN Mx.ResponderDirection
                    , info sliceN Mx.ResponderDirection ]
@@ -5008,24 +5008,27 @@ writtenByKey sdus =
     MS.fromListWith (+) [ ((Mx.msNum s, Mx.msDir s), fromIntegral (writtenBytes s)) | s <- sdus ]
 
 -- | The muxer over a modelled bearer whose batch write is @write@; returns
--- the muxer, the bytes counted for each mini-protocol and direction, and the
+-- the muxer, the bytes counted for each mini-protocol and direction, the
 -- bytes charged: the budget's credit on the direct lane, the sink's total on
--- the scheduled.
+-- the scheduled, and the scheduled lane's sink calls, oldest first.
 withWriteMuxer :: forall s. WriteCase -> ([Mx.SDU] -> IOSim s ())
-               -> IOSim s (Async (IOSim s) (), IOSim s Mx.ByteCounts, IOSim s Int)
+               -> IOSim s ( Async (IOSim s) (), IOSim s Mx.ByteCounts, IOSim s Int
+                          , IOSim s [M.Map Mx.MiniProtocolNum Int] )
 withWriteMuxer WriteCase { wcLane, wcMsgs } write = do
     q        <- newTBQueueIO 100
     -- one egress state per mini-protocol and direction, as the mux keeps
     vars     <- M.fromList <$> mapM (\k -> (,) k <$> Mx.newEgressVar)
                                     (nub (map (countersKey . fst) wcMsgs))
     charged  <- newTVarIO 0
+    calls    <- newTVarIO []
     budget   <- Bucket.newBucket 1e9 1000000000 Nothing
     lane <- case wcLane of
       WriteDirect    -> return (Egress.Credit budget)
       WriteScheduled -> do
         h <- Bucket.registerBearer budget
         atomically $ Bucket.setRank h (Bucket.Rank 2)
-        sink <- newTVarIO (\_ _ n -> modifyTVar charged (+ n))
+        sink <- newTVarIO (\_ batch -> modifyTVar charged (+ sum batch)
+                                     >> modifyTVar calls (batch :))
         return (Egress.Scheduled_ h sink)
     muxHeld <- newTVarIO 0
     forM_ wcMsgs $ \(k, n) -> do
@@ -5051,34 +5054,39 @@ withWriteMuxer WriteCase { wcLane, wcMsgs } write = do
                                (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget now
                                return (fromIntegral (Bucket.bsCredited st))
           WriteScheduled -> readTVarIO charged
-    return (mx, counted, chargedNow)
+    return (mx, counted, chargedNow, reverse <$> readTVarIO calls)
 
 -- | The bearer takes the whole batch and says so; a canceller waiting for
 -- that cancels the muxer. Explored with IOSimPOR, so the cancellation also
 -- lands between the write's return and the accounting: the bytes taken
 -- are counted, each under its own mini-protocol and direction, and charged
--- in every schedule.
+-- in every schedule. The scheduled lane's sink is handed the batch once,
+-- its bytes by mini-protocol: the batch's rank was chosen for all of it.
 prop_mux_written_is_accounted :: WriteCase -> Property
-prop_mux_written_is_accounted wc =
+prop_mux_written_is_accounted wc@WriteCase { wcLane, wcMsgs } =
+  classify (length (nub (map (fst . fst) wcMsgs)) > 1) "a batch spans protocols" $
   exploreSimTrace (\o -> o { explorationScheduleBound = 40 }) sim $ \_ trace ->
     case traceResult False trace of
       Left e -> counterexample (show e) False
-      Right r@(written, counted, charged) ->
+      Right r@(written, counted, charged, calls) ->
         counterexample (show r) $
                counterexample "counted by protocol" (written === counted)
           .&&. counterexample "charged" (sum (M.elems written) === fromIntegral charged)
+          .&&. counterexample "one charge per batch, by protocol"
+                 (calls === [ M.map fromIntegral (M.mapKeysWith (+) fst written)
+                            | wcLane == WriteScheduled ])
   where
-    sim :: forall s. IOSim s (Mx.ByteCounts, Mx.ByteCounts, Int)
+    sim :: forall s. IOSim s (Mx.ByteCounts, Mx.ByteCounts, Int, [M.Map Mx.MiniProtocolNum Int])
     sim = do
       exploreRaces
       written <- newTVarIO M.empty
-      (mx, counted, charged) <- withWriteMuxer wc $ \sdus ->
+      (mx, counted, charged, calls) <- withWriteMuxer wc $ \sdus ->
         atomically $ modifyTVar written (M.unionWith (+) (writtenByKey sdus))
       canceller <- async $ do
         atomically $ readTVar written >>= check . not . M.null
         cancel mx
       wait canceller
-      (,,) <$> readTVarIO written <*> counted <*> charged
+      (,,,) <$> readTVarIO written <*> counted <*> charged <*> calls
 
 -- | The bearer takes part of the batch and then waits for room that never
 -- comes, as a socket with a full send buffer does. Cancelled then, the
@@ -5101,7 +5109,7 @@ prop_mux_partial_write_cancelled wc@WriteCase { wcLane } =
       written <- newTVarIO 0
       batch   <- newTVarIO 0
       room    <- newTVarIO False
-      (mx, counted, charged) <- withWriteMuxer wc $ \sdus -> do
+      (mx, counted, charged, _) <- withWriteMuxer wc $ \sdus -> do
         let whole = sum (map writtenBytes sdus)
         atomically $ writeTVar batch whole >> modifyTVar written (+ max 1 (whole `div` 2))
         atomically $ readTVar room >>= check
