@@ -98,7 +98,8 @@ data FloorRun = FloorRun {
     frPercent  :: !Int,         -- ^ the floor's share, percent
     frDuration :: !DiffTime,    -- ^ how long bearers run after the last start
     frRotation :: !(Maybe Bucket.Rotation),
-    frBearers  :: ![FBearer]
+    frBearers  :: ![FBearer],
+    frDirect   :: ![(DiffTime, Int)]  -- ^ direct traffic taken on credit: when, bytes
   }
   deriving Show
 
@@ -151,7 +152,30 @@ genRun tierOK = do
   starts  <- genStarts (nSat + nCred)
   let bearers = zipWith ($) (map ($ satTier) sats ++ [ \s -> FBearer t b s | (t, b) <- creds ]) starts
   return FloorRun { frRate = rate, frCapacity = cap, frPercent = percent, frDuration = dur,
-                    frRotation = Nothing, frBearers = bearers }
+                    frRotation = Nothing, frBearers = bearers, frDirect = [] }
+
+-- | Stalls: direct traffic keeps the budget in debt, so the credited
+-- bearers are served by the floor alone, and one alone in the credited queue
+-- waits past the burst gap with nothing counted meanwhile. Rest-tier bearers
+-- add filler.
+genStallRun :: Gen FloorRun
+genStallRun = do
+  rate    <- choose (1e5, 2e6)
+  cap     <- elements [4096, 16384, 65536, 131072]
+  percent <- choose (5, 30)
+  dur     <- fromIntegral <$> choose (1, 4 :: Int)
+  nCred   <- choose (1, 3)
+  nRest   <- choose (0, 2)
+  creds   <- vectorOf nCred ((,) <$> choose (1, 3) <*> choose (Burst.burstGrantFloor, cap))
+  rests   <- vectorOf nRest (genBatch cap)
+  starts  <- genStarts (nCred + nRest)
+  let bearers = zipWith ($) ([ FBearer t b | (t, b) <- creds ] ++ [ FBearer 4 b | b <- rests ]) starts
+      end     = maximum (0 : starts) + dur
+  nDirect <- choose (1, 6)
+  direct  <- vectorOf nDirect $
+    (,) <$> (realToFrac <$> choose (0, realToFrac end :: Double)) <*> choose (cap, 20 * cap)
+  return FloorRun { frRate = rate, frCapacity = cap, frPercent = percent, frDuration = dur,
+                    frRotation = Nothing, frBearers = bearers, frDirect = sortOn fst direct }
 
 -- | Shrinking keeps at least two bearers asking for a whole capacity, so the
 -- budget stays busy and the laws stated for a saturated budget keep their
@@ -195,7 +219,7 @@ runFloor' withFloor fr = runSimOrThrow (runFloorM Nothing withFloor fr)
 runFloorM :: forall m. (MonadAsync m, MonadDelay m, MonadMask m, MonadTimer m)
           => Maybe (Bucket.Bucket m -> [Bucket.BucketHandle m] -> m ())
           -> Bool -> FloorRun -> m ([Grant], Bucket.BucketStats, [(Int, Time)])
-runFloorM inspect_m withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRotation, frBearers } = do
+runFloorM inspect_m withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRotation, frBearers, frDirect } = do
     t0 <- getMonotonicTime
     let end = (endTime fr `diffTime` Time 0) `addTime` t0
     budget <- Bucket.newBucket frRate frCapacity frRotation
@@ -224,6 +248,12 @@ runFloorM inspect_m withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRot
                   modifyTVar pending (Map.delete i)
               loop
         loop
+    -- spawned only when there is any, so runs without keep their schedule
+    direct <- if null frDirect then return [] else fmap (: []) $ async $
+      forM_ frDirect $ \(at, n) -> do
+        now <- getMonotonicTime
+        threadDelay ((at `addTime` t0) `diffTime` now)
+        atomically $ Bucket.takeOnCredit budget (at `addTime` t0) n
     let (hs, as) = unzip hsas
     case inspect_m of
          Nothing -> return ()
@@ -234,7 +264,7 @@ runFloorM inspect_m withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRot
     threadDelay (end `diffTime` now)
     waiting <- Map.toList <$> readTVarIO pending
     mapM_ (\inspect -> inspect budget hs) inspect_m
-    mapM_ cancel as
+    mapM_ cancel (direct ++ as)
     gs <- reverse <$> readTVarIO grants
     (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget end
     mapM_ (\inspect -> inspect budget hs) inspect_m
@@ -433,7 +463,8 @@ prop_local_root_small_reply SmallReply { srSeed, srRate, srCap } =
     bound = 0.01 + 2 * batch + 0.01
     fr = FloorRun { frRate = srRate, frCapacity = srCap, frPercent = 10, frDuration = 2 * batch + 1
                   , frRotation = Just (Bucket.Rotation srSeed 599 4)
-                  , frBearers = [ FBearer 0 srCap 0, FBearer 0 256 0.01, FBearer 1 srCap 0.01 ] }
+                  , frBearers = [ FBearer 0 srCap 0, FBearer 0 256 0.01, FBearer 1 srCap 0.01 ]
+                  , frDirect = [] }
     (gs, _) = runFloor True fr
     served = case [ gAt g | g <- gs, gBearer g == 1 ] of
                   [] -> Nothing
@@ -653,19 +684,34 @@ runFloorBursts fr = runSimOrThrow $ do
 -- | What the budget holds at the end of a run is the fold of the grants the
 -- harness saw before it over the detector's own rules, each queued request
 -- of a credited bearer counted in the credited queue from its request to
--- its grant, or to the end if it is still waiting then. The peak queue is
--- compared within one: two queue changes in the same simulated instant are
--- ordered by the scheduler, not by the clock, and a request granted the
--- instant it queued is a fast-path grant to the harness.
-prop_bursts_match_grants :: FloorRun -> Property
-prop_bursts_match_grants fr =
+-- its grant, or to the end if it is still waiting then: a grant is noted
+-- while its request is still queued, so a request queued across a gap is a
+-- stall inside the burst. The peak queue is compared within one: two queue
+-- changes in the same simulated instant are ordered by the scheduler, not
+-- by the clock, and a request granted the instant it queued is a fast-path
+-- grant to the harness. Saturated runs and stalled ones.
+prop_bursts_match_grants :: Property
+prop_bursts_match_grants =
+  forAllShrink (oneof [arbitrary, genStallRun]) shrinkBursts $ \fr ->
+    let (gs, waiting, got) = runFloorBursts fr
+    in burstsMatch fr gs waiting got
+
+-- | Any bearers kept, none of the saturated runs' premises needed.
+shrinkBursts :: FloorRun -> [FloorRun]
+shrinkBursts fr@FloorRun { frBearers, frDuration } =
+     [ fr { frBearers = bs } | bs <- shrinkList (const []) frBearers, not (null bs) ]
+  ++ [ fr { frDuration = d } | d <- [1, 2], d < frDuration ]
+  ++ [ fr { frDirect = ds } | ds <- shrinkList (const []) (frDirect fr) ]
+
+burstsMatch :: FloorRun -> [Grant] -> [(Int, Time)] -> [Bucket.Burst] -> Property
+burstsMatch fr gs waiting got =
     classify (length got > 1) "more than one burst" $
     classify (any ((> 0) . Bucket.bFiller) got) "filler counted" $
+    classify (any stall gs) "a floor grant ends a stall" $
     counterexample (show (got, want)) $
          counterexample "records" (map strip got === map strip want)
     .&&. counterexample "peaks" (and (zipWith (\a b -> abs (Bucket.bPeakQueued a - Bucket.bPeakQueued b) <= 1) got want))
   where
-    (gs, waiting, got) = runFloorBursts fr
     gap  = Burst.gapFor (frRate fr) (frCapacity fr)
     end  = endTime fr
     strip b = b { Bucket.bPeakQueued = 0 }
@@ -673,8 +719,8 @@ prop_bursts_match_grants fr =
     -- order, event); a request still waiting at the end stays queued
     before = [ g | g <- gs, gAt g < end ]
     events = sortOn (\(t, o, _) -> (t, o)) $
-         [ (gAt g, 1 :: Int, Left g) | g <- before ]
-      ++ concat [ [ (gAsked g, 2, Right 1), (gAt g, 0, Right (-1)) ]
+         [ (gAt g, 0 :: Int, Left g) | g <- before ]
+      ++ concat [ [ (gAsked g, 2, Right 1), (gAt g, 1, Right (-1)) ]
                 | g <- before, gAsked g < gAt g, Burst.creditedTier (gTier g) ]
       ++ [ (asked, 2, Right 1)
          | (i, asked) <- waiting, Burst.creditedTier (fbTier (frBearers fr !! i)) ]
@@ -684,6 +730,14 @@ prop_bursts_match_grants fr =
       Right k -> let q' = q + k in (q', Burst.burstQueued gap t q' d)
     want = fst $ Burst.takeBursts $ Burst.closeOpen $ Burst.burstSweep gap end
                                   $ snd $ foldl' step (0, Burst.emptyDetector) events
+    -- a counting floor grant, queued since before the last counting grant,
+    -- which was more than the gap ago
+    counts g = Burst.countsAsBurst (gTier g) (gBytes g)
+    stall g  = gSource g == FromFloor && counts g
+            && case [ gAt h | h <- before, counts h, gAt h < gAt g ] of
+                 [] -> False
+                 ts -> let prev = maximum ts
+                       in gAsked g <= prev && gAt g `diffTime` prev > gap
 
 -- | A bearer catching up at rest rank, or several: no burst, no busy period.
 prop_rest_alone_no_burst :: Property
@@ -820,7 +874,7 @@ prop_waiting_follows_deal Deal { dlSeed, dlPeriod, dlRate, dlCap } =
     starts   = [0, 0.001]
     fr = FloorRun { frRate = dlRate, frCapacity = dlCap, frPercent = 0, frDuration = run - 0.001
                   , frRotation = Just rotation
-                  , frBearers = [ FBearer 1 dlCap st | st <- starts ] }
+                  , frBearers = [ FBearer 1 dlCap st | st <- starts ], frDirect = [] }
     (gs, _) = runFloor False fr
     place b t = Bucket.rotatedRank rotation b (Time t)
     -- a key: the place, then the ticket, which follows the start order

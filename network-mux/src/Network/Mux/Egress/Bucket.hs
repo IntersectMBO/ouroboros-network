@@ -752,6 +752,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
     floorGrant asked now key fl fkey c waiters fw st = do
       chargeCredit bucket now need
       charge now
+      noteGrant asked now (tierOfKey key)
       let waiters' = Map.delete key waiters
           fw'      = Map.delete fkey fw
       writeTVar bWaiters waiters'
@@ -764,7 +765,6 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
         ( recordServed (tierOfKey key) bhId now (now `diffTime` asked) ownTime
         . recordGrant (Just (tierOfKey key)) FromFloor need
                       waitedWritable (now `diffTime` asked))
-      noteGrant asked now (tierOfKey key)
 
     -- the bearer's own time before this request: at the gate, and the
     -- previous batch's write
