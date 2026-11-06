@@ -243,7 +243,7 @@ newWithEgress :: forall (mode :: Mode) m.
 newWithEgress EgressPolicy { egressBudget, egressSlice, egressLaneOf } muxTracers muxCounters ptcls = do
     meBudgetHandle <- registerBearer egressBudget
     meSlice        <- traverse registerBearer egressSlice
-    meCharge       <- newTVarIO (\_ _ _ -> return ())
+    meCharge       <- newTVarIO (\_ _ -> return ())
     mkMux (Just MuxEgress { meBudget = egressBudget, meBudgetHandle, meSlice,
                             meLaneOf = egressLaneOf, meCharge })
           muxTracers muxCounters ptcls
