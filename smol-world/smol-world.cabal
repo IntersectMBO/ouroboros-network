@@ -1,0 +1,25 @@
+cabal-version:      3.0
+name:               smol-world
+version:            0.1.0.0
+synopsis:           Small World Model of Load
+build-type:         Simple
+
+common warnings
+  ghc-options:      -Wall
+
+library
+  import:           warnings
+  hs-source-dirs:   src
+  exposed-modules:  SmallWorld.Types
+                    SmallWorld.Rand
+                    SmallWorld.Stake
+                    SmallWorld.Topology
+                    SmallWorld.Metrics
+                    SmallWorld.TCP
+                    SmallWorld.Diffusion
+                    SmallWorld.Mempool
+  build-depends:    base       >=4.17 && <5
+                  , containers
+                  , vector
+                  , random     >=1.2  && <1.4
+  default-language: Haskell2010
