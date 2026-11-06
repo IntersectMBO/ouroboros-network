@@ -5472,10 +5472,11 @@ data ReplayPay = FromBudget | FromSlice | Borrowed
   deriving (Eq, Show)
 
 -- | What the replay saw: a grant, a slice head that went to sleep on the
--- budget's ready instant, or two events in the same instant whose order the
--- replay cannot know.
+-- budget's ready instant or was woken by the budget's queue emptying, or two
+-- events in the same instant whose order the replay cannot know.
 data ReplayEvent = RGrant !ReplayPay ((Int, Int), (Time, Time))
                  | RSleptOnBudget
+                 | RWokenByIdleBudget
                  | RTie
                  | RBudgetQueue !Time !Int !(Int, Int) !Bool
                    -- ^ the budget's queue changed: when, its new length, whose
@@ -5490,7 +5491,8 @@ data ReplayEvent = RGrant !ReplayPay ((Int, Int), (Time, Time))
 -- 'Bucket.wakeAt' -- unless a lower key arrives first and takes the head.  A
 -- slice head that is short borrows the budget if nobody is queued on it and
 -- the bytes are there; short on both, it sleeps until the earlier of the two,
--- and nothing but its own queue wakes it.  A slice-paid grant is charged to
+-- and nothing but its own queue wakes it, unless it found the budget's queue
+-- busy: then the grant that empties that queue wakes it to check again.  A slice-paid grant is charged to
 -- the budget on credit.  A granted bearer re-joins with its next take.
 --
 -- The two queues run concurrently, so two checks in the same instant, one on
@@ -5498,7 +5500,7 @@ data ReplayEvent = RGrant !ReplayPay ((Int, Int), (Time, Time))
 -- with 'RTie'.
 replayEvents :: BucketSched -> [ReplayEvent]
 replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
-    go (Time 0) (Time 0) (Time 0) (List.sortOn arAt (arrivals sch)) [] [] Nothing Nothing Nothing
+    go (Time 0) (Time 0) (Time 0) (List.sortOn arAt (arrivals sch)) [] [] Nothing Nothing False Nothing
   where
     n         = length schBearers
     sliceRate = maybe 0 (\pct -> schRate * fromIntegral pct / 100) schSlice
@@ -5544,8 +5546,9 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
     -- pending: not yet requested, by request instant
     -- wb, ws:  the budget's and the slice's queues; each head is the lowest key
     -- kb, ks:  when each queue's short head checks again
+    -- sb:      the slice's sleeping head found the budget's queue busy
     -- lst:     the instant and queue of the last check
-    go now fb fs pending wb ws kb ks lst
+    go now fb fs pending wb ws kb ks sb lst
       -- the budget's head checks
       | Just h <- headBy (keyB now) wb, Nothing <- kb =
           if crossed True then [RTie] else
@@ -5554,8 +5557,14 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
           in if ready == now
                 then RGrant FromBudget (grant h)
                    : RBudgetQueue now (length wb - 1) (arBearer h, arTake h) False
-                   : go now fb' fs (next h now pending) (List.delete h wb) ws Nothing ks lst'
-                else go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks lst'
+                   : let wb'  = List.delete h wb
+                         -- the slice's head checks next, after this grant
+                         wake = null wb' && sb && ks /= Nothing
+                     in [ RWokenByIdleBudget | wake ]
+                     ++ go now fb' fs (next h now pending) wb' ws Nothing
+                           (if wake then Nothing else ks) (sb && not wake)
+                           (if wake then Nothing else lst')
+                else go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks sb lst'
       -- the slice's head checks: its own bucket, else the budget's idle capacity
       | Just h <- headBy keyS ws, Nothing <- ks =
           let need          = arBytes h
@@ -5567,17 +5576,17 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
                 then RGrant FromSlice (grant h)
                    : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
                    : go now (Bucket.chargeAt schRate fb now need) fs'
-                        (next h now pending) wb (List.delete h ws) kb Nothing
+                        (next h now pending) wb (List.delete h ws) kb Nothing False
                         (Just (now, False))
              else if idle && readyB == now
                 then RGrant Borrowed (grant h)
                    : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
-                   : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing
+                   : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing False
                         (Just (now, False))
              else [ RSleptOnBudget | idle, readyB < readyS ]
                ++ go now fb fs pending wb ws kb
                      (Just (Bucket.wakeAt now (if idle then min readyS readyB else readyS)))
-                     (Just (now, False))
+                     (not idle) (Just (now, False))
       -- a waiting request's refresh before both wakes and the next request:
       -- if its key moves, whoever is then the budget's head checks at once,
       -- the request itself if it stays or becomes the head, or the one its
@@ -5588,25 +5597,25 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
               headNow = fmap keyOf (headBy (keyB r) wb)
               checks  = moved && (headNow /= headWas || headNow == Just (keyOf a))
               keyOf x = (arBearer x, arTake x)
-          in go r fb fs pending wb ws (if checks then Nothing else kb) ks lst
+          in go r fb fs pending wb ws (if checks then Nothing else kb) ks sb lst
       -- a request before both wakes joins its own queue; a lower key takes
       -- that queue's head
       | p : ps <- pending, all (arAt p <) kb, all (arAt p <) ks =
           if arSlice p
              then let displaces = maybe False ((keyS p <) . keyS) (headBy keyS ws)
                   in RSliceQueue (arAt p) (length ws + 1) (arBearer p, arTake p) True
-                   : go (arAt p) fb fs ps wb (p : ws) kb (if displaces then Nothing else ks) lst
+                   : go (arAt p) fb fs ps wb (p : ws) kb (if displaces then Nothing else ks) sb lst
              else let displaces = maybe False ((keyB (arAt p) p <) . keyB (arAt p)) (headBy (keyB (arAt p)) wb)
                   in RBudgetQueue (arAt p) (length wb + 1) (arBearer p, arTake p) True
-                   : go (arAt p) fb fs ps (p : wb) ws (if displaces then Nothing else kb) ks lst
+                   : go (arAt p) fb fs ps (p : wb) ws (if displaces then Nothing else kb) ks sb lst
       -- the earlier wake fires
       | otherwise =
           case (kb, ks) of
                (Just b, Just s') | b == s'   -> [RTie]
-                                 | b < s'    -> go b  fb fs pending wb ws Nothing ks lst
-                                 | otherwise -> go s' fb fs pending wb ws kb Nothing lst
-               (Just b, Nothing)  -> go b  fb fs pending wb ws Nothing ks lst
-               (Nothing, Just s') -> go s' fb fs pending wb ws kb Nothing lst
+                                 | b < s'    -> go b  fb fs pending wb ws Nothing ks sb lst
+                                 | otherwise -> go s' fb fs pending wb ws kb Nothing sb lst
+               (Just b, Nothing)  -> go b  fb fs pending wb ws Nothing ks sb lst
+               (Nothing, Just s') -> go s' fb fs pending wb ws kb Nothing sb lst
                (Nothing, Nothing) -> []
       where
         grant h = ((arBearer h, arTake h), (arAt h, now))
@@ -5757,6 +5766,7 @@ prop_bucket_schedule sch
       classify (paid Borrowed)                "borrowed" $
       classify (paid FromSlice)               "slice paid, charged on credit" $
       classify (RSleptOnBudget `elem` events) "slice slept on the budget" $
+      classify (RWokenByIdleBudget `elem` events) "slice woken by the budget's queue emptying" $
       classify (Bucket.bsBursts (fst (replayStats sch)) > 0) "the budget was busy" $
       classify (Bucket.bsContendedTime (fst (replayStats sch)) > 0) "bearers contended" $
         (List.sortOn fst grants === List.sortOn fst (replaySched sch)
