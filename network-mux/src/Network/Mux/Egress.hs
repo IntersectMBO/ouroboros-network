@@ -153,10 +153,11 @@ data LaneEgress m =
 -- | Where the scheduled lane reports what a batch carries: bytes per
 -- mini-protocol, SDU headers included, and when, in the transaction that
 -- grants the batch, so the rank rule asked by the next grant already sees
--- it. The policy that installs it decides what counts against which
+-- it. The whole batch is reported at once, since its rank was chosen for
+-- all of it. The policy that installs it decides what counts against which
 -- allowance; the mux only reports. Direct and slice batches are never
 -- reported, so what rides those lanes is never charged.
-type ChargeSink m = Time -> MiniProtocolNum -> Int -> STM m ()
+type ChargeSink m = Time -> Map.Map MiniProtocolNum Int -> STM m ()
 
 -- | A bearer's egress queues, one per lane in use, and the lane of each
 -- mini-protocol. An unscheduled mux has one queue and every SDU goes to it.
@@ -286,7 +287,7 @@ muxer egressQueue tracer counters laneEgress
            Scheduled_ bucketHandle chargeVar -> do
              let chargeNow t = do
                    sink <- readTVar chargeVar
-                   forM_ (Map.toList (Map.mapKeysWith (+) fst perProtocol)) (uncurry (sink t))
+                   sink t (Map.mapKeysWith (+) fst perProtocol)
              t0 <- getMonotonicTime
              gate timeout
              t1 <- getMonotonicTime
@@ -297,8 +298,9 @@ muxer egressQueue tracer counters laneEgress
              traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1)
                                                 (source == FromFloor))
              return t2
-      -- A write that throws, part of the batch sent or none, is neither
-      -- counted nor charged: the connection is gone with it.
+      -- A write that throws, part of the batch sent or none, is not counted,
+      -- and the credit lane does not charge it; a grant's charge, made as
+      -- the batch was granted, stands: the connection is gone with it.
       unmask (void (writeMany tracer timeout sdus))
       end <- getMonotonicTime
       -- one transaction after every write: the release, which counts the

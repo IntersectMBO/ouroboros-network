@@ -5944,8 +5944,8 @@ runLanesWith withSlice laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSi
     serverMux <- Mx.newWithEgress policy Mx.nullTracers Nothing
                    [ info bulkN Mx.ResponderDirection, info probeN Mx.InitiatorDirection
                    , info sliceN Mx.InitiatorDirection ]
-    atomically $ Mx.setEgressChargeSink serverMux $ \_ num n ->
-      modifyTVar chargedVar (M.insertWith (+) num n)
+    atomically $ Mx.setEgressChargeSink serverMux $ \_ batch ->
+      modifyTVar chargedVar (M.unionWith (+) batch)
     clientMux <- Mx.new Mx.nullTracers Nothing
                    [ info bulkN Mx.InitiatorDirection, info probeN Mx.ResponderDirection
                    , info sliceN Mx.ResponderDirection ]

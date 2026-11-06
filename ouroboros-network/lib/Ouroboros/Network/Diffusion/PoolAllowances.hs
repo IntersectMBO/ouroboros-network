@@ -232,14 +232,16 @@ rankFor Other     own pools =
 -- bucket that gave the rank the rule last answered: a partner's own bucket
 -- at the partner tier, the pool's buckets at the pool's, the own bucket at
 -- the stranger's; at rest nothing. Bytes on the uncharged protocols are
--- never charged.
+-- never charged. A batch's charged bytes are charged as one sum, so a batch
+-- granted with credit is charged in full however its bytes split among
+-- protocols.
 mkEgressRule :: (MonadSTM m, Ord addr)
              => PoolAllowances m addr
              -> [MiniProtocolNum]
              -> addr
              -> (Time -> STM m Standing)
              -> Time
-             -> m (Time -> STM m Rank, Time -> MiniProtocolNum -> Int -> STM m ())
+             -> m (Time -> STM m Rank, Time -> Map MiniProtocolNum Int -> STM m ())
 mkEgressRule allowances@PoolAllowances { paAllowance, paFresh, paStrangerLock }
              uncharged key standing t0 = do
   -- the connection's own bucket: nothing until the lock has passed, then
@@ -281,8 +283,8 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFresh, paStrangerLock }
         writeTVar asPartner (rank == Rank (tierNumber PartnerTier))
         return rank
 
-      sink now num n
-        | num `elem` uncharged = return ()
+      sink now batch
+        | n <= 0    = return ()
         | otherwise = do
             partner <- readTVar asPartner
             bs      <- bucketsFor allowances key
@@ -291,5 +293,7 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFresh, paStrangerLock }
                  (True, _)   -> chargeOwn now fresh n
                  (False, []) -> chargeOwn now fresh n
                  (False, _)  -> chargeBuckets allowances n bs
+        where
+          n = sum [ bytes | (num, bytes) <- Map.toList batch, num `notElem` uncharged ]
 
   return (rule, sink)
