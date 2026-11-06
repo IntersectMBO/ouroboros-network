@@ -499,7 +499,7 @@ withBidirectionalConnectionManager name timeouts
             noBindForkPolicy
             Nothing                  -- no mux counters
             -- every connection of the experiments ranks alike
-            ((\policy -> (policy, \_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ _ -> return ())))
+            ((\policy -> (policy, \_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ -> return ())))
                <$> egressPolicy)
             HandshakeArguments {
                 -- TraceSendRecv

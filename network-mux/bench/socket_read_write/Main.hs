@@ -287,7 +287,7 @@ scheduledLane :: IO (LaneEgress IO)
 scheduledLane = do
     bucket <- newBucket 1e15 (1024 * 1024) Nothing
     -- nothing charges what the benchmark sends
-    sink <- newTVarIO (\_ _ _ -> return ())
+    sink <- newTVarIO (\_ _ -> return ())
     Scheduled_ <$> registerBearer bucket <*> pure sink
 
 -- | The tier of a peer as a rule over the local root groups, evaluated in the
