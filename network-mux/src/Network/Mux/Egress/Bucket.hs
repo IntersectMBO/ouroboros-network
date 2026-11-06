@@ -610,7 +610,8 @@ wakeHead waiters =
        Nothing        -> return ()
 
 
-data Attempt = Granted | Borrowed | FromTheFloor | Displaced | ShortUntil !Time
+-- | 'ShortUntil' says whether the budget a slice borrows from had waiters.
+data Attempt = Granted | Borrowed | FromTheFloor | Displaced | ShortUntil !Time !Bool
 
 -- | What a bearer that is not the head of the budget's queue found at the
 -- floor.
@@ -941,6 +942,18 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
     fired :: STM m TimeoutState -> STM m ()
     fired due = due >>= check . (== TimeoutFired)
 
+    -- whether the budget we borrow from has waiters, and a wait for it to
+    -- have none; without a budget to borrow from, never
+    budgetBusy :: STM m Bool
+    budgetBusy = case borrow_m of
+      Just Bucket { bWaiters = budgetWaiters } -> not . Map.null <$> readTVar budgetWaiters
+      Nothing -> return False
+
+    budgetIdle :: STM m ()
+    budgetIdle = case borrow_m of
+      Just Bucket { bWaiters = budgetWaiters } -> readTVar budgetWaiters >>= check . Map.null
+      Nothing -> retry
+
     -- sleep until @ready@, or until @early@ holds, through the refreshes in
     -- between; the sleep's timer is cancelled with it
     sleepOr :: Time -> Time -> StrictTVar m (Delay m)
@@ -1009,28 +1022,32 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
                         floorLeave fkey_m
                         return (if source == FromBorrow then Borrowed else Granted)
                       Left ready -> case fkey_m of
-                        Nothing -> return (ShortUntil ready)
+                        Nothing -> ShortUntil ready <$> budgetBusy
                         -- the budget is short: if we are the floor's pick, the
                         -- floor serves us, or we wait for whichever is first
                         Just (fl, fkey) -> do
                           r <- tryFloor asked now key fl fkey waiters
                           case r of
-                               FloorGranted           -> return FromTheFloor
-                               FloorNotPick           -> return (ShortUntil ready)
-                               FloorShortUntil ready' -> return (ShortUntil (min ready ready'))
-                               BecameHead             -> return (ShortUntil ready)
+                               FloorGranted          -> return FromTheFloor
+                               FloorNotPick          -> ShortUntil ready <$> budgetBusy
+                               FloorShortUntil ready' -> ShortUntil (min ready ready') <$> budgetBusy
+                               BecameHead            -> ShortUntil ready <$> budgetBusy
            case r of
                 Granted          -> return FromBucket
                 Borrowed         -> return FromBorrow
                 FromTheFloor     -> return FromFloor
                 Displaced        -> loop asked period entry
-                ShortUntil ready -> do
+                ShortUntil ready busy -> do
                   -- sleep until the bytes are there; wake early if a lower
-                  -- key takes the head, or the floor makes us its pick
+                  -- key takes the head, or the floor makes us its pick, or
+                  -- the budget we could not borrow from while it had waiters
+                  -- has none: its bytes may be there to borrow
                   sleepOr now ready period entry $
                       (readTVar bWaiters >>= check . (/= Just key) . fmap fst . Map.lookupMin)
                     `orElse`
                       (readTVar bhWake >>= check)
+                    `orElse`
+                      (check busy >> budgetIdle)
                   atomically $ writeTVar bhWake False
                   loop asked period entry
 
