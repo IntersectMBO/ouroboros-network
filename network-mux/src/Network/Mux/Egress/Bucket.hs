@@ -737,6 +737,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
     floorGrant asked now key fl fkey c waiters fw st = do
       chargeCredit bucket now need
       charge now
+      noteGrant asked now (tierOfKey key)
       leaveBudget now key waiters
       let fw' = Map.delete fkey fw
       writeTVar (flWaiters fl) fw'
@@ -746,7 +747,6 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
         ( recordServed (tierOfKey key) bhId now (now `diffTime` asked) ownTime
         . recordGrant (Just (tierOfKey key)) FromFloor need
                       waitedWritable (now `diffTime` asked))
-      noteGrant asked now (tierOfKey key)
 
     -- leave the budget's queue at @now@; if we were the head, the next in
     -- line takes it
