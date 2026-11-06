@@ -19,6 +19,9 @@ module Ouroboros.Network.OrphanInstances
   , localRootPeersGroupsToJSON
   , peerSelectionTargetsToObject
   , demotionScoresToJSON
+  , sharedTxStateCounterPairs
+  , sharedTxStateTablePairs
+  , tierCensusPairs
   , JSONField (..)
   ) where
 
@@ -27,6 +30,7 @@ import Control.Exception (Exception (..))
 import Control.Monad (zipWithM)
 import Control.Monad.Class.MonadTime.SI (Time (..))
 import Data.Aeson
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.Types (Pair, Parser, listValue)
 import Data.Bifunctor (first)
 import Data.Bool (bool)
@@ -93,9 +97,10 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
-           SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
-           TxEntry (..), TxLease (..), TxSubmissionLogicVersion (..),
-           retainedSize, retainedToList)
+           SharedTxState (..), SharedTxStateCounts, TierCensus,
+           TraceTxLogic (..), TraceTxSubmissionInbound (..),
+           TxSubmissionLogicVersion (..), retainTimeSeconds, retainedToList,
+           sharedTxStateCountFields, tierCensusFields)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1859,51 +1864,46 @@ instance ( ToJSON txid
       , "numTxsToRequest" .= reqs
       ]
 
-traceSharedTxStateToJSON
+-- | The shared state's counters and counts as JSON pairs: what every
+-- rendering of a 'TraceSharedTxState' carries.
+sharedTxStateCounterPairs :: SharedTxState addr txid -> SharedTxStateCounts -> [Pair]
+sharedTxStateCounterPairs SharedTxState { sharedGeneration, sharedRevision, sharedClaimable } counts =
+    [ "sharedGeneration" .= sharedGeneration
+    , "sharedRevision" .= sharedRevision
+    , "sharedClaimable" .= sharedClaimable
+    ]
+    ++
+    [ Key.fromString name .= n
+    | (name, n) <- sharedTxStateCountFields counts
+    ]
+
+-- | The shared state's tables as JSON pairs, for a rendering in full.
+sharedTxStateTablePairs
   :: (Show addr, Show txid, HasRawTxId txid)
   => SharedTxState addr txid
-  -> Value
-traceSharedTxStateToJSON SharedTxState {
-                           sharedTxTable,
-                           sharedRetainedTxs,
-                           sharedTxIdToKey,
-                           sharedKeyToTxId,
-                           sharedGeneration
-                         } =
-    object
-      [ "sharedGeneration" .= sharedGeneration
-      , "activeTxCount" .= IntMap.size sharedTxTable
-      , "retainedTxCount" .= retainedSize sharedRetainedTxs
-      , "internedTxCount" .= Map.size sharedTxIdToKey
-      , "leasedTxCount" .= leasedTxCount
-      , "claimableTxCount" .= claimableTxCount
-      , "totalAttemptCount" .= totalAttemptCount
-      , "submittingTxCount" .= submittingTxCount
-      , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
-                           | (txKey, txEntry) <- IntMap.toList sharedTxTable
-                           ]
-      , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
-                               | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
-                               ]
-      , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
-      ]
+  -> [Pair]
+sharedTxStateTablePairs SharedTxState {
+                          sharedTxTable,
+                          sharedRetainedTxs,
+                          sharedTxIdToKey,
+                          sharedKeyToTxId
+                        } =
+    [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+                         | (txKey, txEntry) <- IntMap.toList sharedTxTable
+                         ]
+    , "sharedRetainedTxs" .= [ (renderTxId txKey, retainTimeSeconds retainUntil)
+                             | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
+                             ]
+    , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
+    ]
   where
-    activeEntries = IntMap.elems sharedTxTable
-
-    leasedTxCount =
-      length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
-
-    claimableTxCount =
-      length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
-
-    totalAttemptCount =
-      sum [ txAttempt | TxEntry { txAttempt } <- activeEntries ]
-
-    submittingTxCount =
-      length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
-
     renderTxId txKey =
       maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
+
+-- | The tier census as JSON pairs, by the fields' names.
+tierCensusPairs :: TierCensus -> [Pair]
+tierCensusPairs census =
+    [ Key.fromString name .= n | (name, n) <- tierCensusFields census ]
 
 -- TODO: in cardano-node in the `coot/tx-submission-10.5` branch there's
 -- a better instance.
@@ -1913,10 +1913,13 @@ instance ( Show addr
          , HasRawTxId txid
          )
        => ToJSON (TraceTxLogic addr txid tx) where
-  toJSON (TraceSharedTxState st) =
+  toJSON (TraceSharedTxState st counts) =
     object [ "kind" .= String "SharedTxState"
-           , "sharedTxState" .= traceSharedTxStateToJSON st
+           , "sharedTxState" .= object (sharedTxStateCounterPairs st counts
+                                        ++ sharedTxStateTablePairs st)
            ]
+  toJSON (TraceTxTiers census) =
+    object $ ("kind" .= String "TxTiers") : tierCensusPairs census
 
 
 -- TODO: we need verbosity levels, this instance should be removed once
