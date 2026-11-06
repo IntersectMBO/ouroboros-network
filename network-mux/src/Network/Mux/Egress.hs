@@ -346,13 +346,17 @@ muxer egressQueue tracer counters laneEgress
       go sdus !n !len per taken
         | n >= maxSDUsPerBatch || len >= batchSize = return (reverse sdus, len, per, taken)
         | otherwise = do
-            demand_m <- atomically $ tryReadTBQueue egressQueue
+            demand_m <- atomically $ do
+              next <- tryReadTBQueue egressQueue
+              case next of
+                Nothing -> return Nothing
+                Just (TLSRDemand mpc md d) -> do
+                  let first = Map.notMember (mpc, md) per
+                  sdu <- takeSingleWanton egressQueue sduSize mpc md d first
+                  return (Just (mpc, md, d, first, sdu))
             case demand_m of
-                 Just (TLSRDemand mpc md d) -> do
-                   -- a mini-protocol is held once per batch, at its first SDU
-                   let key   = (mpc, md)
-                       first = Map.notMember key per
-                   sdu <- processSingleWanton egressQueue sduSize mpc md d first
+                 Just (mpc, md, d, first, sdu) -> do
+                   let key = (mpc, md)
                    let !l = sduLength sdu
                    go (sdu:sdus) (n + 1) (len + l) (Map.insertWith (+) key l per)
                       (if first then (key, d) : taken else taken)

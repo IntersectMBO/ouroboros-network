@@ -173,6 +173,8 @@ tests =
                    prop_mux_written_is_accounted
     , testProperty "a write blocked part way takes the cancellation, nothing counted"
                    prop_mux_partial_write_cancelled
+    , testProperty "a full egress queue with producers blocked on it is drained"
+                   prop_mux_full_queue_drains
     ]
   , testGroup "Counters"
     [ testProperty "each failure is counted once, where it belongs"
@@ -5118,6 +5120,84 @@ prop_mux_partial_write_cancelled wc@WriteCase { wcLane } =
       cancel mx
       t1 <- getMonotonicTime
       (,,,,) (t1 `diffTime` t0) <$> readTVarIO written <*> readTVarIO batch <*> counted <*> charged
+
+-- | A full egress queue with producers blocked on it: @fqCapacity@ demands
+-- queued, one per mini-protocol, and @fqBlocked@ more whose producers wait
+-- for room. Each demand is @n@ SDUs of payload, so requeueing what is left
+-- of it needs the slot it came from, and a batch takes up to
+-- @fqBatchSDUs@ SDUs, so it takes demands after its first.
+data FullQueueCase = FullQueueCase {
+    fqCapacity  :: Int,
+    fqBlocked   :: Int,
+    fqFragments :: [Int],   -- ^ SDUs per demand, queued ones first
+    fqBatchSDUs :: Int
+  }
+  deriving Show
+
+instance Arbitrary FullQueueCase where
+  arbitrary = do
+    cap     <- choose (1, 8)
+    blocked <- choose (1, 3)
+    frags   <- vectorOf (cap + blocked) (choose (1, 3))
+    sdus    <- choose (1, 6)
+    return (FullQueueCase cap blocked frags sdus)
+  shrink FullQueueCase { fqCapacity, fqBlocked, fqFragments, fqBatchSDUs } =
+       [ FullQueueCase c fqBlocked (drop (fqCapacity - c) fqFragments) fqBatchSDUs
+       | c <- [1 .. fqCapacity - 1] ]
+    ++ [ FullQueueCase fqCapacity b (take (fqCapacity + b) fqFragments) fqBatchSDUs
+       | b <- [1 .. fqBlocked - 1] ]
+    ++ [ FullQueueCase fqCapacity fqBlocked fs fqBatchSDUs
+       | fs <- shrinkList (\f -> [ f' | f' <- shrink f, f' >= 1 ]) fqFragments
+       , length fs == length fqFragments ]
+    ++ [ FullQueueCase fqCapacity fqBlocked fqFragments n | n <- shrink fqBatchSDUs, n >= 1 ]
+
+-- | The muxer, the queue's only consumer, writes every byte and every
+-- producer gets its demand in: a batch taking a demand after its first takes
+-- its SDU and requeues the rest in the transaction that dequeues it, so no
+-- producer can fill the slot in between.
+prop_mux_full_queue_drains :: FullQueueCase -> Property
+prop_mux_full_queue_drains fq@FullQueueCase { fqCapacity, fqBlocked, fqFragments, fqBatchSDUs } =
+    classify (fqBatchSDUs > 1) "a batch takes several SDUs" $
+    classify (any (> 1) fqFragments) "a demand needs requeueing" $
+    counterexample (show fq) $
+      runSimOrThrow sim === Just (sum fqFragments * sdu, fqBlocked)
+  where
+    sdu = 64
+    sim :: forall s. IOSim s (Maybe (Int, Int))
+    sim = do
+      queue   <- newTBQueueIO (fromIntegral fqCapacity)
+      muxHeld <- newTVarIO 0
+      written <- newTVarIO 0
+      demands <- forM (zip [0 ..] fqFragments) $ \(i, n) -> do
+        state <- Mx.newEgressVar
+        wt <- Egress.newWanton state muxHeld
+        atomically $ writeTVar (Egress.want wt) (BL.replicate (fromIntegral (n * sdu)) 0x55)
+        return (Egress.TLSRDemand (Mx.MiniProtocolNum i) Mx.ResponderDir wt)
+      let (queued, waiting) = splitAt fqCapacity demands
+      atomically $ forM_ queued (writeTBQueue queue)
+      admitted  <- newTVarIO 0
+      producers <- forM waiting $ \d -> async $ atomically $
+                     writeTBQueue queue d >> modifyTVar admitted (+ 1)
+      let bearer = Mx.Bearer {
+              Mx.write          = \_ _ _ -> error "single writes are not used",
+              Mx.writeMany      = \_ _ sdus -> do
+                atomically $ modifyTVar written (+ sum [ fromIntegral (Mx.msLength s) | s <- sdus ])
+                getMonotonicTime,
+              Mx.read           = \_ _ -> error "the muxer does not read",
+              Mx.sduSize        = Mx.SDUSize (fromIntegral sdu),
+              Mx.batchSize      = fqBatchSDUs * (sdu + fromIntegral Mx.msHeaderLength),
+              Mx.name           = "full-queue",
+              Mx.egressInterval = 0,
+              Mx.awaitWritable  = \_ _ -> return ()
+            }
+      mx <- async (void (Egress.muxer queue nullTracer Nothing Egress.Unscheduled bearer))
+      done <- timeout 10 $ atomically $ do
+        n <- readTVar written
+        a <- readTVar admitted
+        check (n == sum fqFragments * sdu && a == fqBlocked)
+        return (n, a)
+      mapM_ cancel (mx : producers)
+      return done
 
 --
 -- Counters
