@@ -287,7 +287,7 @@ setEgressRankSource Mux { muxEgress } rank =
          Nothing                           -> return ()
 
 -- | Install where the scheduled lane reports the bytes each batch carries, per
--- mini-protocol, as the batch is granted. Nothing on an unscheduled mux.
+-- mini-protocol, and its granted rank. Nothing on an unscheduled mux.
 setEgressChargeSink :: MonadSTM m => Mux mode m -> ChargeSink m -> STM m ()
 setEgressChargeSink Mux { muxEgress } sink =
     case muxEgress of

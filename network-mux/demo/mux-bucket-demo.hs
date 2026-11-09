@@ -449,8 +449,8 @@ newStatsTracer = do
   statsVar <- newTVarIO emptyStats
   let grantTracer :: Tracer IO BearerTrace
       grantTracer = Tracer $ emit $ \case
-        TraceEgressGrant len tw tt _ -> atomically $ modifyTVar statsVar (addGrant len tw tt)
-        _                          -> return ()
+        TraceEgressGrant len tw tt _ _ -> atomically $ modifyTVar statsVar (addGrant len tw tt)
+        _                            -> return ()
   return ( statsVar
          , Mx.nullTracers { Mx.bearerTracer = contramap runIdentity grantTracer } )
 

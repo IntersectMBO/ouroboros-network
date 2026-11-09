@@ -112,12 +112,8 @@ import System.Random.SplitMix qualified as SM
 
 import Network.Mux.Egress.Burst
 import Network.Mux.Egress.Floor
-import Network.Mux.Types (Tier (..), tierNumber, unrankedNumber)
+import Network.Mux.Types (Rank (..), Tier (..), tierNumber, unrankedNumber)
 
-
--- | A bearer's tier: lower is served first.
-newtype Rank = Rank Word8
-  deriving (Eq, Ord, Show)
 
 newtype Ticket = Ticket Word64
   deriving (Eq, Ord, Show, Generic)
@@ -212,8 +208,8 @@ data BucketStats = BucketStats {
   bsBurstsWider   :: ![Word64],  -- ^ busy periods with at least each of 'burstWidths'
                                  --   credited bearers queued at once
   bsTiers         :: !(Map Word8 TierGrants),
-                                 -- ^ what was granted from the queue, by the tier the
-                                 --   bearer queued at; the fast path is not ranked
+                                 -- ^ what was granted, by the tier it was granted
+                                 --   at, the fast path's grants included
   bsServed        :: !(Map (Word8, Word64) Served),
                                  -- ^ each bearer's standing at each tier it was
                                  --   granted at, the fast path included at the
@@ -339,9 +335,9 @@ burstStep !now n0 n1 (bu0, st0) = ended (contended (started (bu0, st0)))
                                           burstWidths (bsBurstsWider st) } )
       | otherwise = (bu, st)
 
-recordGrant :: Maybe Word8  -- ^ the tier it queued at, if it queued
+recordGrant :: Word8  -- ^ the tier it was granted at
             -> GrantSource -> Int -> DiffTime -> DiffTime -> BucketStats -> BucketStats
-recordGrant tier_m source need waitedWritable waitedTokens st =
+recordGrant tier source need waitedWritable waitedTokens st =
   st { bsBytes        = bsBytes st + n
      , bsBatches      = bsBatches st + 1
      , bsBorrowed     = bsBorrowed st + (if source == FromBorrow then n else 0)
@@ -349,9 +345,7 @@ recordGrant tier_m source need waitedWritable waitedTokens st =
      , bsWaitWritable = bsWaitWritable st + waitedWritable
      , bsWaitsOver    = strictZipWith (\b c -> if waitedTokens > b then c + 1 else c)
                                 waitBounds (bsWaitsOver st)
-     , bsTiers        = case tier_m of
-                             Just tier -> Map.insertWith (<>) tier (TierGrants n 1) (bsTiers st)
-                             Nothing   -> bsTiers st
+     , bsTiers        = Map.insertWith (<>) tier (TierGrants n 1) (bsTiers st)
      }
   where
     n = fromIntegral need
@@ -660,12 +654,14 @@ wakeFloorPick fl fw = do
               Nothing   -> return ()
 
 
--- | 'ShortUntil' says whether the budget a slice borrows from had waiters.
-data Attempt = Granted | Borrowed | FromTheFloor | Displaced | ShortUntil !Time !Bool
+-- | A grant carries the tier it was made at; 'ShortUntil' says whether the
+-- budget a slice borrows from had waiters.
+data Attempt = Granted !Word8 | Borrowed !Word8 | FromTheFloor !Word8
+             | Displaced | ShortUntil !Time !Bool
 
 -- | What a bearer that is not the head of the budget's queue found at the
 -- floor.
-data FloorAttempt = FloorGranted | FloorNotPick | FloorShortUntil !Time | BecameHead
+data FloorAttempt = FloorGranted !Word8 | FloorNotPick | FloorShortUntil !Time | BecameHead
 
 -- | Block until @need@ bytes are granted to this bearer.
 awaitGrant :: forall m. (MonadTimer m, MonadMask m)
@@ -691,25 +687,27 @@ awaitGrantWaited :: forall m. (MonadTimer m, MonadMask m)
                  -> DiffTime   -- ^ waited at the writability gate
                  -> DiffTime   -- ^ the previous batch's write
                  -> BucketHandle m -> Int -> m GrantSource
-awaitGrantWaited borrow_m waited wrote = awaitGrantWith borrow_m waited wrote Nothing
+awaitGrantWaited borrow_m waited wrote h need = fst <$> awaitGrantWith borrow_m waited wrote Nothing h need
 
 -- | 'awaitGrantWaited' with a charge run in the transaction that grants:
 -- what the bearer's rank rule spends is spent the instant the bytes are
 -- granted. A queued request is granted only at the tier its rule answers
 -- then, so a credit that another grant has just spent moves it to the place
 -- the rule gives now, before it is served; the fast path, with nobody
--- waiting, is served whatever its rank and charged all the same.
+-- waiting, is served whatever its rank and charged all the same. The charge
+-- receives that grant's rank explicitly, including when a fixed rank has
+-- replaced the original rule, and the caller gets it beside the source.
 awaitGrantCharged :: forall m. (MonadTimer m, MonadMask m)
                   => Maybe (Bucket m)
                   -> DiffTime   -- ^ waited at the writability gate
                   -> DiffTime   -- ^ the previous batch's write
-                  -> (Time -> STM m ())
-                  -> BucketHandle m -> Int -> m GrantSource
+                  -> (Rank -> STM m ())
+                  -> BucketHandle m -> Int -> m (GrantSource, Rank)
 awaitGrantCharged borrow_m waited wrote charge = awaitGrantWith borrow_m waited wrote (Just charge)
 
 awaitGrantWith :: forall m. (MonadTimer m, MonadMask m)
-               => Maybe (Bucket m) -> DiffTime -> DiffTime -> Maybe (Time -> STM m ())
-               -> BucketHandle m -> Int -> m GrantSource
+               => Maybe (Bucket m) -> DiffTime -> DiffTime -> Maybe (Rank -> STM m ())
+               -> BucketHandle m -> Int -> m (GrantSource, Rank)
 awaitGrantWith borrow_m waitedWritable wrote charge_m
                BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation, bStats
                                                        , bBurst, bDetector, bRate, bCapacity
@@ -752,7 +750,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
              return (Right entry)
 
     case r of
-         Left source -> return source
+         Left (source, tier) -> return (source, Rank tier)
          Right entry -> unmask (waitQueued now entry) `onException` cancel entry
   where
     tierOf :: Rank -> Word8
@@ -777,7 +775,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
                -> Map (FloorClass, Ticket) (StrictTVar m Bool) -> FloorState -> STM m ()
     floorGrant asked now key fl fkey c waiters fw st = do
       chargeCredit bucket now need
-      charge now
+      charge (tierOfKey key)
       noteGrant asked now (tierOfKey key)
       leaveBudget now key waiters
       let fw' = Map.delete fkey fw
@@ -786,7 +784,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
       wakeFloorPick fl fw'
       modifyTVar bStats
         ( recordServed (tierOfKey key) bhId now (now `diffTime` asked) ownTime
-        . recordGrant (Just (tierOfKey key)) FromFloor need
+        . recordGrant (tierOfKey key) FromFloor need
                       waitedWritable (now `diffTime` asked))
 
     -- leave the budget's queue at @now@; if we were the head, the next in
@@ -812,7 +810,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
                   Left ready -> return (FloorShortUntil ready)
                   Right ()   -> do
                     floorGrant asked now key fl fkey c waiters fw st
-                    return FloorGranted
+                    return (FloorGranted (tierOfKey key))
            _ -> return FloorNotPick
 
     -- the bearer's own time before this request: at the gate, and the
@@ -848,29 +846,31 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
     -- take from our bucket; failing that, from the budget if it is idle:
     -- nobody waiting and the bytes there. Idle but short, the wait is until
     -- whichever bucket has the bytes first. Right: taken, and whether it was
-    -- borrowed; Left: the instant to check again. A grant is counted here,
-    -- with the wait since the request at @asked@ and the tier it queued at.
-    takeOrBorrow :: Maybe Word8 -> Time -> Time -> STM m (Either Time GrantSource)
+    -- borrowed, and the tier it was granted at; Left: the instant to check
+    -- again. A grant is counted here, with the wait since the request at
+    -- @asked@ and the tier it was granted at.
+    takeOrBorrow :: Maybe Word8 -> Time -> Time -> STM m (Either Time (GrantSource, Word8))
     takeOrBorrow tier_m asked now = do
       r <- takeOrBorrow' now
       case r of
            Right source -> do
              -- a queued grant asked the rule in this transaction; the fast
-             -- path asks it now
+             -- path asks it now, so the charge follows the rank the rule
+             -- answers at this grant
              served <- case tier_m of
                             Just tier -> return tier
                             Nothing   -> tierOf <$> (readTVar bhRank >>= ($ now))
-             charge now
+             charge served
              modifyTVar bStats
                ( recordServed served bhId now (now `diffTime` asked) ownTime
-               . recordGrant tier_m source need waitedWritable (now `diffTime` asked))
+               . recordGrant served source need waitedWritable (now `diffTime` asked))
              noteGrant asked now served
-           Left _ -> return ()
-      return r
+             return (Right (source, served))
+           Left ready -> return (Left ready)
 
     -- what a grant charges, if anything
-    charge :: Time -> STM m ()
-    charge now = maybe (return ()) ($ now) charge_m
+    charge :: Word8 -> STM m ()
+    charge tier = maybe (return ()) (\f -> f (Rank tier)) charge_m
 
     takeOrBorrow' :: Time -> STM m (Either Time GrantSource)
     takeOrBorrow' now = do
@@ -901,7 +901,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
     -- I/O manager without WinIO keeps a cancelled timer listed until it is
     -- due, so there the list holds up to a refresh's worth of each request's
     -- timers.
-    waitQueued :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m GrantSource
+    waitQueued :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m (GrantSource, Rank)
     waitQueued asked entry =
       mask $ \unmask -> do
         period <- registerDelayCancellable tierRefresh >>= newTVarIO
@@ -1013,7 +1013,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
       writeTVar bhWake False
 
     loop :: Time -> StrictTVar m (Delay m)
-         -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m GrantSource
+         -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m (GrantSource, Rank)
     loop asked period entry = do
       (key, fkey_m) <- readTVarIO entry
       atHead <- atomically $
@@ -1036,8 +1036,8 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
                      then return BecameHead
                      else tryFloor asked now key fl fkey waiters
                 case r of
-                     FloorGranted -> return FromFloor
-                     BecameHead   -> loop asked period entry
+                     FloorGranted tier -> return (FromFloor, Rank tier)
+                     BecameHead        -> loop asked period entry
                      FloorNotPick -> do
                        awaitOr period entry woken
                        loop asked period entry
@@ -1058,10 +1058,10 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
                else do
                  taken <- takeOrBorrow (Just (tierOfKey key)) asked now
                  case taken of
-                      Right source -> do
+                      Right (source, tier) -> do
                         leaveBudget now key waiters
                         floorLeave fkey_m
-                        return (if source == FromBorrow then Borrowed else Granted)
+                        return (if source == FromBorrow then Borrowed tier else Granted tier)
                       Left ready -> case fkey_m of
                         Nothing -> ShortUntil ready <$> budgetBusy
                         -- the budget is short: if we are the floor's pick, the
@@ -1069,15 +1069,15 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
                         Just (fl, fkey) -> do
                           r <- tryFloor asked now key fl fkey waiters
                           case r of
-                               FloorGranted          -> return FromTheFloor
+                               FloorGranted tier     -> return (FromTheFloor tier)
                                FloorNotPick          -> ShortUntil ready <$> budgetBusy
                                FloorShortUntil ready' -> ShortUntil (min ready ready') <$> budgetBusy
                                BecameHead            -> ShortUntil ready <$> budgetBusy
            case r of
-                Granted          -> return FromBucket
-                Borrowed         -> return FromBorrow
-                FromTheFloor     -> return FromFloor
-                Displaced        -> loop asked period entry
+                Granted tier      -> return (FromBucket, Rank tier)
+                Borrowed tier     -> return (FromBorrow, Rank tier)
+                FromTheFloor tier -> return (FromFloor, Rank tier)
+                Displaced         -> loop asked period entry
                 ShortUntil ready busy -> do
                   -- sleep until the bytes are there; wake early if a lower
                   -- key takes the head, or the floor makes us its pick, or
