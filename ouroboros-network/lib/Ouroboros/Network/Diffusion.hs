@@ -398,7 +398,7 @@ runM Interfaces
                 dcLocalMuxForkPolicy
                 (Just localCounters)
                 Nothing                       -- node-to-client egress is not scheduled
-                (\_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ -> return ()))
+                (\_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ _ -> return ()))
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -537,7 +537,7 @@ runM Interfaces
             case poolAllowances of
                  Nothing ->
                    return ( \now -> (\s -> rankFor s False Nothing) <$> standingOf addr dataFlow remoteHot now
-                          , \_ _ -> return () )
+                          , \_ _ _ -> return () )
                  Just allowances -> do
                    now <- getMonotonicTime
                    mkEgressRule allowances uncharged (daEgressPoolKey addr)

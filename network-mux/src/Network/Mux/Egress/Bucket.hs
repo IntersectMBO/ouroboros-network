@@ -663,17 +663,19 @@ awaitGrantWaited borrow_m waited wrote = awaitGrantWith borrow_m waited wrote No
 -- granted. A queued request is granted only at the tier its rule answers
 -- then, so a credit that another grant has just spent moves it to the place
 -- the rule gives now, before it is served; the fast path, with nobody
--- waiting, is served whatever its rank and charged all the same.
+-- waiting, is served whatever its rank and charged all the same. The charge
+-- receives that grant's rank explicitly, including when a fixed rank has
+-- replaced the original rule.
 awaitGrantCharged :: forall m. (MonadTimer m, MonadMask m)
                   => Maybe (Bucket m)
                   -> DiffTime   -- ^ waited at the writability gate
                   -> DiffTime   -- ^ the previous batch's write
-                  -> (Time -> STM m ())
+                  -> (Time -> Rank -> STM m ())
                   -> BucketHandle m -> Int -> m GrantSource
 awaitGrantCharged borrow_m waited wrote charge = awaitGrantWith borrow_m waited wrote (Just charge)
 
 awaitGrantWith :: forall m. (MonadTimer m, MonadMask m)
-               => Maybe (Bucket m) -> DiffTime -> DiffTime -> Maybe (Time -> STM m ())
+               => Maybe (Bucket m) -> DiffTime -> DiffTime -> Maybe (Time -> Rank -> STM m ())
                -> BucketHandle m -> Int -> m GrantSource
 awaitGrantWith borrow_m waitedWritable wrote charge_m
                BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation, bStats
@@ -752,7 +754,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
                -> Map (FloorClass, Ticket) (Int, StrictTVar m Bool) -> FloorState -> STM m ()
     floorGrant asked now key fl fkey c waiters fw st = do
       chargeCredit bucket now need
-      charge now
+      charge now (tierOfKey key)
       noteGrant asked now (tierOfKey key)
       let waiters' = Map.delete key waiters
           fw'      = Map.delete fkey fw
@@ -814,7 +816,7 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
                             (Just tier, _)     -> return tier
                             (Nothing, Just _)  -> askedNow now
                             (Nothing, Nothing) -> fastTier now
-             charge now
+             charge now served
              modifyTVar bStats
                ( recordServed served bhId now (now `diffTime` asked) ownTime
                . recordGrant tier_m source need waitedWritable (now `diffTime` asked))
@@ -826,8 +828,8 @@ awaitGrantWith borrow_m waitedWritable wrote charge_m
     -- in 'bsServed' with the tier last asked, asking the rule only once that is
     -- 'tierRefresh' old, so the grant rarely reads what the rule reads
     -- what a grant charges, if anything
-    charge :: Time -> STM m ()
-    charge now = maybe (return ()) ($ now) charge_m
+    charge :: Time -> Word8 -> STM m ()
+    charge now tier = maybe (return ()) (\f -> f now (Rank tier)) charge_m
 
     -- the rule asked at this instant, and the cache stamped
     askedNow :: Time -> STM m Word8

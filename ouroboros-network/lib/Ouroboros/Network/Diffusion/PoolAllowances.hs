@@ -48,7 +48,8 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word8)
-import Network.Mux (MiniProtocolNum, Rank (..), Tier (..), tierNumber)
+import Network.Mux (ChargeSink, MiniProtocolNum, Rank (..), Tier (..),
+           numberTier, tierNumber)
 
 -- | Bytes of fresh need announced so far: a monotone reading.
 newtype Fresh = Fresh { unFresh :: Int }
@@ -226,10 +227,11 @@ rankFor Other     own pools =
 -- buckets: its pools' buckets, looked up again whenever the list was
 -- rebuilt, and its own bucket, which opens empty once the connection has
 -- outlived the stranger lock, so a reconnection starts the wait over. The
--- sink runs in the transaction that grants a batch, just after the rule was
--- asked there, and charges the bucket that gave the rank the rule last
--- answered: a partner's own bucket at the partner tier, the pool's buckets
--- at the pool's, the own bucket at the stranger's; at rest nothing. Bytes on
+-- sink charges the allowance selected by its explicit granted rank: the own
+-- bucket at partner or stranger, the pool's buckets at pool, and nothing at
+-- local root, rest, or an unknown rank. It does not depend on the last rule
+-- query, so overriding a bearer's rank also changes what its grant charges.
+-- Only the rule can open the own bucket; charging never opens it. Bytes on
 -- the uncharged protocols are never charged. A batch's charged bytes are
 -- charged as one sum, so a batch granted with credit is charged in full
 -- however its bytes split among protocols.
@@ -239,15 +241,14 @@ mkEgressRule :: (MonadSTM m, Ord addr)
              -> addr
              -> (Time -> STM m Standing)
              -> Time
-             -> m (Time -> STM m Rank, Time -> Map MiniProtocolNum Int -> STM m ())
+             -> m (Time -> STM m Rank, ChargeSink m)
 mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock, paGeneration, paIndexGen }
              uncharged key standing t0 = do
   -- the connection's own bucket: nothing until the lock has passed, then
   -- empty at the reading of its first use after that, filling at the fresh
   -- rate; a reconnection is a new rule and starts the wait over
-  own       <- newTVarIO Nothing
-  asPartner <- newTVarIO False   -- the rule's last answer was the partner tier
-  cached    <- newTVarIO BucketRef { brGeneration = -1, brIndexGen = -1, brBuckets = [] }
+  own    <- newTVarIO Nothing
+  cached <- newTVarIO BucketRef { brGeneration = -1, brIndexGen = -1, brBuckets = [] }
   let unlockAt = paStrangerLock `addTime` t0
       ownAt now fresh = do
         mb <- readTVar own
@@ -259,10 +260,11 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
                    let opened = Just (lockedCharged fresh (Fresh 0))
                    writeTVar own opened
                    return opened
-      chargeOwn now fresh n = do
-        mb <- ownAt now fresh
+      chargeOwn now n = do
+        mb <- readTVar own
         case mb of
              Just ch -> do al <- paAllowance
+                           fresh <- paFreshAt now
                            writeTVar own (Just (charge al fresh n ch))
              Nothing -> return ()
       buckets = do
@@ -278,7 +280,7 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
 
       rule now = do
         s <- standing now
-        rank <- case s of
+        case s of
              LocalRoot -> return (rankFor LocalRoot False Nothing)
              _ -> do
                bs <- buckets
@@ -289,19 +291,15 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
                                  [] -> return Nothing
                                  _  -> Just <$> hasCredit allowances now bs
                return (rankFor s ownCredit pools)
-        writeTVar asPartner (rank == Rank (tierNumber PartnerTier))
-        return rank
-
-      sink now batch
+      sink now (Rank granted) batch
         | n <= 0    = return ()
-        | otherwise = do
-            partner <- readTVar asPartner
-            bs      <- buckets
-            fresh   <- paFreshAt now
-            case (partner, bs) of
-                 (True, _)   -> chargeOwn now fresh n
-                 (False, []) -> chargeOwn now fresh n
-                 (False, _)  -> chargeBuckets allowances now n bs
+        | otherwise = case numberTier granted of
+            Just LocalRootTier -> return ()
+            Just PartnerTier   -> chargeOwn now n
+            Just PoolTier      -> buckets >>= chargeBuckets allowances now n
+            Just StrangerTier  -> chargeOwn now n
+            Just RestTier      -> return ()
+            Nothing            -> return ()
         where
           n = sum [ bytes | (num, bytes) <- Map.toList batch, num `notElem` uncharged ]
 

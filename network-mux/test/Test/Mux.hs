@@ -4450,7 +4450,7 @@ runLanes laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSimOrThrow $ do
     serverMux <- Mx.newWithEgress policy Mx.nullTracers
                    [ info bulkN Mx.ResponderDirection, info probeN Mx.InitiatorDirection
                    , info sliceN Mx.InitiatorDirection ]
-    atomically $ Mx.setEgressChargeSink serverMux $ \_ batch ->
+    atomically $ Mx.setEgressChargeSink serverMux $ \_ _ batch ->
       modifyTVar chargedVar (M.unionWith (+) batch)
     clientMux <- Mx.new Mx.nullTracers
                    [ info bulkN Mx.InitiatorDirection, info probeN Mx.ResponderDirection
@@ -4999,16 +4999,18 @@ data WriteLane = WriteDirect | WriteScheduled
 -- mini-protocols and directions, so a batch carries several protocols.
 data WriteCase = WriteCase {
     wcLane :: WriteLane,
+    wcRank :: Word8,
     wcMsgs :: [((Word16, Bool), Int)]
   }
   deriving Show
 
 instance Arbitrary WriteCase where
   arbitrary = WriteCase <$> elements [minBound .. maxBound]
+                        <*> arbitrary
                         <*> (choose (1, 6) >>= \n -> vectorOf n msg)
     where msg = (,) <$> ((,) <$> choose (0, 3) <*> arbitrary) <*> choose (1, 30000)
-  shrink WriteCase { wcLane, wcMsgs } =
-    [ WriteCase wcLane ms
+  shrink WriteCase { wcLane, wcRank, wcMsgs } =
+    [ WriteCase wcLane wcRank ms
     | ms <- shrinkList (\(k, m) -> [ (k, m') | m' <- shrink m, m' >= 1 ]) wcMsgs, not (null ms) ]
 
 writtenBytes :: Mx.SDU -> Int
@@ -5025,8 +5027,8 @@ writtenByKey sdus =
 -- the scheduled, and the scheduled lane's sink calls, oldest first.
 withWriteMuxer :: forall s. WriteCase -> ([Mx.SDU] -> IOSim s ())
                -> IOSim s ( Async (IOSim s) (), IOSim s Mx.ByteCounts, IOSim s Int
-                          , IOSim s [M.Map Mx.MiniProtocolNum Int] )
-withWriteMuxer WriteCase { wcLane, wcMsgs } write = do
+                          , IOSim s [(Bucket.Rank, M.Map Mx.MiniProtocolNum Int)] )
+withWriteMuxer WriteCase { wcLane, wcRank, wcMsgs } write = do
     q        <- newTBQueueIO 100
     -- one egress state per mini-protocol and direction, as the mux keeps
     vars     <- M.fromList <$> mapM (\k -> (,) k <$> Mx.newEgressVar)
@@ -5038,9 +5040,9 @@ withWriteMuxer WriteCase { wcLane, wcMsgs } write = do
       WriteDirect    -> return (Egress.Credit budget)
       WriteScheduled -> do
         h <- Bucket.registerBearer budget
-        atomically $ Bucket.setRank h (Bucket.Rank 2)
-        sink <- newTVarIO (\_ batch -> modifyTVar charged (+ sum batch)
-                                     >> modifyTVar calls (batch :))
+        atomically $ Bucket.setRank h (Bucket.Rank wcRank)
+        sink <- newTVarIO (\_ rank batch -> modifyTVar charged (+ sum batch)
+                                          >> modifyTVar calls ((rank, batch) :))
         return (Egress.Scheduled_ h sink)
     muxHeld <- newTVarIO 0
     forM_ wcMsgs $ \(k, n) -> do
@@ -5075,7 +5077,7 @@ withWriteMuxer WriteCase { wcLane, wcMsgs } write = do
 -- in every schedule. The scheduled lane's sink is handed the batch once,
 -- its bytes by mini-protocol: the batch's rank was chosen for all of it.
 prop_mux_written_is_accounted :: WriteCase -> Property
-prop_mux_written_is_accounted wc@WriteCase { wcLane, wcMsgs } =
+prop_mux_written_is_accounted wc@WriteCase { wcLane, wcRank, wcMsgs } =
   classify (length (nub (map (fst . fst) wcMsgs)) > 1) "a batch spans protocols" $
   exploreSimTrace (\o -> o { explorationScheduleBound = 40 }) sim $ \_ trace ->
     case traceResult False trace of
@@ -5085,10 +5087,10 @@ prop_mux_written_is_accounted wc@WriteCase { wcLane, wcMsgs } =
                counterexample "counted by protocol" (written === counted)
           .&&. counterexample "charged" (sum (M.elems written) === fromIntegral charged)
           .&&. counterexample "one charge per batch, by protocol"
-                 (calls === [ M.map fromIntegral (M.mapKeysWith (+) fst written)
+                 (calls === [ (Bucket.Rank wcRank, M.map fromIntegral (M.mapKeysWith (+) fst written))
                             | wcLane == WriteScheduled ])
   where
-    sim :: forall s. IOSim s (Mx.ByteCounts, Mx.ByteCounts, Int, [M.Map Mx.MiniProtocolNum Int])
+    sim :: forall s. IOSim s (Mx.ByteCounts, Mx.ByteCounts, Int, [(Bucket.Rank, M.Map Mx.MiniProtocolNum Int)])
     sim = do
       exploreRaces
       written <- newTVarIO M.empty

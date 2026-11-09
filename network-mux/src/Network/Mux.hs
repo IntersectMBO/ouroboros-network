@@ -244,7 +244,7 @@ newWithEgress :: forall (mode :: Mode) m.
 newWithEgress EgressPolicy { egressBudget, egressSlice, egressLaneOf } muxTracers ptcls = do
     meBudgetHandle <- registerBearer egressBudget
     meSlice        <- traverse registerBearer egressSlice
-    meCharge       <- newTVarIO (\_ _ -> return ())
+    meCharge       <- newTVarIO (\_ _ _ -> return ())
     mkMux (Just MuxEgress { meBudget = egressBudget, meBudgetHandle, meSlice,
                             meLaneOf = egressLaneOf, meCharge })
           muxTracers ptcls
@@ -287,7 +287,7 @@ setEgressRankSource Mux { muxEgress } rank =
          Nothing                           -> return ()
 
 -- | Install where the scheduled lane reports the bytes each batch carries, per
--- mini-protocol, as the batch is granted. Nothing on an unscheduled mux.
+-- mini-protocol, and its granted rank. Nothing on an unscheduled mux.
 setEgressChargeSink :: MonadSTM m => Mux mode m -> ChargeSink m -> STM m ()
 setEgressChargeSink Mux { muxEgress } sink =
     case muxEgress of
