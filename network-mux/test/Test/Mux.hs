@@ -4627,6 +4627,12 @@ prop_tiers = once $
     names    = map Mx.numberName places
     credited = [Mx.PartnerTier, Mx.PoolTier, Mx.StrangerTier]
 
+-- | 'Bucket.Ready' carries the bucket's new full instant, whereas
+-- 'Bucket.NotReady' carries the instant at which to retry the request.
+grantTime :: Time -> Bucket.GrantAt -> Time
+grantTime now (Bucket.Ready _)        = now
+grantTime _   (Bucket.NotReady ready) = ready
+
 -- | The cases that matter for the pure laws: an oversized request is served
 -- on credit, and 'Bucket.tokenLevel' saturates once the bucket is full, so a
 -- law stated over the level alone says little about those grants.
@@ -4636,7 +4642,7 @@ labelTake BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
     . classify (ready == tkNow)  "granted at once"
     . classify (level < 0)       "in debt"
   where
-    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready      = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     level      = Bucket.tokenLevel tkRate tkCap tkFull tkNow
 
 -- | Grants at the earliest instant the bytes are there: never before the
@@ -4649,7 +4655,7 @@ prop_grantAt_ready tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
       && level >= target - eps
       && (ready == tkNow || level <= target + eps)
   where
-    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready      = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     level      = Bucket.tokenLevel tkRate tkCap tkFull ready
     target     = fromIntegral (min tkNeed tkCap) :: Double
     eps        = byteEps tkRate
@@ -4724,7 +4730,7 @@ prop_grantAt_tight bw =
       && level <= target - 1 + byteEps tkRate
   where
     tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } = waitTake bw
-    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready      = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     probe      = negate (realToFrac (1 / tkRate)) `addTime` ready
     level      = Bucket.tokenLevel tkRate tkCap tkFull probe
     target     = fromIntegral (min tkNeed tkCap) :: Double
@@ -4735,17 +4741,25 @@ prop_grantAt_take :: BucketTake -> Property
 prop_grantAt_take tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
     labelTake tk $
     classify (tkFull <= ready) "full at the grant" $
-    counterexample (show (levelBefore, levelAfter)) $
-      abs (levelAfter - (levelBefore - fromIntegral tkNeed)) <= byteEps tkRate
+    case Bucket.grantAt tkRate tkCap tkFull ready tkNeed of
+      Bucket.NotReady retryAt ->
+        counterexample ("not ready at the grant instant: "
+                         ++ show (ready, retryAt)) False
+      Bucket.Ready full' ->
+        let levelAfter = Bucket.tokenLevel tkRate tkCap full' ready
+        in counterexample (show (levelBefore, levelAfter)) $
+             abs (levelAfter - (levelBefore - fromIntegral tkNeed)) <= byteEps tkRate
   where
-    (ready, full') = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready       = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     levelBefore = Bucket.tokenLevel tkRate tkCap tkFull ready
-    levelAfter  = Bucket.tokenLevel tkRate tkCap full' ready
 
 -- | A rate of zero grants everything at once.
 prop_grantAt_disabled :: BucketTake -> Property
 prop_grantAt_disabled BucketTake { tkCap, tkNow, tkFull, tkNeed } =
-    fst (Bucket.grantAt 0 tkCap tkFull tkNow tkNeed) === tkNow
+    case Bucket.grantAt 0 tkCap tkFull tkNow tkNeed of
+      Bucket.Ready full' -> full' === tkNow
+      Bucket.NotReady ready ->
+        counterexample ("disabled bucket waits until " ++ show ready) False
 
 -- | A short bearer wakes no earlier than its bytes are there and less than a
 -- microsecond later.
@@ -4754,7 +4768,7 @@ prop_wakeAt BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
     counterexample (show (ready, wake)) $
       ready == tkNow || (wake >= ready && wake `diffTime` ready < 1e-6)
   where
-    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready      = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     wake       = Bucket.wakeAt tkNow ready
 
 -- | A rate change keeps the token level.
@@ -5552,10 +5566,10 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
       -- the budget's head checks
       | Just h <- headBy (keyB now) wb, Nothing <- kb =
           if crossed True then [RTie] else
-          let (ready, fb') = Bucket.grantAt schRate schCapacity fb now (arBytes h)
-              lst'         = Just (now, True)
-          in if ready == now
-                then RGrant FromBudget (grant h)
+          let lst' = Just (now, True)
+          in case Bucket.grantAt schRate schCapacity fb now (arBytes h) of
+               Bucket.Ready fb' ->
+                     RGrant FromBudget (grant h)
                    : RBudgetQueue now (length wb - 1) (arBearer h, arTake h) False
                    : let wb'  = List.delete h wb
                          -- the slice's head checks next, after this grant
@@ -5564,29 +5578,35 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
                      ++ go now fb' fs (next h now pending) wb' ws Nothing
                            (if wake then Nothing else ks) (sb && not wake)
                            (if wake then Nothing else lst')
-                else go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks sb lst'
+               Bucket.NotReady ready ->
+                 go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks sb lst'
       -- the slice's head checks: its own bucket, else the budget's idle capacity
       | Just h <- headBy keyS ws, Nothing <- ks =
-          let need          = arBytes h
-              (readyS, fs') = Bucket.grantAt sliceRate schCapacity fs now need
-              (readyB, fb') = Bucket.grantAt schRate schCapacity fb now need
-              idle          = null wb
+          let need = arBytes h
+              idle = null wb
+              sleep ready = go now fb fs pending wb ws kb
+                              (Just (Bucket.wakeAt now ready)) (not idle)
+                              (Just (now, False))
           in if crossed False then [RTie] else
-             if readyS == now
-                then RGrant FromSlice (grant h)
+             case Bucket.grantAt sliceRate schCapacity fs now need of
+               Bucket.Ready fs' ->
+                     RGrant FromSlice (grant h)
                    : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
                    : go now (Bucket.chargeAt schRate fb now need) fs'
                         (next h now pending) wb (List.delete h ws) kb Nothing False
                         (Just (now, False))
-             else if idle && readyB == now
-                then RGrant Borrowed (grant h)
-                   : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
-                   : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing False
-                        (Just (now, False))
-             else [ RSleptOnBudget | idle, readyB < readyS ]
-               ++ go now fb fs pending wb ws kb
-                     (Just (Bucket.wakeAt now (if idle then min readyS readyB else readyS)))
-                     (not idle) (Just (now, False))
+               Bucket.NotReady readyS
+                 | not idle -> sleep readyS
+                 | otherwise ->
+                     case Bucket.grantAt schRate schCapacity fb now need of
+                       Bucket.Ready fb' ->
+                             RGrant Borrowed (grant h)
+                           : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
+                           : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing False
+                                (Just (now, False))
+                       Bucket.NotReady readyB ->
+                         [ RSleptOnBudget | readyB < readyS ]
+                           ++ sleep (min readyS readyB)
       -- a waiting request's refresh before both wakes and the next request:
       -- if its key moves, whoever is then the budget's head checks at once,
       -- the request itself if it stays or becomes the head, or the one its
