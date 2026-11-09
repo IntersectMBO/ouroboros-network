@@ -49,7 +49,6 @@ import Data.Functor.Identity
 import GHC.Generics (Generic (..))
 import Quiet (Quiet (..))
 
-import Network.Mux.Egress.Bucket (Rank (..))
 import Network.Mux.Types
 
 

@@ -151,13 +151,13 @@ data LaneEgress m =
                !(StrictTVar m (ChargeSink m))   --   a batch carried is handed to the sink
 
 -- | Where the scheduled lane reports what a batch carries: bytes per
--- mini-protocol, SDU headers included, and when, in the transaction that
--- grants the batch, so the rank rule asked by the next grant already sees
+-- mini-protocol, SDU headers included, the granted rank, and when, in the
+-- transaction that grants the batch, so the next grant's rank rule sees
 -- it. The whole batch is reported at once, since its rank was chosen for
 -- all of it. The policy that installs it decides what counts against which
 -- allowance; the mux only reports. Direct and slice batches are never
 -- reported, so what rides those lanes is never charged.
-type ChargeSink m = Time -> Map.Map MiniProtocolNum Int -> STM m ()
+type ChargeSink m = Time -> Rank -> Map.Map MiniProtocolNum Int -> STM m ()
 
 -- | A bearer's egress queues, one per lane in use, and the lane of each
 -- mini-protocol. An unscheduled mux has one queue and every SDU goes to it.
@@ -285,18 +285,18 @@ muxer egressQueue tracer counters laneEgress
              void $ awaitGrantWaited (Just budget) (t1 `diffTime` t0) wrote slice len
              getMonotonicTime
            Scheduled_ bucketHandle chargeVar -> do
-             let chargeNow t = do
+             let chargeNow t rank = do
                    sink <- readTVar chargeVar
-                   sink t (Map.mapKeysWith (+) fst perProtocol)
+                   sink t rank (Map.mapKeysWith (+) fst perProtocol)
              t0 <- getMonotonicTime
              gate timeout
              t1 <- getMonotonicTime
              -- charged in the grant's transaction, so connections sharing
              -- an allowance see each other's spending at once
-             source <- awaitGrantCharged Nothing (t1 `diffTime` t0) wrote chargeNow bucketHandle len
+             (source, rank) <- awaitGrantCharged Nothing (t1 `diffTime` t0) wrote chargeNow bucketHandle len
              t2 <- getMonotonicTime
              traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1)
-                                                (source == FromFloor))
+                                                (source == FromFloor) rank)
              return t2
       -- A write that throws, part of the batch sent or none, is not counted,
       -- and the credit lane does not charge it; a grant's charge, made as

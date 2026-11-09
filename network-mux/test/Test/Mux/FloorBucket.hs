@@ -925,10 +925,12 @@ prop_shared_credit_spent_once sc@SharedCase { scPool, scBatch, scCredit } =
          counterexample "charges while in credit" (paid === min needed poolGrants)
     .&&. counterexample "floor grants beyond those" (floorGrants <= paid)
     .&&. counterexample "every grant charged once" (length charges === poolGrants)
+    .&&. counterexample "the sink receives the granted tier"
+           (property (all (\(c, r) -> r == Bucket.Rank (if c > 0 then 2 else 4)) charges))
   where
     needed = (scCredit + scBatch - 1) `div` scBatch
     (charges, floorGrants, poolGrants) = runShared sc
-    paid = length (filter (> 0) charges)
+    paid = length (filter ((> 0) . fst) charges)
 
 -- | A partner's grants with nobody else asking: every grant takes the fast
 -- path. Its rule answers the partner tier while its own credit lasts, its
@@ -936,8 +938,9 @@ prop_shared_credit_spent_once sc@SharedCase { scPool, scBatch, scCredit } =
 -- the bucket that gave the rank the rule last answered. Asked at every
 -- charging grant, the rule moves on as each credit runs out: the own credit
 -- pays for as many whole batches as it takes to spend it, then the pool's,
--- then nothing. A rank cached from an earlier grant would keep charging the
--- spent own credit, which charges nothing, and leave the pool's untouched.
+-- then nothing. The callback receives the granted rank. A rank cached from
+-- an earlier grant would keep charging the spent own credit, which charges
+-- nothing, and leave the pool's untouched.
 data FastCase = FastCase { fcBatch :: Int, fcOwn :: Int, fcPool :: Int }
   deriving Show
 
@@ -964,7 +967,6 @@ prop_fast_path_charges_current_rank fc@FastCase { fcBatch, fcOwn, fcPool } =
       budget <- Bucket.newBucket 1e12 1000000000 Nothing
       own    <- newTVarIO fcOwn
       pool   <- newTVarIO fcPool
-      last_  <- newTVarIO (4 :: Word8)
       log_   <- newTVarIO []
       h <- Bucket.registerBearer budget
       let rule _ = do
@@ -973,14 +975,12 @@ prop_fast_path_charges_current_rank fc@FastCase { fcBatch, fcOwn, fcPool } =
             let tier | o > 0     = 1
                      | q > 0     = 2
                      | otherwise = 4
-            writeTVar last_ tier
             return (Bucket.Rank tier)
           spend var name = do
             c <- readTVar var
             if c > 0 then writeTVar var (c - fcBatch) >> modifyTVar log_ (name :)
                      else modifyTVar log_ ("nothing" :)
-          charge _ = do
-            t <- readTVar last_
+          charge _ (Bucket.Rank t) = do
             case t of
                  1 -> spend own "own"
                  2 -> spend pool "pool"
@@ -991,7 +991,7 @@ prop_fast_path_charges_current_rank fc@FastCase { fcBatch, fcOwn, fcPool } =
 
 -- | The run: the credit before each charge, in order, and the pool
 -- connections' floor grants and all their grants.
-runShared :: SharedCase -> ([Int], Int, Int)
+runShared :: SharedCase -> ([(Int, Bucket.Rank)], Int, Int)
 runShared SharedCase { scRate, scCap, scPool, scBatch, scCredit } = runSimOrThrow $ do
     budget <- Bucket.newBucket scRate scCap Nothing
     Bucket.attachFloor budget 0.1
@@ -1008,9 +1008,9 @@ runShared SharedCase { scRate, scCap, scPool, scBatch, scCredit } = runSimOrThro
     let rule _ = do
           c <- readTVar credit
           return (Bucket.Rank (if c > 0 then 2 else 4))
-        charge _ = do
+        charge _ rank = do
           c <- readTVar credit
-          modifyTVar charges (c :)
+          modifyTVar charges ((c, rank) :)
           when (c > 0) $ writeTVar credit (c - scBatch)
     pool <- forM [1 .. scPool] $ \i -> do
       h <- Bucket.registerBearer budget
@@ -1018,7 +1018,7 @@ runShared SharedCase { scRate, scCap, scPool, scBatch, scCredit } = runSimOrThro
       async $ do
         threadDelay (0.01 + fromIntegral i / 1000)
         forever $ mask_ $ do
-          src <- Bucket.awaitGrantCharged Nothing 0 0 charge h scBatch
+          (src, _) <- Bucket.awaitGrantCharged Nothing 0 0 charge h scBatch
           atomically $ modifyTVar grants (src :)
     threadDelay end
     -- read before cancelling, so no grant is half recorded

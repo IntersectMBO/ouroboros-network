@@ -55,6 +55,7 @@ module Network.Mux.Types
   , tierNumber
   , numberTier
   , unrankedNumber
+  , Rank (..)
   , tierName
   , numberName
   ) where
@@ -365,6 +366,10 @@ numberTier n
 unrankedNumber :: Word8
 unrankedNumber = maxBound
 
+-- | A bearer's tier as the budget's bucket ranks it: lower is served first.
+newtype Rank = Rank Word8
+  deriving (Eq, Ord, Show)
+
 tierName :: Tier -> String
 tierName LocalRootTier = "localRoot"
 tierName PartnerTier   = "partner"
@@ -460,8 +465,9 @@ data BearerTrace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
-    | TraceEgressGrant Int DiffTime DiffTime Bool
-      -- ^ bytes, waited for writability, waited for tokens, from the floor
+    | TraceEgressGrant Int DiffTime DiffTime Bool Rank
+      -- ^ bytes, waited for writability, waited for tokens, from the floor,
+      -- the rank granted at
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = "Bearer Receive Header Start"
@@ -498,10 +504,11 @@ instance Show BearerTrace where
     show TraceSendEnd = "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
-    show (TraceEgressGrant len tw tt fromFloor) =
+    show (TraceEgressGrant len tw tt fromFloor (Rank rank)) =
       formatToString
-        ("Egress grant: bytes" %+ F.int %+ "waited writable" %+ F.shown %+ "waited tokens" %+ F.shown % F.string)
-        len tw tt (if fromFloor then " from the floor" else "")
+        ("Egress grant: bytes" %+ F.int %+ "waited writable" %+ F.shown %+ "waited tokens" %+ F.shown
+         %+ "rank" %+ F.int % F.string)
+        len tw tt rank (if fromFloor then " from the floor" else "")
 #ifdef linux_HOST_OS
     show (TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
