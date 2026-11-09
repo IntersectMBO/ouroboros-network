@@ -88,7 +88,10 @@ jobs:
 
     - uses: actions/cache/save@v6
       name: "Save cache: `cabal store`"
-      if: always() && steps.cache-dependencies.outputs.cache-hit != 'true'
+      if: >-
+        ${{ !cancelled()
+            && steps.cache-dependencies.outcome == 'success'
+            && steps.cache-dependencies.outputs.cache-hit != 'true' }}
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: ${{ steps.cache-dependencies.outputs.cache-primary-key }}
