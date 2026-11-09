@@ -13,8 +13,9 @@ import Control.Monad.IOSim (runSimOrThrow)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
-import Data.Word (Word16)
-import Network.Mux (MiniProtocolNum (..), Rank (..))
+import Data.Word (Word16, Word8)
+import Network.Mux (MiniProtocolNum (..), Rank (..), Tier (..), numberTier,
+           tierNumber)
 import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Floor (FloorClass (..), floorClass)
 import Test.QuickCheck
@@ -30,25 +31,25 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
+    , testProperty "a grant charges its current rank after standing or rank changes" prop_granted_rank
     , testProperty "a stranger's lock is wall-clock time, whatever the reading does" prop_lock_is_time
     , testProperty "the allowance is read at every use, so a smaller one caps a charge at once" prop_allowance_follows_reading
     , testProperty "the floor's classes and the turns threshold follow the rule's tiers" prop_floorClass_follows_rank
     , testProperty "a relay queued dry is served once its credit refills" prop_refill_reaches_queued
     ]
 
--- | What happens to a connection, at a time in seconds: its rank is asked,
--- a scheduled batch's bytes per protocol are reported, or the pool list is
--- rebuilt under it. A partner's own bucket starts under the same lock as a
--- stranger's, so a partner asked early falls through to what it otherwise
--- is, and one asked after the lock holds the partner tier until it has
--- spent two refills.
-data Op = Ask Double
-        | Charge Double [(Word16, Int)]
+-- | What happens to a connection, at a time in seconds: a batch is granted
+-- at the rank the rule answers, in one transaction, an empty batch being a
+-- bare query; a batch is granted at a rank given without asking the rule;
+-- the pool list is rebuilt under it; or its standing changes.
+data Op = Charge Double [(Word16, Int)]
+        | ChargeAt Double Word8 [(Word16, Int)]
         | Rebuild Double
+        | SetStanding Standing
   deriving Show
 
 data Case = Case {
-    cStanding  :: Standing,
+    cStanding  :: Standing,    -- ^ the standing until a 'SetStanding'
     cPools     :: [Int],       -- ^ the matched buckets' charged totals; none for a stranger
     cUncharged :: [Word16],
     cLock      :: Double,      -- ^ the stranger lock, in seconds of the clock
@@ -69,139 +70,266 @@ clock = freshAt 1000 (Time 0)
 at :: Double -> Time
 at t = Time (realToFrac t)
 
+rankOf :: Tier -> Rank
+rankOf = Rank . tierNumber
+
 instance Arbitrary Case where
   arbitrary = do
-    cStanding  <- frequency [ (1, pure LocalRoot), (1, pure Partner), (4, pure Other) ]
-    k          <- frequency [ (1, pure 0), (2, choose (1, 3)) ]
-    cPools     <- vectorOf k (choose (- cap, 3 * cap))
+    cStanding <- elements [LocalRoot, Partner, Other]
+    k <- choose (0, 3)
+    cPools <- vectorOf k (choose (- capacity allowance, 3 * capacity allowance))
     cUncharged <- sublistOf [2, 3, 8, 18]
-    cLock      <- frequency [ (1, pure 0), (3, choose (0, 100)) ]
-    n          <- choose (0, 60)
-    deltas     <- vectorOf n (choose (0, 5 :: Double))
-    cOps       <- forM (scanl1 (+) deltas) $ \t -> frequency
-                    [ (3, pure (Ask t))
-                    , (3, Charge t <$> batch)
-                    , (1, pure (Rebuild t)) ]
+    cLock <- frequency [(1, pure 0), (3, choose (0, 100))]
+    n <- choose (0, 60)
+    deltas <- vectorOf n (choose (0, 5 :: Double))
+    cOps <- forM (scanl1 (+) deltas) $ \t -> frequency
+      [ (2, pure (Charge t []))
+      , (3, Charge t <$> batch)
+      , (3, ChargeAt t <$> rank <*> batch)
+      , (1, pure (Rebuild t))
+      , (1, SetStanding <$> elements [LocalRoot, Partner, Other]) ]
     return Case { cStanding, cPools, cUncharged, cLock, cOps }
-    where cap = capacity allowance
-          -- one to three protocols, a protocol possibly more than once
-          batch = do
-            k <- frequency [ (2, pure 1), (3, choose (2, 3)) ]
-            vectorOf k ((,) <$> elements [2, 3, 4, 8, 10, 18, 19] <*> choose (1, 2 * freshMax))
+    where
+      rank = frequency [(4, tierNumber <$> elements [minBound .. maxBound]), (1, arbitrary)]
+      batch = do
+        k <- choose (1, 3)
+        vectorOf k ((,) <$> elements [2, 3, 4, 8, 10, 18, 19] <*> choose (1, 2 * freshMax))
   shrink c@Case { cStanding, cPools, cUncharged, cLock, cOps } =
-       [ c { cOps = ops }         | ops <- shrinkList (const []) cOps ]
-    ++ [ c { cPools = ps }        | ps  <- shrinkList (const []) cPools ]
-    ++ [ c { cUncharged = us }    | us  <- shrinkList (const []) cUncharged ]
-    ++ [ c { cStanding = Other }  | cStanding /= Other ]
-    ++ [ c { cLock = 0 }          | cLock /= 0 ]
+       [ c { cOps = ops } | ops <- shrinkList shrinkOp cOps ]
+    ++ [ c { cPools = ps } | ps <- shrinkList (const []) cPools ]
+    ++ [ c { cUncharged = us } | us <- shrinkList (const []) cUncharged ]
+    ++ [ c { cStanding = Other } | cStanding /= Other ]
+    ++ [ c { cLock = 0 } | cLock /= 0 ]
+    where
+      batches = shrinkList (\(num, n) -> [(num, n') | n' <- shrink n, n' > 0])
+      shrinkOp (Charge t batch) = [Charge t bs | bs <- batches batch]
+      shrinkOp (ChargeAt t rank batch) =
+           [ChargeAt t rank bs | bs <- batches batch]
+        ++ [ChargeAt t r batch | r <- shrink rank]
+      shrinkOp _ = []
 
 -- | The table, stepped by hand with the ranks written out, so the rule's own
--- 'rankFor' is judged rather than echoed: ranks at every ask and the pool
--- buckets at the end. The sink charges whichever bucket the last answer
--- came from: a partner's own at tier 1, the pool's at tier 2, the own at
--- tier 3, nothing at rest; before any answer, as a non-partner. A batch is
--- charged once, its charged protocols' bytes summed.
-model :: Case -> ([Rank], [Charged])
+-- 'rankFor' is judged rather than echoed: the standing and rank at every
+-- grant, and the pool buckets at the end. Only a query opens the own
+-- bucket. A grant charges by its rank alone, whatever was asked before: the
+-- own bucket at the partner and stranger tiers, the pool's at the pool
+-- tier, nothing otherwise. A batch is charged once, its charged protocols'
+-- bytes summed.
+model :: Case -> ([(Standing, Rank)], [Charged])
 model Case { cStanding, cPools, cUncharged, cLock, cOps } =
-    go (map Charged cPools) Nothing False cOps
+    go cStanding (map Charged cPools) Nothing cOps
   where
     matched = not (null cPools)
-    -- the own bucket: locked until the lock has passed, then empty at the
-    -- reading of its first use after that. A use is a rank asked for anyone
-    -- but a local root, or a charge that goes to the own bucket: a partner's,
-    -- or one without a pool, on a charged protocol.
     openAt t own = case own of
       Just _ -> own
       Nothing | t >= cLock -> Just (emptyCharged (clock (at t)))
-              | otherwise  -> Nothing
-    go pools _ _ [] = ([], pools)
-    go pools own0 asPartner (op : ops) =
-      let own = case op of
-                  Ask t | cStanding /= LocalRoot -> openAt t own0
-                  Charge t batch | charged batch > 0, asPartner || not matched -> openAt t own0
-                  _ -> own0
+              | otherwise -> Nothing
+    go _ pools _ [] = ([], pools)
+    go standing pools own (op : ops) =
+      let query t =
+            let own' = if standing == LocalRoot then own else openAt t own
+                fresh = clock (at t)
+                credited = maybe False ((> 0) . credit allowance fresh) own'
+                other | matched = if any ((> 0) . credit allowance fresh) pools then PoolTier else RestTier
+                      | credited = StrangerTier
+                      | otherwise = RestTier
+                tier = case standing of
+                  LocalRoot -> LocalRootTier
+                  Partner | credited -> PartnerTier
+                          | otherwise -> other
+                  Other -> other
+            in (own', rankOf tier)
+          grant t rank@(Rank r) batch own' =
+            let n = sum [bytes | (num, bytes) <- batch, num `notElem` cUncharged]
+                spend = charge allowance (clock (at t)) n
+                balances = case numberTier r of
+                  Just LocalRootTier -> (pools, own')
+                  Just PartnerTier   -> (pools, spend <$> own')
+                  Just PoolTier      -> (map spend pools, own')
+                  Just StrangerTier  -> (pools, spend <$> own')
+                  Just RestTier      -> (pools, own')
+                  Nothing            -> (pools, own')
+                (pools', own'') = if n <= 0 then (pools, own') else balances
+                (observed, final) = go standing pools' own'' ops
+            in ((standing, rank) : observed, final)
       in case op of
-           Ask t ->
-             let fresh      = clock (at t)
-                 ownCredit  = maybe False ((> 0) . credit allowance fresh) own
-                 poolCredit = any ((> 0) . credit allowance fresh) pools
-                 other | matched    = if poolCredit then Rank 2 else Rank 4
-                       | ownCredit  = Rank 3
-                       | otherwise  = Rank 4
-                 rank = case cStanding of
-                             LocalRoot -> Rank 0
-                             Partner | ownCredit  -> Rank 1
-                                     | otherwise  -> other
-                             Other -> other
-                 (ranks, final) = go pools own (rank == Rank 1) ops
-             in (rank : ranks, final)
-           Charge t batch
-             | n <= 0    -> go pools own asPartner ops
-             | asPartner -> go pools (charge allowance (clock (at t)) n <$> own) asPartner ops
-             | matched   -> go (map (charge allowance (clock (at t)) n) pools) own asPartner ops
-             | otherwise -> go pools (charge allowance (clock (at t)) n <$> own) asPartner ops
-             where n = charged batch
-           Rebuild t ->
-             go (map (const (emptyCharged (clock (at t)))) pools) own asPartner ops
-    charged batch = sum [ n | (num, n) <- batch, num `notElem` cUncharged ]
+        Charge t batch -> let (own', rank) = query t in grant t rank batch own'
+        ChargeAt t r batch -> grant t (Rank r) batch own
+        Rebuild t -> go standing (map (const (emptyCharged (clock (at t)))) pools) own ops
+        SetStanding s -> go s pools own ops
 
 -- | The same, through 'mkEgressRule' and the buckets in IOSim: the reading
 -- is the clock's at each op's time, and a rebuild installs a list of new
 -- pools, so its buckets start empty.
-run :: Case -> ([Rank], [Charged])
+run :: Case -> ([(Standing, Rank)], [Charged])
 run Case { cStanding, cPools, cUncharged, cLock, cOps } = runSimOrThrow $ do
     reading <- newTVarIO (Fresh 0)
     pa <- newPoolAllowances (return allowance) (readTVar reading) (realToFrac cLock)
-    let key   = "peer" :: String
-        k     = length cPools
-        index = if k > 0 then Map.singleton key [0 .. k - 1] else Map.empty
+    let key = "peer" :: String
+        k = length cPools
+        index = Map.singleton key [0 .. k - 1]
     _ <- atomically $ rebuild pa (relaysOf 0 k) index
     buckets0 <- readTVarIO (paBuckets pa)
     forM_ (zip [0 ..] cPools) $ \(i, c) ->
       atomically $ writeTVar (snd (buckets0 IntMap.! i)) (Charged c)
+    standing <- newTVarIO cStanding
     generation <- newTVarIO (0 :: Int)
     (rule, sink) <- mkEgressRule pa (map MiniProtocolNum cUncharged) key
-                                 (const (return cStanding)) (at 0)
-    let tick t = writeTVar reading (clock (at t))
-    ranks <- fmap concat . forM cOps $ \op ->
+                                 (const (readTVar standing)) (at 0)
+    observed <- fmap concat . forM cOps $ \op -> atomically $ do
+      let grant t rank batch = do
+            sink (at t) rank (Map.fromListWith (+) [(MiniProtocolNum num, n) | (num, n) <- batch])
+            s <- readTVar standing
+            return [(s, rank)]
+          tick t = writeTVar reading (clock (at t))
       case op of
-           Ask t          -> (: []) <$> atomically (tick t >> rule (at t))
-           Charge t batch -> [] <$ atomically (tick t >> sink (at t) (Map.fromListWith (+)
-                               [ (MiniProtocolNum num, n) | (num, n) <- batch ]))
-           Rebuild t      -> [] <$ atomically (do tick t
-                                                  g <- stateTVar generation (\g -> (g + 1, g + 1))
-                                                  _ <- rebuild pa (relaysOf g k) index
-                                                  return ())
+        Charge t batch     -> tick t >> rule (at t) >>= \rank -> grant t rank batch
+        ChargeAt t r batch -> tick t >> grant t (Rank r) batch
+        Rebuild t          -> do tick t
+                                 g <- stateTVar generation (\g -> (g + 1, g + 1))
+                                 [] <$ rebuild pa (relaysOf g k) index
+        SetStanding s      -> [] <$ writeTVar standing s
     buckets <- readTVarIO (paBuckets pa)
-    final   <- mapM (readTVarIO . snd) (IntMap.elems buckets)
-    return (ranks, final)
+    final <- mapM (readTVarIO . snd) (IntMap.elems buckets)
+    return (observed, final)
 
 prop_rule :: Case -> Property
-prop_rule c@Case { cStanding, cPools, cLock, cOps } =
-    classify (cStanding == Other) "one of the rest"
-  . classify (cStanding == Partner) "a partner"
-  . classify (cStanding == Partner && Rank 1 `elem` fst got && any (/= Rank 1) (fst got))
-             "a partner both at its tier and fallen through"
-  . classify (cStanding == Partner && not (null cPools) && Rank 2 `elem` fst got)
-             "a partner served as its pool's relay"
-  . classify (not (null cPools)) "a pool relay"
-  . classify lockedStranger "a locked stranger"
-  . classify (lockedStranger && any askedAfter cOps) "a stranger asked after its lock"
-  . classify (any isRebuild cOps) "the list is rebuilt under it"
-  . classify (any spansProtocols cOps) "a batch spans protocols"
-  . classify (Rank 4 `elem` fst got) "goes to rest at some point"
-  . classify (Rank 2 `elem` fst got) "served as a pool relay at some point"
-  . classify (Rank 3 `elem` fst got) "served as a stranger at some point"
+prop_rule c@Case { cOps } =
+    classify (not (null (ranksFor LocalRoot))) "local root observed"
+  . classify (not (null (ranksFor Partner))) "partner observed"
+  . classify (rankOf PartnerTier `elem` ranksFor Partner && any (/= rankOf PartnerTier) (ranksFor Partner))
+             "partner observed both at partner and another tier"
+  . classify (rankOf PoolTier `elem` ranksFor Partner) "partner observed at pool tier"
+  . classify (any isOverride cOps) "explicit grant rank"
+  . classify (any isRebuild cOps) "pool list rebuilt"
+  . classify (any spansProtocols cOps) "batch spans protocols"
+  . classify (any changesStanding cOps) "standing changes"
   $ got === model c
   where
     got = run c
-    lockedStranger = cStanding == Other && null cPools && cLock > 0
-    askedAfter (Ask t) = t > cLock
-    askedAfter _       = False
+    ranksFor s = [rank | (standing, rank) <- fst got, standing == s]
+    isOverride ChargeAt {} = True
+    isOverride _           = False
     isRebuild Rebuild {} = True
     isRebuild _          = False
-    spansProtocols (Charge _ batch) = length (Map.fromList batch) > 1
-    spansProtocols _                = False
+    spansProtocols (Charge _ batch)     = length (Map.fromList batch) > 1
+    spansProtocols (ChargeAt _ _ batch) = length (Map.fromList batch) > 1
+    spansProtocols _                    = False
+    changesStanding SetStanding {} = True
+    changesStanding _              = False
+
+-- | One grant through the bucket, its standing changed, or its rank fixed,
+-- after the rule is installed: before a fast-path grant, or while the
+-- request waits at the head of the queue. The queue barrier and a fixed
+-- reading take scheduling choices out of the oracle. A probe as a partner
+-- afterwards observes the own allowance even when there are pools.
+data GrantCase = GrantCase {
+    gcFreshMax :: Int,         -- ^ the allowance
+    gcNeed     :: Int,         -- ^ the batch, and the bucket's rate and capacity
+    gcPools    :: Bool,        -- ^ whether the peer has a pool bucket
+    gcInitial  :: Standing,    -- ^ the standing when the rule is installed
+    gcFinal    :: Standing,    -- ^ the standing at the grant
+    gcQueued   :: Bool,        -- ^ granted from the queue rather than the fast path
+    gcOverride :: Bool,        -- ^ the rank is also fixed to the final tier
+    gcChangeAt :: Int          -- ^ tenths of a second into the wait, when queued
+  }
+  deriving Show
+
+instance Arbitrary GrantCase where
+  arbitrary = do
+    gcFreshMax <- choose (1, 10000)
+    gcNeed <- choose (1, 2 * capacity (Allowance gcFreshMax))
+    gcPools <- arbitrary
+    gcInitial <- elements [LocalRoot, Partner, Other]
+    gcFinal <- elements [LocalRoot, Partner, Other]
+    gcQueued <- arbitrary
+    gcOverride <- arbitrary
+    gcChangeAt <- choose (1, 9)
+    return GrantCase { gcFreshMax, gcNeed, gcPools, gcInitial, gcFinal, gcQueued, gcOverride, gcChangeAt }
+  shrink c@GrantCase { gcFreshMax, gcNeed, gcPools, gcInitial, gcFinal, gcQueued, gcOverride, gcChangeAt } =
+       [c { gcFreshMax = n } | n <- shrink gcFreshMax, n > 0]
+    ++ [c { gcNeed = n } | n <- shrink gcNeed, n > 0]
+    ++ [c { gcPools = False } | gcPools]
+    ++ [c { gcInitial = LocalRoot } | gcInitial /= LocalRoot]
+    ++ [c { gcFinal = LocalRoot } | gcFinal /= LocalRoot]
+    ++ [c { gcQueued = False } | gcQueued]
+    ++ [c { gcOverride = False } | gcOverride]
+    ++ [c { gcChangeAt = n } | n <- shrink gcChangeAt, n > 0]
+
+prop_granted_rank :: GrantCase -> Property
+prop_granted_rank c@GrantCase { gcFreshMax, gcNeed, gcPools, gcInitial, gcFinal, gcQueued, gcOverride, gcChangeAt } =
+    classify (gcQueued && gcInitial /= gcFinal) "standing changes while queued"
+  . classify gcOverride "rank overridden"
+  . classify gcPools "shared pool and private allowance"
+  $ counterexample (show (c, got)) $ got === expected
+  where
+    al = Allowance gcFreshMax
+    fresh = Fresh (2 * gcFreshMax)
+    currentTier = case gcFinal of
+      LocalRoot -> LocalRootTier
+      Partner   -> PartnerTier
+      Other     -> if gcPools then PoolTier else StrangerTier
+    spend = charge al fresh gcNeed (Charged 0)
+    ownCharged = case currentTier of
+      LocalRootTier -> Charged 0
+      PartnerTier   -> spend
+      PoolTier      -> Charged 0
+      StrangerTier  -> spend
+      RestTier      -> Charged 0
+    poolCharged = if currentTier == PoolTier then spend else Charged 0
+    ownRemaining = credit al fresh ownCharged
+    fallback = rankOf (if gcPools && credit al fresh poolCharged > 0 then PoolTier else RestTier)
+    expected = (rankOf currentTier, [poolCharged | gcPools],
+                if ownRemaining > 0 then rankOf PartnerTier else fallback, fallback)
+    got = runSimOrThrow $ do
+      reading <- newTVarIO (Fresh 0)
+      standing <- newTVarIO Partner
+      pa <- newPoolAllowances (return al) (readTVar reading) 0
+      _ <- atomically $ rebuild pa (relaysOf 0 (fromEnum gcPools))
+                                   (Map.singleton ("peer" :: String) [0 | gcPools])
+      (rule, sink) <- mkEgressRule pa [] "peer" (const (readTVar standing)) (Time 0)
+      atomically $ do
+        _ <- rule (Time 0) -- open the private allowance before it earns credit
+        writeTVar reading fresh
+        writeTVar standing gcInitial
+        _ <- rule (Time 0)
+        return ()
+      bucket <- Bucket.newBucket (fromIntegral gcNeed) gcNeed Nothing
+      h <- Bucket.registerBearer bucket
+      chargedRank <- newEmptyTMVarIO
+      let grant = Bucket.awaitGrantCharged Nothing 0 0
+            (\now rank -> sink now rank (Map.singleton (MiniProtocolNum 2) gcNeed)
+                        >> putTMVar chargedRank rank) h gcNeed
+          change = atomically $ do
+            writeTVar standing gcFinal
+            when gcOverride $ Bucket.setRank h (rankOf currentTier)
+      atomically $ Bucket.setRankSource h rule
+      if gcQueued then do
+        atomically $ Bucket.takeOnCredit bucket (Time 0) gcNeed
+        worker <- async grant
+        atomically $ do
+          (_, _, queued, _) <- Bucket.bucketSnapshot bucket (Time 0)
+          check (queued == 1)
+        threadDelay (fromIntegral gcChangeAt / 10)
+        change
+        _ <- wait worker
+        return ()
+      else do
+        change
+        _ <- grant
+        return ()
+      rank <- atomically $ readTMVar chargedRank
+      now <- getMonotonicTime
+      pools <- readTVarIO (paBuckets pa)
+      totals <- mapM (readTVarIO . snd) (IntMap.elems pools)
+      (oneLeft, noneLeft) <- atomically $ do
+        writeTVar standing Partner
+        sink now (rankOf PartnerTier) (Map.singleton (MiniProtocolNum 2) (max 0 (ownRemaining - 1)))
+        one <- rule now
+        sink now (rankOf PartnerTier) (Map.singleton (MiniProtocolNum 2) 1)
+        none <- rule now
+        return (one, none)
+      return (rank, totals, oneLeft, noneLeft)
 
 -- | A pool relay queues for a batch while its allowance is spent, behind
 -- two local roots that keep the budget busy, so at rest it never reaches
@@ -278,8 +406,9 @@ prop_refill_reaches_queued Refill { rfRate, rfCap, rfFloor, rfBatch, rfFresh, rf
       h <- Bucket.registerBearer budget
       now <- getMonotonicTime
       entered <- atomically $ do
+        rank <- rule now
         -- spent: whatever the first ticks granted is charged away
-        sink now (Map.singleton (MiniProtocolNum 2) (capacity (Allowance rfMax)))
+        sink now rank (Map.singleton (MiniProtocolNum 2) (capacity (Allowance rfMax)))
         Bucket.setRankSource h rule
         rule now
       victim <- async $ Bucket.awaitGrant h rfBatch >> getMonotonicTime
@@ -386,7 +515,8 @@ prop_allowance_follows_reading (Positive big) (Positive small0) (Positive extra)
       -- switch, charge, ask
       a <- atomically $ do
         writeTVar alVar tiny
-        sink (at 0) (Map.singleton (MiniProtocolNum 2) n)
+        rank <- rule (at 0)
+        sink (at 0) rank (Map.singleton (MiniProtocolNum 2) n)
         rule (at 0)
       -- the same from a full bucket under the large allowance alone
       pa' <- newPoolAllowances (return large) (return (Fresh 0)) 0
@@ -395,7 +525,7 @@ prop_allowance_follows_reading (Positive big) (Positive small0) (Positive extra)
       atomically $ writeTVar (snd (buckets' IntMap.! 0)) (fullCharged large (Fresh 0))
       (rule', sink') <- mkEgressRule pa' [] key (const (return Other)) (at 0)
       b <- atomically $ do
-        _ <- rule' (at 0)
-        sink' (at 0) (Map.singleton (MiniProtocolNum 2) n)
+        rank <- rule' (at 0)
+        sink' (at 0) rank (Map.singleton (MiniProtocolNum 2) n)
         rule' (at 0)
       return (if r0 == Rank 2 then a else Rank 0, b)
