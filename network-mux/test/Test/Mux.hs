@@ -5655,12 +5655,11 @@ replayRun sch = [ g | RGrant _ g <- replayEvents sch ]
 -- | The counters each bucket should hold after the replay's grants.
 replayStats :: BucketSched -> (Bucket.BucketStats, Maybe Bucket.BucketStats)
 replayStats sch@BucketSched { schSlice, schBearers } =
-    ( withBursts rankOf budgetQueue (stats rankOf (queuedIn budgetQueue) [ g | RGrant FromBudget g <- events ] [])
+    ( withBursts rankOf budgetQueue (stats rankOf [ g | RGrant FromBudget g <- events ] [])
     -- the slice's handles are unranked: every grant there is at the unranked
     -- tier, and no busy period, which only credited ranks open
     , withBursts unranked sliceQueue
-        (stats unranked (queuedIn sliceQueue)
-                        [ g | RGrant pay g <- events, pay /= FromBudget ]
+        (stats unranked [ g | RGrant pay g <- events, pay /= FromBudget ]
                         [ g | RGrant Borrowed g <- events ]) <$ schSlice )
   where
     events = replayEvents sch
@@ -5720,10 +5719,7 @@ replayStats sch@BucketSched { schSlice, schBearers } =
     rankOf  (b, k) = let bb = schBearers !! b
                      in if k == 0 then bbRank bb else (\(_, _, r) -> r) (bbMore bb !! (k - 1))
 
-    -- the requests that joined a queue: the fast path leaves no trace
-    queuedIn q = Set.fromList [ k | (_, _, k, True) <- q ]
-
-    stats rk queued gs borrowed =
+    stats rk gs borrowed =
       let waits = [ granted `diffTime` asked | (_, (asked, granted)) <- gs ]
           bytesIn = sum . map (fromIntegral . bytesOf . fst)
       in Bucket.BucketStats {
@@ -5740,9 +5736,10 @@ replayStats sch@BucketSched { schSlice, schBearers } =
            Bucket.bsContendedTime = 0,
            Bucket.bsBurstsOver    = map (const 0) Bucket.burstBounds,
            Bucket.bsBurstsWider   = map (const 0) Bucket.burstWidths,
+           -- every grant at its rank, the fast path's included
            Bucket.bsTiers         = M.fromListWith (<>)
                                       [ (rk k, Bucket.TierGrants (fromIntegral (bytesOf k)) 1)
-                                      | (k, _) <- gs, k `Set.member` queued ],
+                                      | (k, _) <- gs ],
            Bucket.bsServed        = served,
            Bucket.bsServedPruned  = pruned,
            Bucket.bsBurstsDropped = 0
@@ -5752,11 +5749,11 @@ replayStats sch@BucketSched { schSlice, schBearers } =
         -- token waits alone
         (served, pruned) = servedModel (List.sortOn (\(_, _, t, _, _) -> t)
                              [ (tier, fromIntegral (fst k), granted, granted `diffTime` asked, 0)
-                             | (k, tier, asked, granted) <- servedTiers rk queued gs ])
+                             | (k, tier, asked, granted) <- servedTiers rk gs ])
 
     -- the tier each grant records: its rank, asked as it joined the queue
     -- or, on the fast path, at the grant
-    servedTiers rk _queued gs = [ (k, rk k, asked, granted) | (k, (asked, granted)) <- gs ]
+    servedTiers rk gs = [ (k, rk k, asked, granted) | (k, (asked, granted)) <- gs ]
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
 replaySched = map (\(k, (_, granted)) -> (k, granted)) . replayRun

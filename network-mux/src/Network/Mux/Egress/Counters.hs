@@ -60,13 +60,14 @@ data SchedulingCounts = SchedulingCounts {
   scBurstsDropped      :: !Word64,
     -- ^ burst records closed with no room to keep them until the next trace
   scTiers              :: ![(Word8, TierCounts)]
-    -- ^ by tier: what the queue granted its bearers, and how many wait now
+    -- ^ by tier: what was granted its bearers, the fast path's grants
+    --   included, and how many wait now
   }
   deriving (Eq, Show, Generic)
 
 -- | The budget's queue seen from one tier: 0 local roots, 1 partners, 2 pool
--- relays, 3 strangers, 4 the rest, 255 unranked bearers. The fast path is not
--- ranked for the bytes and batches, but its bearers count as served.
+-- relays, 3 strangers, 4 the rest, 255 unranked bearers. A fast-path grant
+-- counts at the rank it was charged, like the queue's.
 data TierCounts = TierCounts {
   tcBytes   :: !Word64,
   tcBatches :: !Word64,
