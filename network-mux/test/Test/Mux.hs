@@ -143,6 +143,8 @@ tests =
                    prop_mux_counters_snapshot_split
     , testProperty "bytes the bearer took are counted, the last batch's once the write returns"
                    prop_mux_written_is_counted
+    , testProperty "each batch holds its protocols once and counts them when written"
+                   prop_mux_batch_accounting
     , testProperty "bytes the bearer delivered are counted, the last SDU's once the read returns"
                    prop_mux_read_is_counted
     , testProperty "a write blocked part way takes the cancellation, nothing counted"
@@ -4226,6 +4228,302 @@ prop_mux_partial_write_cancelled (Batches batches) =
       cancel muxer
       t1 <- getMonotonicTime
       (,) (t1 `diffTime` t0) <$> counted
+
+type EgressSnapshotMap = M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) Mx.EgressState
+
+newtype Fragments = Fragments {
+    getFragments :: [((Mx.MiniProtocolNum, Mx.MiniProtocolDir), Int)]
+  }
+  deriving Show
+
+instance Arbitrary Fragments where
+  arbitrary = do
+    -- Keep snapshots small while exercising repeated protocol keys.
+    count <- choose (0, 4)
+    miniProtocolNums <- vectorOf count (choose (0, 3))
+    let keys = [ (Mx.MiniProtocolNum n, d)
+               | n <- miniProtocolNums
+               , d <- [ Mx.InitiatorDir
+                      , Mx.ResponderDir
+                      ]
+               ]
+    fragments <- vectorOf (length keys) $ frequency
+      [ (2, pure 0)
+      , (4, choose (1, 8))
+      , (1, pure Egress.maxSDUsPerBatch)
+      , (3, choose ( Egress.maxSDUsPerBatch + 1
+                   , Egress.maxSDUsPerBatch + Egress.maxSDUsPerBatch `div` 2))
+      ]
+    return $ Fragments $ keys `zip` fragments
+
+  shrink (Fragments fragments) =
+      [ Fragments fragments'
+      | fragments' <- shrinkList shrinkDemand fragments
+      ]
+    where
+      shrinkDemand (key, n) = [ (key, n') | n' <- shrink n, n' >= 0 ]
+
+
+newtype BatchedSDUs = BatchedSDUs Int
+  deriving Show
+
+instance Arbitrary BatchedSDUs where
+  arbitrary = BatchedSDUs <$> frequency
+    [ (2, pure 1)
+    , (2, choose (2, Egress.maxSDUsPerBatch))
+    , (2, choose (Egress.maxSDUsPerBatch + 1, 2 * Egress.maxSDUsPerBatch))
+    ]
+  shrink (BatchedSDUs a) =
+    [ BatchedSDUs a'
+    | a' <- shrink a
+    , a' > 0
+    ]
+
+
+
+-- | What the bearer saw of one write: the number of SDUs, their bytes by
+-- protocol and direction, and every protocol's state as the write began.
+data BatchWrite = BatchWrite {
+    bwSDUs   :: !Int,
+    bwBytes  :: !Mx.ByteCounts,
+    bwStates :: !EgressSnapshotMap
+  }
+  deriving Show
+
+-- | The lane 'prop_mux_batch_accounting' runs its muxer on.
+data BatchLane = UnscheduledLane
+               -- ^ written as soon as the batch is formed
+               | CreditLane
+               -- ^ through the writability gate, taken on credit once written
+               | ScheduledLane
+               -- ^ granted by the budget, the batch charged in the grant
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+instance Arbitrary BatchLane where
+  arbitrary = arbitraryBoundedEnum
+  -- towards the plainer lanes
+  shrink lane = [ l | l <- [minBound ..], l < lane ]
+
+-- | The events 'prop_mux_batch_accounting' traces and checks.
+data BatchEvent =
+    -- | A write, traced by the bearer as it starts.
+    BatchWrote !BatchWrite
+    -- | What the scheduled lane charged for a batch, traced by the charge
+    -- sink in the grant's transaction, before the batch is written.
+  | BatchCharged !(M.Map Mx.MiniProtocolNum Int)
+    -- | What the budget took on credit, once the muxer is done.
+  | BatchCredited !Word64
+    -- | Every protocol's state once the muxer counted every byte, or gave up
+    -- doing so.
+  | BatchDone !EgressSnapshotMap
+    -- | The muxer died.
+  | BatchMuxerFailed SomeException
+  deriving Show
+
+data Z3 = Zero | One | Two
+  deriving (Eq, Ord)
+
+instance Semigroup Z3 where
+  Zero <> a  = a
+  One <> One = Two
+  One <> Two = Zero
+  a <> b     = b <> a
+
+instance Monoid Z3 where
+  mempty = Zero
+
+-- | At every write, exactly the protocols in that batch are held, once each,
+-- and only earlier writes are counted. After the last write all holds are
+-- released and every byte, including SDU headers, is counted. Every SDU is
+-- full, so each batch carries as many SDUs as the bearer's limit or
+-- 'Egress.maxSDUsPerBatch' allow, whichever is smaller, until the data runs
+-- out. Small and large bearer limits exercise a singleton batch, repeated
+-- protocols, and the muxer's SDU limit; both directions of the same protocol
+-- have their own state, including protocols with nothing to send.
+--
+-- The muxer runs on each 'BatchLane'. Accounting is the same on every lane;
+-- the scheduled lane also charges each batch, in the grant, its bytes per
+-- mini-protocol with both directions summed, and the credit lane takes every
+-- written byte from the budget on credit.
+--
+-- The bearer only observes: it traces each write, and the expected states
+-- are computed from the trace afterwards.
+prop_mux_batch_accounting :: BatchedSDUs -> Fragments -> BatchLane -> Property
+prop_mux_batch_accounting (BatchedSDUs batchSDUs) (Fragments fragments) lane =
+    checkCoverage $
+    let -- Some mini-protocol sends in both directions, so a scheduled batch can
+        -- carry both under one charge.
+        bothDirections :: Bool
+        bothDirections =
+          any (== Two) $ M.fromListWith (<>)
+            [ (num, One)
+            | ((num, _), n) <- M.toList fragmentsPerProtocol
+            , n > 0 ]
+    in
+    tabulate "lane" [show lane] $
+    cover 10 (lane == ScheduledLane && bothDirections)
+             "scheduled, a protocol sending in both directions" $
+    cover 10 (batchSDUs == 1 && totalFragments > 0) "singleton batches" $
+    cover 10 (   batchSDUs > Egress.maxSDUsPerBatch
+              && totalFragments > Egress.maxSDUsPerBatch) "SDU limit" $
+    cover 10 (any (== 0) (M.elems fragmentsPerProtocol)) "idle protocols" $
+
+    let trace  = runSimTrace sim
+        events = selectTraceEventsDynamic trace :: [BatchEvent]
+        writes = [ w | BatchWrote w <- events ]
+        finals = [ s | BatchDone s  <- events ]
+        charges  = [ c | BatchCharged c  <- events ]
+        credited = [ c | BatchCredited c <- events ]
+
+        -- A scheduled batch is charged its bytes per mini-protocol, both
+        -- directions summed; no other lane charges.
+        expectedCharges :: [M.Map Mx.MiniProtocolNum Int]
+        expectedCharges = case lane of
+          ScheduledLane -> [ M.mapKeysWith (+) fst (fromIntegral <$> bwBytes w)
+                           | w <- writes ]
+          _             -> []
+
+        -- What the writes before each one carried: all that may be counted.
+        counted :: [Mx.ByteCounts]
+        counted = scanl (M.unionWith (+)) M.empty (bwBytes <$> writes)
+
+        -- The protocols in the write are held, once each, and only earlier
+        -- writes are counted.
+        wantedAt :: BatchWrite -> Mx.ByteCounts -> EgressSnapshotMap
+        wantedAt BatchWrite { bwBytes, bwStates } earlier =
+          M.mapWithKey
+            (\key _ ->
+              Mx.EgressState {
+                  Mx.esHeld = if M.member key bwBytes then 1 else 0,
+                  Mx.esSent = M.findWithDefault 0 key earlier
+                }
+            )
+            bwStates
+    in case traceResult False trace of
+      Left e   -> counterexample (show e) False
+      Right () ->
+        conjoin $
+             [ counterexample ("the muxer failed: " ++ show e) False
+             | BatchMuxerFailed e <- events ]
+          ++ [ counterexample "SDUs per batch"
+                 (map bwSDUs writes === expectedBatches)
+             , counterexample "once the muxer is done"
+                 (finals === [expectedFinal])
+             , counterexample "charged per batch"
+                 (charges === expectedCharges)
+             , counterexample "taken on credit"
+                 (credited === [expectedCredit])
+             ]
+          ++ [ counterexample ("write " ++ show i) (bwStates w === wanted)
+             | (i, w, wanted) <- zip3 [0 :: Int ..] writes
+                                      (zipWith wantedAt writes counted) ]
+  where
+    sdu, sduWireBytes :: Int
+    sdu = 64
+    sduWireBytes = sdu + fromIntegral Mx.msHeaderLength
+
+    totalFragments :: Int
+    totalFragments = sum (snd <$> fragments)
+
+    fragmentsPerProtocol :: M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) Int
+    fragmentsPerProtocol = M.fromListWith (+) fragments
+
+    expectedBatches :: [Int]
+    expectedBatches =
+           replicate (totalFragments `div` perBatch) perBatch
+        ++ [ r | let r = totalFragments `mod` perBatch, r > 0 ]
+      where
+        perBatch :: Int
+        perBatch = min batchSDUs Egress.maxSDUsPerBatch
+
+    -- Several demands can share a protocol's state, so sum their bytes.
+    expectedFinal :: EgressSnapshotMap
+    expectedFinal =
+        M.map (Mx.EgressState 0 . fromIntegral . (* sduWireBytes))
+        fragmentsPerProtocol
+
+    expectedSentBytes :: Word64
+    expectedSentBytes = fromIntegral (totalFragments * sduWireBytes)
+
+    -- Only the credit lane takes on credit, every byte it writes.
+    expectedCredit :: Word64
+    expectedCredit = case lane of
+      CreditLane -> expectedSentBytes
+      _          -> 0
+
+    sim :: forall s. IOSim s ()
+    sim = do
+        let tracer :: Tracer (IOSim s) BatchEvent
+            tracer = mkTracer traceM
+        queue <- newTBQueueIO (fromIntegral (length fragments))
+        slots <- atomically $ Counters.newByteSlots (fst <$> fragments)
+        -- At rate 0 the budget grants every request at once, so no time
+        -- passes; it still counts what is taken on credit.
+        budget <- Bucket.newBucket 0 65536 Nothing
+        laneEgress <- case lane of
+          UnscheduledLane -> return Egress.Unscheduled
+          CreditLane      -> return (Egress.Credit budget)
+          ScheduledLane   -> do
+            bearerHandle <- Bucket.registerBearer budget
+            -- traced in the grant's transaction
+            sink <- newTVarIO (\_ charged -> traceSTM (BatchCharged charged))
+            return (Egress.Scheduled_ bearerHandle sink)
+        let readStates :: STM (IOSim s) EgressSnapshotMap
+            readStates = traverse readTVar slots
+
+            bearer = Mx.Bearer {
+                Mx.write = \_ _ _ -> error "single writes are not used",
+                Mx.writeMany = \_ _ sdus -> do
+                  states <- atomically readStates
+                  traceWith tracer $ BatchWrote BatchWrite {
+                      bwSDUs   = length sdus,
+                      bwBytes  = writtenBytes sdus,
+                      bwStates = states
+                    }
+                  getMonotonicTime,
+                Mx.read = \_ _ -> error "the muxer does not read",
+                Mx.sduSize = Mx.SDUSize (fromIntegral sdu),
+                Mx.batchSize = batchSDUs * sduWireBytes,
+                Mx.name = "batch-accounting",
+                Mx.egressInterval = 0,
+                Mx.awaitWritable = \_ _ -> return ()
+              }
+
+        -- enqueue `TranslocationServiceRequest`s
+        atomically $ forM_ fragments $ \(key@(mpc, md), n) ->
+          when (n > 0) $ do
+            wanton <- (\want ->
+                        Egress.Wanton {
+                          Egress.want,
+                          Egress.held = slots M.! key
+                        })
+                 <$> newTVar (BL.replicate (fromIntegral (n * sdu)) 0x55)
+            writeTBQueue queue (Egress.TLSRDemand mpc md wanton)
+
+        -- drain the queue with a muxer thread
+        bracket
+          (async $
+            Egress.muxer
+              queue
+              nullTracer
+              Nothing
+              laneEgress
+              bearer)
+          cancel
+          $ \mx -> do
+            -- Wait for every byte to be counted; on a timeout the final states
+            -- show what was counted instead.
+            _ <- timeout 10 $ atomically $ do
+              states <- readStates
+              check (sum (Mx.esSent <$> M.elems states) == expectedSentBytes)
+            r <- poll mx
+            case r of
+              Just (Left e) -> traceWith tracer (BatchMuxerFailed e)
+              _             -> return ()
+            atomically readStates >>= traceWith tracer . BatchDone
+            now <- getMonotonicTime
+            (stats, _, _, _) <- atomically $ Bucket.bucketSnapshot budget now
+            traceWith tracer (BatchCredited (Bucket.bsCredited stats))
 
 -- | A full egress queue with producers blocked on it: @fqCapacity@ demands
 -- queued, one per mini-protocol, and @fqBlocked@ more whose producers wait
