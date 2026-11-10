@@ -143,6 +143,8 @@ tests =
                    prop_mux_counters_snapshot_split
     , testProperty "bytes the bearer took are counted, the last batch's once the write returns"
                    prop_mux_written_is_counted
+    , testProperty "each batch holds its protocols once and counts them when written"
+                   prop_mux_batch_accounting
     , testProperty "bytes the bearer delivered are counted, the last SDU's once the read returns"
                    prop_mux_read_is_counted
     , testProperty "a write blocked part way takes the cancellation, nothing counted"
@@ -4225,6 +4227,149 @@ prop_mux_partial_write_cancelled (Batches batches) =
       cancel muxer
       t1 <- getMonotonicTime
       (,) (t1 `diffTime` t0) <$> counted
+
+type EgressSnapshotMap = M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) Mx.EgressState
+
+newtype Fragments = Fragments {
+    getFragments :: [((Mx.MiniProtocolNum, Mx.MiniProtocolDir), Int)]
+  }
+  deriving Show
+
+instance Arbitrary Fragments where
+  arbitrary = do
+    -- Keep snapshots small while exercising repeated protocol keys.
+    count <- choose (0, 4)
+    miniProtocolNums <- vectorOf count (choose (0, 3))
+    let keys = [ (Mx.MiniProtocolNum n, d)
+               | n <- miniProtocolNums
+               , d <- [ Mx.InitiatorDir
+                      , Mx.ResponderDir
+                      ]
+               ]
+    fragments <- vectorOf (length keys) $ frequency
+      [ (2, pure 0)
+      , (4, choose (1, 8))
+      , (1, pure 100)
+      , (3, choose (101, 150))
+      ]
+    return $ Fragments $ keys `zip` fragments
+
+  shrink (Fragments fragments) =
+      [ Fragments fragments'
+      | fragments' <- shrinkList shrinkDemand fragments
+      ]
+    where
+      shrinkDemand (key, n) = [ (key, n') | n' <- shrink n, n' >= 0 ]
+
+
+newtype BatchedSDUs = BatchedSDUs Int
+  deriving Show
+
+instance Arbitrary BatchedSDUs where
+  arbitrary = BatchedSDUs <$> frequency
+    [ (1, pure 1)
+    , (2, arbitrary `suchThat` (> 1) `suchThat` (<= 100))
+    , (2, arbitrary `suchThat` (> 100))
+    ]
+  shrink (BatchedSDUs a) =
+    [ BatchedSDUs a'
+    | a' <- shrink a
+    , a' > 0
+    ]
+
+
+
+-- | At every write, exactly the protocols in that batch are held, once each,
+-- and only earlier writes are counted. After the last write all holds are
+-- released and every byte, including SDU headers, is counted. Small and large
+-- bearer limits exercise a singleton batch, repeated protocols, and the
+-- muxer's 100-SDU limit; both directions of the same protocol have their own
+-- state, including protocols with nothing to send.
+prop_mux_batch_accounting :: BatchedSDUs -> Fragments -> Property
+prop_mux_batch_accounting = \(BatchedSDUs batchSDUs) (Fragments fragments) ->
+      let totalFragments = sum (snd <$> fragments)
+          fragmentsPerProtocol = M.fromListWith (+) fragments
+      in 
+      checkCoverage $
+      cover 10 (batchSDUs == 1 && totalFragments > 0) "singleton batches" $
+      cover 10 (batchSDUs > 100 && totalFragments > 100) "SDU limit" $
+      cover 10 (any (== 0) (M.elems fragmentsPerProtocol)) "idle protocols" $
+      case runSimOrThrow (sim batchSDUs
+                              (fst <$> fragments)
+                              (snd <$> fragments)) of
+        Nothing -> counterexample "the muxer did not count all bytes" False
+        Just observed ->
+          conjoin [ counterexample ("write " ++ show i) (actual === wanted)
+                  | (i, (actual, wanted)) <- zip [0 :: Int ..] observed ]
+  where
+    sdu = 64
+    wireBytes = sdu + fromIntegral Mx.msHeaderLength
+
+    sim :: forall s.
+           Int
+        -> [(Mx.MiniProtocolNum, Mx.MiniProtocolDir)]
+        -> [Int]
+        -> IOSim s (Maybe [(EgressSnapshotMap, EgressSnapshotMap)])
+    sim batchSDUs keys fragments  = do
+        queue <- newTBQueueIO (fromIntegral (length keys))
+        slots <- atomically $ Counters.newByteSlots keys
+        sent <- newTVarIO M.empty
+        observed <- newTVarIO []
+        let readStates :: STM (IOSim s) EgressSnapshotMap
+            readStates = traverse readTVar slots
+
+            bearer = Mx.Bearer {
+                Mx.write = \_ _ _ -> error "single writes are not used",
+                Mx.writeMany = \_ _ sdus -> do
+                  atomically $ do
+                    actual <- readStates
+                    earlier <- readTVar sent
+                    let bytes = writtenBytes sdus
+                        wanted = M.mapWithKey
+                          (\key _ ->
+                            Mx.EgressState {
+                                Mx.esHeld = if M.member key bytes then 1 else 0,
+                                Mx.esSent = M.findWithDefault 0 key earlier
+                              }
+                          )
+                         slots
+                    modifyTVar observed ((actual, wanted) :)
+                    modifyTVar sent (M.unionWith (+) bytes)
+                  getMonotonicTime,
+                Mx.read = \_ _ -> error "the muxer does not read",
+                Mx.sduSize = Mx.SDUSize (fromIntegral sdu),
+                Mx.batchSize = batchSDUs * wireBytes,
+                Mx.name = "batch-accounting",
+                Mx.egressInterval = 0,
+                Mx.awaitWritable = \_ _ -> return ()
+              }
+        atomically $ forM_ (zip keys fragments) $ \(key@(mpc, md), n) ->
+          when (n > 0) $ do
+            w <- newTVar (BL.replicate (fromIntegral (n * sdu)) 0x55)
+            let wanton = Egress.Wanton w (slots M.! key)
+            writeTBQueue queue (Egress.TLSRDemand mpc md wanton)
+
+        -- drain the queue with a muxer thread
+        mx <- async (void (Egress.muxer queue nullTracer Nothing Egress.Unscheduled bearer))
+
+        done <- timeout 10 $ atomically $ do
+          final <- readStates
+          check (sum (map Mx.esSent (M.elems final)) == expectedSentBytes)
+          samples <- readTVar observed
+          let -- Several demands can share a protocol's state, so sum their bytes.
+              expected :: EgressSnapshotMap
+              expected =
+                  M.map (Mx.EgressState 0)
+                . M.fromListWith (+)
+                $ [ (key, fromIntegral (n * wireBytes))
+                  | (key, n) <- zip keys (fragments ++ repeat 0)
+                  ]
+          return (reverse samples ++ [(final, expected)])
+        cancel mx
+        return done
+      where
+        expectedSentBytes :: Word64
+        expectedSentBytes = fromIntegral $ sum fragments * wireBytes
 
 -- | A full egress queue with producers blocked on it: @fqCapacity@ demands
 -- queued, one per mini-protocol, and @fqBlocked@ more whose producers wait
