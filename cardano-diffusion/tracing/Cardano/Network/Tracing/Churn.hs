@@ -22,13 +22,13 @@ instance LogFormatting TraceChurnMode where
 
 instance MetaTrace TraceChurnMode where
   namespaceFor TraceChurnMode {} =
-    Namespace [] []
+    Namespace [] ["ChurnMode"]
 
-  severityFor _ (Just TraceChurnMode {}) = Just Info
-  severityFor _ Nothing                  = Nothing
+  severityFor (Namespace _ ["ChurnMode"]) _ = Just Info
+  severityFor _ _                           = Nothing
 
-  documentFor (Namespace [] []) = Just $ mconcat
-    [ "Affects churning strategy. For a synced node or operating in GenesisMode "
+  documentFor (Namespace _ ["ChurnMode"]) = Just $ mconcat
+    [ "Affects churning strategy. For a synced node or operating in GenesisMode"
     , " consensus mode, the default strategy is used. Otherwise for a syncing PraosMode"
     , " node, the legacy bulk sync churning intervals are used whose durations"
     , " depend on whether bootstrap peers are enabled."
@@ -36,5 +36,5 @@ instance MetaTrace TraceChurnMode where
   documentFor _ = Nothing
 
   allNamespaces = [
-      Namespace [] []
+      Namespace [] ["ChurnMode"]
     ]

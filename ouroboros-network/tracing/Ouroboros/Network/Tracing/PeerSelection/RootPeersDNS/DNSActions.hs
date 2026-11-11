@@ -65,13 +65,21 @@ instance MetaTrace DNSTrace where
   namespaceFor SRVLookupError {} =
     Namespace [] ["SRVLookupError"]
 
-  severityFor _ (Just DNSLookupResult {}) = Just Info
-  severityFor _ (Just DNSLookupError {})  = Just Info
-  severityFor _ (Just SRVLookupResult{})  = Just Info
-  severityFor _ (Just SRVLookupError{})   = Just Info
-  severityFor _ Nothing                   = Nothing
+  severityFor (Namespace _ ["DNSLookupResult"]) _ = Just Info
+  severityFor (Namespace _ ["DNSLookupError"]) _  = Just Info
+  severityFor (Namespace _ ["SRVLookupResult"]) _ = Just Info
+  severityFor (Namespace _ ["SRVLookupError"]) _  = Just Info
+  severityFor _ _                                 = Nothing
 
-  documentFor _ = Nothing
+  documentFor (Namespace _ ["DNSLookupResult"]) = Just
+    "The addresses a DNS lookup of a root peer's domain returned."
+  documentFor (Namespace _ ["DNSLookupError"])  = Just
+    "A DNS lookup of a root peer's domain failed."
+  documentFor (Namespace _ ["SRVLookupResult"]) = Just
+    "The records an SRV lookup of a root peer's domain returned."
+  documentFor (Namespace _ ["SRVLookupError"])  = Just
+    "An SRV lookup of a root peer's domain failed."
+  documentFor _                                 = Nothing
 
   allNamespaces = [
       Namespace [] ["DNSLookupResult"]
