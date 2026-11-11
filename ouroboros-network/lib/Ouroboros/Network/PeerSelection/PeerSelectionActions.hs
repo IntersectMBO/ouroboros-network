@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments           #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE DuplicateRecordFields    #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
@@ -9,6 +10,7 @@
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( PeerSelectionActions (..)
+  , WithPeerSelectionActionsArgs (..)
   , withPeerSelectionActions
   , requestPeerSharingResult
   , requestPublicRootPeersImpl
@@ -33,18 +35,64 @@ import Data.Void (Void)
 import Network.DNS qualified as DNS
 
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionActions (PeerSelectionActions, readLocalRootPeersFromFile))
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+-- import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle)
+import Ouroboros.Network.PeerSelection.PeerSharing
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers
-import Ouroboros.Network.PeerSharing (PeerSharingController,
-           PeerSharingResult (..), requestPeers)
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types
+import Ouroboros.Network.PeerSharing (PeerSharingController, requestPeers)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 
 import System.Random
+
+data WithPeerSelectionActionsArgs extraState extraFlags extraPeers extraAPI peeraddr peerconn resolver m a =
+    WithPeerSelectionActionsArgs {
+      localRootPeersTracer       :: Tracer m (TraceLocalRootPeers extraFlags peeraddr),
+      -- ^ trace local root peers
+      peerSelectionTargets       :: PeerSelectionTargets,
+      -- ^ initial peer selection targets
+      readPeerSelectionTargets   :: STM m PeerSelectionTargets,
+      -- ^ read peer selection targets
+      getLedgerStateCtx          :: LedgerPeersConsensusInterface extraAPI m,
+      -- ^ ledger peer consensus API
+
+      --
+      -- local root peerr
+      --
+
+      localRootPeersRng          :: StdGen,
+      readLocalRootPeersFromFile :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint),
+      localRootsVar              :: StrictTVar m (LocalRootPeers.Config extraFlags peeraddr),
+
+      --
+      -- peer sharing
+      --
+
+      peerSharing                :: PeerSharing,
+      -- ^ configuration value of peer sharing
+      peerConnToPeerSharing      :: peerconn -> PeerSharing,
+      -- ^ handshake negotiated value of peer sharing
+      requestPeerShare           :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr),
+      -- ^ request peers through peer sharing callback
+
+      requestPublicRootPeers     :: SomeLedgerPeersKind
+                                      -> StdGen
+                                      -> Int
+                                      -> m (PublicRootPeers extraPeers peeraddr, DiffTime),
+      -- ^ request public root peers callback
+      readInboundPeers           :: m (Map peeraddr PeerSharing),
+      -- ^ inbound peers which are injected into results of peer sharing
+      -- depending on the `PeerSharing` value
+      readLedgerPeerSnapshot     :: STM m (Maybe (LedgerPeerSnapshot BigLedgerPeers)),
+      -- ^ read ledger peer snapshot, it is read form a TVar which can be updated on SIGHUP from a file.
+      extraPeersAPI              :: PublicExtraPeersAPI extraPeers peeraddr,
+      peerStateActions           :: PeerStateActions peeraddr extraFlags peerconn m,
+      peerActionsDNS             :: PeerActionsDNS peeraddr resolver m
+    }
 
 withPeerSelectionActions
   :: forall extraState extraFlags extraPeers extraAPI peeraddr peerconn resolver m a.
@@ -55,51 +103,65 @@ withPeerSelectionActions
      , Ord peeraddr
      , Eq extraFlags
      )
-  => Tracer m (TraceLocalRootPeers extraFlags peeraddr)
-  -> StrictTVar m (Config extraFlags peeraddr)
-  -> PeerActionsDNS peeraddr resolver m
-  -> (   (    NumberOfPeers
-           -> SomeLedgerPeersKind
-           -> m (Maybe (Set peeraddr, DiffTime))
-         )
-      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m)
-  -- ^ construct PeerSelectionActions given a function which obtains ledger
-  -- peers that is supplied by `withLedgerPeers`.
-  -> WithLedgerPeersArgs extraAPI m
-  -> StdGen
-  -> (   (Async m Void, Async m Void)
-      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m
+  => WithPeerSelectionActionsArgs extraState extraFlags extraPeers extraAPI peeraddr peerconn resolver m a
+  -> (   PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m
+      -> Async m Void
       -> m a)
   -- ^ continuation, receives a handle to the local roots peer provider thread
   -- (only if local root peers were non-empty).
   -> m a
 withPeerSelectionActions
-  localTracer
-  localRootsVar
-  peerActionsDNS
-  getPeerSelectionActions
-  ledgerPeersArgs
-  rng0
+  WithPeerSelectionActionsArgs {
+    localRootPeersTracer,
+    peerSelectionTargets,
+    readPeerSelectionTargets,
+    getLedgerStateCtx,
+    localRootPeersRng,
+    readLocalRootPeersFromFile,
+    localRootsVar,
+    peerSharing,
+    peerConnToPeerSharing,
+    requestPeerShare,
+    requestPublicRootPeers,
+    readInboundPeers,
+    readLedgerPeerSnapshot,
+    extraPeersAPI,
+    peerStateActions,
+    peerActionsDNS
+  }
   k = do
-    withLedgerPeers
-      peerActionsDNS
-      ledgerPeersArgs
-      (\getLedgerPeers lpThread -> do
-          let peerSelectionActions@PeerSelectionActions
-                { readLocalRootPeersFromFile
-                } = getPeerSelectionActions getLedgerPeers
-          withAsync do
-              labelThisThread "local-roots-peers"
-              localRootPeersProvider
-                localTracer
-                peerActionsDNS
-                -- NOTE: we don't set `resolvConcurrent` because
-                -- of https://github.com/kazu-yamamoto/dns/issues/174
-                DNS.defaultResolvConf
-                rng0
-                readLocalRootPeersFromFile
-                localRootsVar
-            (\lrppThread -> k (lpThread, lrppThread) peerSelectionActions))
+  let peerSelectionActions =
+        PeerSelectionActions {
+          peerSelectionTargets,
+          readPeerSelectionTargets,
+          getLedgerStateCtx,
+          readLocalRootPeersFromFile,
+          readLocalRootPeers = readTVar localRootsVar,
+          peerSharing,
+          peerConnToPeerSharing,
+          requestPeerShare,
+          requestPublicRootPeers,
+          readInboundPeers =
+            case peerSharing of
+              PeerSharingDisabled -> pure Map.empty
+              PeerSharingEnabled  -> readInboundPeers,
+          readLedgerPeerSnapshot,
+          extraPeersAPI,
+          peerStateActions
+        }
+  withAsync
+    (do
+      labelThisThread "local-roots-peers"
+      localRootPeersProvider
+        localRootPeersTracer
+        peerActionsDNS
+        -- NOTE: we don't set `resolvConcurrent` because
+        -- of https://github.com/kazu-yamamoto/dns/issues/174
+        DNS.defaultResolvConf
+        localRootPeersRng
+        readLocalRootPeersFromFile
+        localRootsVar)
+    (k peerSelectionActions)
 
 requestPeerSharingResult :: ( MonadSTM m
                             , MonadMVar m
