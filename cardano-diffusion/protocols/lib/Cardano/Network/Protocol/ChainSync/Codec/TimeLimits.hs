@@ -33,7 +33,7 @@ import System.Random (StdGen, randomR)
 -- | IsNotTrustable | @'StNext' 'StMustReply'@   | randomly picked using uniform distribution from             |
 -- |                |                            | the range @('minChainSyncTimeout', 'maxChainSyncTimeout')@, |
 -- |                |                            | which corresponds to a chance of an empty streak of slots   |
--- |                |                            | between `0.0001%` and `1%` probability.                     |
+-- |                |                            | between `4.1e-14` and `5.1e-21`.                            |
 -- +----------------+----------------------------+-------------------------------------------------------------+
 -- | IsTrustable    | @'StNext' 'StMustReply'@   | 'waitForever' (i.e. never times out)                        |
 -- +----------------+----------------------------+-------------------------------------------------------------+
@@ -66,17 +66,25 @@ timeLimitsChainSync idleTimeout peerTrustable = ProtocolTimeLimitsWithRnd stateT
       case peerTrustable of
         IsTrustable    -> (Nothing, rnd)
         IsNotTrustable ->
-          -- We draw from a range for which streaks of empty slots ranges
-          -- from 0.0001% up to 1% probability.
-          -- t = T_s [log (1-Y) / log (1-f)]
-          -- Y = [0.99, 0.999...]
-          -- T_s = slot length of 1s.
-          -- f = 0.05
+          -- The timeout bounds how long we wait at the tip of the chain for
+          -- the next block.  With a slot length of `T_s = 1s` and an active
+          -- slot coefficient of `f = 0.05`, the chance that no block is
+          -- produced for `t` slots is `(1-f)^t`, hence a timeout of `t`
+          -- seconds corresponds to a threshold `Y`:
+          --
+          --   t = T_s [log (1-Y) / log (1-f)]
+          --
           -- The timeout is randomly picked per state to avoid all peers go down at
           -- the same time in case of a long streak of empty slots, and thus to
-          -- avoid global synchronisation.  The timeout is picked uniformly from
-          -- the interval 135 - 269, which corresponds to 99.9% to
-          -- 99.9999% thresholds.
+          -- avoid global synchronisation.  It is picked uniformly from the
+          -- interval `minChainSyncTimeout` - `maxChainSyncTimeout`, currently
+          -- 601 - 911, which corresponds to the thresholds `1 - 4.1e-14` and
+          -- `1 - 5.1e-21`, i.e. to streaks of empty slots of `4.1e-14` down to
+          -- `5.1e-21` probability.  At the lower end of the interval a false
+          -- positive is expected roughly once in `1.5e7` years.
+          --
+          -- NOTE: keep these figures in sync with `minChainSyncTimeout` and
+          -- `maxChainSyncTimeout`.
           let timeout :: DiffTime
               (timeout, rnd') = first realToFrac
                               . randomR ( realToFrac minChainSyncTimeout :: Double
