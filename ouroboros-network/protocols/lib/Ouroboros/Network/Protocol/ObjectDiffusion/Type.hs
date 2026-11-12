@@ -322,8 +322,7 @@ instance Protocol (ObjectDiffusion objectId object) where
       -> NumObjectIdsAck -- ^ Acknowledge this number of outstanding objects
       -> NumObjectIdsReq -- ^ Request up to this number of object ids
       -> Message (ObjectDiffusion objectId object) StIdle (StObjectIds kind)
-    -- | Reply with a list of object identifiers for available objects, along
-    -- with the size of each object.
+    -- | Reply with a list of object identifiers for available objects.
     --
     -- The list must not be longer than the maximum number requested.
     --
@@ -333,10 +332,6 @@ instance Protocol (ObjectDiffusion objectId object) where
     --
     -- These objects are added to the notional FIFO of outstanding object
     -- identifiers for the protocol.
-    --
-    -- The order in which these object identifiers are returned must be the
-    -- order in which they are submitted to the mempool, to preserve dependent
-    -- objects.
 
     MsgReplyObjectIds
       :: ObjectIdsReplyList kind objectId
@@ -381,16 +376,7 @@ instance Protocol (ObjectDiffusion objectId object) where
     MsgRequestObjects
       :: [objectId]
       -> Message (ObjectDiffusion objectId object) StIdle StObjects
-    -- | Reply with the requested objects, or implicitly discard.
-    --
-    -- Objects can become invalid between the time the object
-    -- identifier was sent and the object being requested. Invalid
-    -- (including committed) objects do not need to be sent.
-    --
-    -- Any object identifiers requested but not provided in this reply
-    -- should be considered as if this peer had never announced them. (Note
-    -- that this is no guarantee that the object is invalid, it may still
-    -- be valid and available from another peer).
+    -- | Reply with the requested objects.
 
     MsgReplyObjects
       :: [object]
