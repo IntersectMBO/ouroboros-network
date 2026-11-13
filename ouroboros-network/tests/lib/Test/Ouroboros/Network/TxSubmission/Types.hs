@@ -18,6 +18,7 @@ module Test.Ouroboros.Network.TxSubmission.Types
   , readMempool
   , getMempoolReader
   , getMempoolWriter
+  , blockingTxIdRequest
   , InvalidTx (..)
   , maxTxSize
   , LargeNonEmptyList (..)
@@ -61,6 +62,7 @@ import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
 import Data.Either (partitionEithers)
 import Data.List qualified as List
+import Data.List.NonEmpty (NonEmpty)
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
@@ -71,6 +73,7 @@ import Network.TypedProtocol.Codec
 
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
+import Ouroboros.Network.Protocol.TxSubmission2.Server (ServerStIdle (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V1
@@ -158,6 +161,13 @@ getMempoolReader = Mempool.getReader getTxId getTxAdvSize
 
 data InvalidTx = InvalidTx | DuplicateTx | MissingParent
   deriving (Eq, Show)
+
+-- | The continuation of a server state that is a blocking txid request,
+-- for a test that answers it by hand; nothing for any other state.
+blockingTxIdRequest :: ServerStIdle n txid tx m a
+                    -> Maybe (NonEmpty (txid, SizeInBytes) -> m (ServerStIdle n txid tx m a))
+blockingTxIdRequest (SendMsgRequestTxIdsBlocking _ _ _ k) = Just k
+blockingTxIdRequest _                                     = Nothing
 
 getMempoolWriter :: forall txid m.
                     ( MonadSTM m

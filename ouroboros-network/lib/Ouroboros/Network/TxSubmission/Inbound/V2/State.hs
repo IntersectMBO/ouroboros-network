@@ -13,7 +13,13 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , drainPeerScore
   , peerClaimDelay
   , applyPeerEvents
+  , sweepSharedStateUpTo
+  , expireSharedStateUpTo
+  , reviewDoomed
+  , doomedKeys
+    -- * For tests and the benchmark
   , sweepSharedState
+  , walkFrom
   ) where
 
 import Control.Exception (assert)
@@ -25,13 +31,14 @@ import Data.IntSet qualified as IntSet
 import Data.List as List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
-import Data.Word (Word64)
 import GHC.Stack (HasCallStack)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
            SizeInBytes)
 import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (effectiveTier,
+           nextJitter, recordNovel, slowWait)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 data TxIdRequestMode = AllowAnyTxIdRequests | AllowPipelinedTxIdRequests
@@ -55,7 +62,9 @@ data PeerActionContext peeraddr txid tx = PeerActionContext {
     -- | Shared tx-submission state after shared pruning has been applied.
     pacSharedState  :: !(SharedTxState peeraddr txid),
     -- | Score-derived delay this peer must wait after a tx becomes claimable.
-    pacClaimDelay   :: !DiffTime
+    pacClaimDelay   :: !DiffTime,
+    -- | The tier the peer is served on now ('effectiveTier').
+    pacTier         :: !PeerTier
   }
 
 -- | Decision produced by 'pickPeerActionChoice'; consumed by
@@ -72,9 +81,11 @@ data PeerActionChoice peeraddr =
     -- whether the message is blocking or pipelined based on the
     -- (post-ack) unack queue.
   | ChooseRequestTxIds ![TxKey] !NumTxIdsToAck !NumTxIdsToReq !(StrictSeq.StrictSeq TxKey)
-    -- | Park until shared state advances or the wake delay elapses: the
-    -- observed shared-state generation and an optional wake delay.
-  | ChooseDoNothing !Word64 !(Maybe DiffTime)
+    -- | Park until the counter moves or the wake delay elapses: an
+    -- optional wake delay and the counter, the claimable one for the slow
+    -- tier's wait while its gate holds a txid request, the wake counter
+    -- otherwise.
+  | ChooseDoNothing !(Maybe DiffTime) !ParkCounter
 
 -- | Build a precomputed context for selecting the next action for a peer.
 --
@@ -95,7 +106,8 @@ mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedStat
     pacPeerState = peerState',
     pacPeerInFlight = peerInFlight',
     pacSharedState = sharedState,
-    pacClaimDelay = peerClaimDelay policy now (peerScore peerState')
+    pacClaimDelay = peerClaimDelay policy now (peerScore peerState'),
+    pacTier = effectiveTier policy now peerState'
     }
   where
     -- Drop locally buffered bodies whose 'sharedTxTable' entry is gone:
@@ -113,8 +125,8 @@ mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedStat
     -- re-advertisement (via 'txPeerHasAttempt') and cause the bracket
     -- finalizer to over-decrement 'txAttempt' on a freshly re-interned
     -- entry.  The other in-flight sets are unaffected: 'pifAdvertised'
-    -- and 'pifAcksPending' are managed by the txid path and must stay
-    -- in lockstep with the peer's queue; 'pifSubmitting' is only set
+    -- is managed by the txid path and must stay in lockstep with the
+    -- peer's queue; 'pifSubmitting' is only set
     -- via 'markSubmittingTxs', which cannot fire for an entry that's
     -- already been pruned.
     downloaded  = peerDownloadedTxs peerState
@@ -166,8 +178,7 @@ nextPeerActionPipelined = nextPeerActionWithMode AllowPipelinedTxIdRequests
 -- messages.  Before picking an action it runs 'bumpStuckEntries' over this
 -- peer's buffered bodies to raise the inflight cap on entries whose
 -- leaseholder has stalled, letting other peers claim them on their next pass.
--- Updates 'peerPhase' on the returned 'PeerTxLocalState' to reflect the
--- chosen action and threads the per-peer 'PeerTxInFlight' counters.
+-- Threads the per-peer 'PeerTxInFlight' counters.
 nextPeerActionWithMode :: Ord peeraddr
                        => TxIdRequestMode
                        -> Time
@@ -179,30 +190,10 @@ nextPeerActionWithMode :: Ord peeraddr
                        -> SharedTxState peeraddr txid
                        -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 nextPeerActionWithMode txIdRequestMode now policy config peeraddr peerState peerInFlight sharedState =
-    let (action, peerState', peerInFlight', sharedState'') =
-          applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
-        newPhase = phaseForAction txIdRequestMode (peerPhase peerState) action
-        peerState'' = if newPhase == peerPhase peerState'
-                         then peerState'
-                         else peerState' { peerPhase = newPhase }
-    in (action, peerState'', peerInFlight', sharedState'')
+    applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
   where
     sharedState' = bumpStuckEntries now policy (peerDownloadedTxs peerState) sharedState
     ctx = mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedState'
-
--- | Compute the new 'PeerPhase' for the chosen 'PeerAction'.
---
--- In pipelined mode a 'PeerDoNothing' keeps the current phase (the peer
--- is still mid-pipeline, just waiting for replies). In non-pipelined mode
--- a 'PeerDoNothing' transitions to 'PeerIdle'.
-phaseForAction :: TxIdRequestMode -> PeerPhase -> PeerAction -> PeerPhase
-phaseForAction txIdRequestMode currentPhase action = case action of
-    PeerDoNothing {}    -> case txIdRequestMode of
-                             AllowPipelinedTxIdRequests -> currentPhase
-                             AllowAnyTxIdRequests       -> PeerIdle
-    PeerSubmitTxs {}    -> PeerSubmittingToMempool
-    PeerRequestTxs {}   -> PeerWaitingTxs
-    PeerRequestTxIds {} -> PeerWaitingTxIds
 
 -- | Pick which action to perform next.
 --
@@ -217,13 +208,54 @@ pickPeerActionChoice txIdRequestMode ctx
   -- Pick TXs to fetch
   | Just (txsToRequest, txsToRequestSize, txTable') <- pickRequestTxsAction ctx =
       ChooseRequestTxs txsToRequest txsToRequestSize txTable'
-  -- Pick TXids to ack and/or request more TXids.
+  -- Pick TXids to ack and/or request more TXids, unless the slow tier's
+  -- gate holds the request.  Acknowledgements that free a buffered body
+  -- pass the gate, in a request for no txids, which leaves the gate as
+  -- it is; not pipelined, where a request for nothing burns a slot.
   | Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds') <-
       pickRequestTxIdsAction txIdRequestMode ctx =
-      ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge txIdsToRequest unacknowledgedTxIds'
-  -- Do nothing
+      case slowGate ctx of
+        Nothing        -> ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge
+                                             txIdsToRequest unacknowledgedTxIds'
+        Just gateUntil
+          | txIdRequestMode == AllowAnyTxIdRequests
+          , txIdsToAcknowledge > 0
+          , Just _ <- pickSubmitFrom ctx unacknowledgedTxIds' ->
+              ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge 0 unacknowledgedTxIds'
+          | otherwise -> waitGate gateUntil
+  -- Nothing to do now.  A slow peer whose gate holds waits for the gate
+  -- as for a gated request, unless it holds a buffered body; anyone else
+  -- parks on the generation.
+  | Just gateUntil <- slowGate ctx
+  , noBuffered =
+      waitGate gateUntil
   | otherwise =
-      ChooseDoNothing (sharedGeneration (pacSharedState ctx)) (nextWakeDelay ctx)
+      ChooseDoNothing wakeDelay WakeCounter
+  where
+    noBuffered = IntMap.null (peerDownloadedTxs (pacPeerState ctx))
+
+    -- one pass over the advertised keys, for the wake and the gate's park
+    (anyLive, claimWake) = advertisedOutlook ctx
+    wakeDelay = nextWakeDelay ctx claimWake
+
+    -- Wait for the gate, or less for a timed claim or bump, parked on the
+    -- claimable counter rather than the generation, which moves on every
+    -- accept: a slow peer re-evaluating at each of those would cost what
+    -- the tier saves, while a lease released elsewhere still wakes it; on
+    -- no counter when no key it advertises has a live entry, since the
+    -- keys it holds stay dead until it acknowledges them, after the gate,
+    -- and nothing the claimable counter announces is its to claim.  A
+    -- peer holding a buffered body keeps the generation, since another
+    -- peer's accept may be what lets it submit that body, and the gate is
+    -- only meant to space txid requests.
+    waitGate gateUntil =
+        ChooseDoNothing (Just delay) park
+      where
+        gateDelay = gateUntil `diffTime` pacNow ctx
+        delay     = maybe gateDelay (min gateDelay) wakeDelay
+        park | not noBuffered = WakeCounter
+             | anyLive        = ClaimableCounter
+             | otherwise      = NoCounter
 
 -- | Execute a chosen peer action and compute resulting state updates
 applyPeerActionChoice :: PeerActionContext peeraddr txid tx
@@ -239,8 +271,24 @@ applyPeerActionChoice ctx choice =
                           unacknowledgedTxIds' ->
          applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
                                  unacknowledgedTxIds'
-       ChooseDoNothing generation wakeDelay ->
-         applyDoNothingChoice ctx generation wakeDelay
+       ChooseDoNothing wakeDelay park ->
+         applyDoNothingChoice ctx wakeDelay park
+
+-- | The slow tier's gate on a txid request: the time it opens, when the
+-- peer is slow and the gate set by the previous request for txids has
+-- not passed.  It holds blocking requests too: a peer with a stream
+-- answers one at once, so leaving them open would leave the tier nothing
+-- to slow; a peer without one waits for a tx either way, so the gate
+-- costs it at most one cadence on its first.  A buffered body behind a
+-- key dead for the peer, a body it omitted or an entry resolved since,
+-- waits for that key's acknowledgement, which goes out at once in a
+-- request for no txids ('pickPeerActionChoice').
+slowGate :: PeerActionContext peeraddr txid tx -> Maybe Time
+slowGate PeerActionContext { pacNow, pacPeerState, pacTier }
+  | pacTier == FastTier = Nothing
+  | Just gateUntil <- peerSlowGate pacPeerState
+  , gateUntil > pacNow  = Just gateUntil
+  | otherwise           = Nothing
 
 -- | Construct a 'PeerSubmitTxs' action for buffered transactions.
 --
@@ -322,27 +370,43 @@ applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest 
   where
     peerState0 = pacPeerState ctx
     acknowledgedKeys = IntSet.fromList (unTxKey <$> acknowledgedTxIds)
-    peerState'' =
-      peerState0 {
+    -- the request is recorded behind the earlier outstanding ones: for
+    -- txids on this decision's tier, or for acknowledgements alone
+    request | txIdsToRequest > 0 = TxIdsOn (pacTier ctx)
+            | otherwise          = AcksOnly
+    peerState' =
+      recordTxIdRequest request peerState0 {
         peerAvailableTxIds =
           IntMap.withoutKeys (peerAvailableTxIds peerState0) acknowledgedKeys,
         peerUnacknowledgedTxIds = unacknowledgedTxIds',
         peerRequestedTxIds = peerRequestedTxIds peerState0 + txIdsToRequest
       }
+    -- on the slow tier a request for txids sets the gate for the next
+    -- one, at the cadence jittered by a draw from the peer's own
+    -- generator; one for acknowledgements alone leaves the gate
+    peerState''
+      | pacTier ctx == SlowTier
+      , txIdsToRequest > 0 =
+          let (u, seed') = nextJitter (peerJitterSeed peerState0)
+              !gateUntil = slowWait (pacPolicy ctx) u `addTime` pacNow ctx
+          in peerState' {
+            peerSlowGate   = Just gateUntil,
+            peerJitterSeed = seed'
+          }
+      | otherwise = peerState'
     pif = pacPeerInFlight ctx
     peerInFlight'' = pif {
-        pifAdvertised  = pifAdvertised  pif `IntSet.difference` acknowledgedKeys,
-        pifAcksPending = pifAcksPending pif `IntSet.difference` acknowledgedKeys
+        pifAdvertised = pifAdvertised pif `IntSet.difference` acknowledgedKeys
       }
 
 -- | Construct a 'PeerDoNothing' action.
 applyDoNothingChoice
   :: PeerActionContext peeraddr txid tx
-  -> Word64
   -> Maybe DiffTime
+  -> ParkCounter
   -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
-applyDoNothingChoice ctx generation wakeDelay =
-  ( PeerDoNothing generation wakeDelay
+applyDoNothingChoice ctx wakeDelay park =
+  ( PeerDoNothing wakeDelay park
   , pacPeerState ctx
   , pacPeerInFlight ctx
   , pacSharedState ctx
@@ -352,7 +416,16 @@ applyDoNothingChoice ctx generation wakeDelay =
 pickSubmitAction
   :: PeerActionContext peeraddr txid tx
   -> Maybe [TxKey]
-pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
+pickSubmitAction ctx@PeerActionContext { pacPeerState } =
+    pickSubmitFrom ctx (peerUnacknowledgedTxIds pacPeerState)
+
+-- | 'pickSubmitAction' over a given unacknowledged queue: the one an
+-- acknowledgement leaves, for whether it frees a buffered body.
+pickSubmitFrom
+  :: PeerActionContext peeraddr txid tx
+  -> StrictSeq.StrictSeq TxKey
+  -> Maybe [TxKey]
+pickSubmitFrom PeerActionContext { pacPeerState, pacSharedState } unacknowledgedTxIds =
   if null pickBufferedTxsToSubmit
      then Nothing
      else Just pickBufferedTxsToSubmit
@@ -364,8 +437,9 @@ pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
     --
     -- * 'sharedTxTable' has 'Nothing' for the key: the tx was resolved at
     --   some point (a peer submitted it to the mempool) and the entry was
-    --   deleted.  Orphan sweep cannot drop an entry while any peer still
-    --   tracks the key, so 'Nothing' here implies resolution; safe to skip
+    --   deleted, or this peer omitted the body or had it rejected and so
+    --   stopped advertising it.  The sweep drops no entry a peer still
+    --   advertises, so 'Nothing' here means one of those; safe to skip
     --   and continue past, regardless of whether the retained marker has
     --   since expired or the mempool has since evicted.
     -- * 'sharedTxTable' has 'Just' but we don't have the body buffered, or
@@ -381,7 +455,7 @@ pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
     -- most once per scheduler invocation; the duplicates remain in the
     -- queue so the ack-by-count handshake stays in sync with the sender.
     pickBufferedTxsToSubmit =
-        go IntSet.empty [] (toList (peerUnacknowledgedTxIds pacPeerState))
+        go IntSet.empty [] (toList unacknowledgedTxIds)
       where
         go _    acc [] = reverse acc
         go seen acc (txKey@(TxKey k) : rest)
@@ -507,42 +581,17 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
 pickRequestTxIdsAction :: TxIdRequestMode
                        -> PeerActionContext peeraddr txid tx
                        -> Maybe ([TxKey], NumTxIdsToAck, NumTxIdsToReq, StrictSeq.StrictSeq TxKey)
-pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacConfig, pacPeerState }
+pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacConfig, pacPeerState }
   | txIdsToAcknowledge <= 0 && txIdsToRequest <= 0 = Nothing
 
-  -- Benchmark hook: when 'disablePipelinedTxIdRequests' is set, never
-  -- fire a request that would be sent as pipelined.  Pipelined fires
-  -- whenever the post-ack queue is non-empty (or we're already in
-  -- pipelined mode), so this guard suppresses both.  The peer then
-  -- parks until the queue can drain via acks, yielding pure blocking
-  -- request behaviour at the wire.
-  | disablePipelinedTxIdRequests pacPolicy
-  , txIdRequestMode == AllowPipelinedTxIdRequests
-    || not (StrictSeq.null unacknowledgedTxIds) = Nothing
-
-  -- A pure-ack pipelined message would burn a pipeline slot for an
-  -- empty reply ('req=0' forces the response empty by construction) and
-  -- shrink our window without growing it.  Defer the ack until we can
-  -- also request more txids.
+  -- A pipelined txid request must both ack and request: with nothing to
+  -- ack the peer waits for its unacked txids to resolve rather than poll
+  -- with 'ack=0, req=N' messages.  Stricter than V1, which pipelines
+  -- such a poll after a body request while the window has room.
+  -- (An empty unacked queue has nothing to ack, so this also keeps the
+  -- post-ack queue non-empty, as a pipelined request requires.)
   | txIdRequestMode == AllowPipelinedTxIdRequests
-  , txIdsToRequest <= 0 = Nothing
-
-  -- Spec: a pipelined (non-blocking) request requires the post-ack
-  -- queue to be non-empty.  When the peer's unacked queue is empty to
-  -- begin with we can't satisfy that, and there's no blocking option
-  -- in pipelined mode, so wait for a later wake.
-  | txIdRequestMode == AllowPipelinedTxIdRequests
-  , StrictSeq.null (peerUnacknowledgedTxIds pacPeerState) = Nothing
-
-  -- Backoff after an empty txid reply: if our last request came back
-  -- with zero txids and we still have nothing to ack, suppress the
-  -- next 'ack=0, req=N' pipelined wire message (V2.hs sends pipelined
-  -- whenever the unacked queue is non-empty).  The flag is cleared by
-  -- a non-empty txid reply or by the mempool accepting one of this
-  -- peer's txs - both signs that the peer may have new work for us.
-  | peerLastTxIdReplyWasEmpty pacPeerState
-  , txIdsToAcknowledge <= 0
-  , not (StrictSeq.null (peerUnacknowledgedTxIds pacPeerState)) = Nothing
+  , txIdsToAcknowledge <= 0 || txIdsToRequest <= 0 = Nothing
 
   | otherwise = Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds)
   where
@@ -578,7 +627,8 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacCon
       (peerUnacknowledgedTxIds pacPeerState)
     unackedAndRequested = numOfUnacked + numOfRequested
 
-    -- How many new txids we can request: capped by the unack-window
+    -- How many new txids we can request: zero while txids sit unacked
+    -- with nothing ackable yet, otherwise capped by the unack-window
     -- room left after this round's ack ('maxNumUnacknowledgedTxIds -
     -- unackedAndRequested + numOfAcked') and by the per-message
     -- request limit ('maxNumTxIdsToRequest - numOfRequested').
@@ -586,56 +636,60 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacCon
     -- Window mismatch (design decision): with 'TxOutboundV_2' the window
     -- is a local setting of each side and it is not negotiated, so we size
     -- requests from our own window.  If the peer's window is smaller, it
-    -- clamps our request, and an 'ack=0' request sent when its window is
-    -- full gets an empty reply: a wasted round trip.  We accept that cost
-    -- rather than announcing the window size through handshake which would
-    -- allow us to distinguish a full window from an unchanged mempool.  The cost
-    -- is bounded: the reply is a small pipelined message which doesn't delay
-    -- body requests, and 'peerLastTxIdReplyWasEmpty' suppresses further
-    -- 'ack=0' requests until the peer shows progress (see
-    -- 'pickRequestTxIdsAction').  With equal windows it never happens.
-    txIdsToRequest =
-      fromIntegral $ max 0 $ min
-        (fromIntegral (maxNumUnacknowledgedTxIds pacConfig) - unackedAndRequested + numOfAcked)
-        (fromIntegral (maxNumTxIdsToRequest pacConfig) - numOfRequested)
+    -- clamps our request to the room its window has once our ack is
+    -- applied.  We accept that rather than announce the window through
+    -- the handshake.  A pipelined request always acks something, so that
+    -- room is at least the acked number and the reply is empty only when
+    -- the peer has nothing new; with equal windows the clamp never binds.
+    txIdsToRequest
+      | numOfAcked == 0 && numOfUnacked > 0 = 0
+      | otherwise =
+          fromIntegral $ max 0 $ min
+            (fromIntegral (maxNumUnacknowledgedTxIds pacConfig) - unackedAndRequested + numOfAcked)
+            (fromIntegral (maxNumTxIdsToRequest pacConfig) - numOfRequested)
 
--- | Compute the time delay until the peer should next wake to check for work.
-nextWakeDelay :: PeerActionContext peeraddr txid tx
-              -> Maybe DiffTime
-nextWakeDelay PeerActionContext { pacNow, pacPolicy, pacClaimDelay
-                                , pacPeerState, pacPeerInFlight, pacSharedState } =
-    (`diffTime` pacNow) <$> minMaybe nextClaimWake nextBumpWake
+-- | What the keys this peer advertises hold for it, in one pass over
+-- them: whether any has a live entry, and the earliest claim-ready time
+-- after now among those entries.
+advertisedOutlook :: PeerActionContext peeraddr txid tx
+                  -> (Bool, Maybe Time)
+advertisedOutlook PeerActionContext { pacNow, pacClaimDelay, pacPeerInFlight, pacSharedState } =
+    IntSet.foldl' step (False, Nothing) (pifAdvertised pacPeerInFlight)
   where
-    -- Wake at the earliest claim-ready time among txs this peer advertises.
-    nextClaimWake =
-      IntSet.foldl' stepClaim Nothing (pifAdvertised pacPeerInFlight)
-
-    -- Wake at the earliest bump-ready time among txs this peer holds buffered.
-    -- Scoped to 'peerDownloadedTxs' to match 'bumpStuckEntries': only peers
-    -- with the body buffered can issue a bump, so non-buffering peers don't
-    -- schedule wakes for entries they can't touch.
-    nextBumpWake =
-      IntMap.foldlWithKey' stepBump Nothing (peerDownloadedTxs pacPeerState)
-
-    stepClaim acc k =
+    step (!live, !acc) k =
       case IntMap.lookup k (sharedTxTable pacSharedState) of
-        Just txEntry -> minMaybe acc (futureClaimWake txEntry)
-        Nothing      -> acc
-
-    stepBump acc k _tx =
-      case IntMap.lookup k (sharedTxTable pacSharedState) of
-        Just txEntry -> minMaybe acc (nextStuckBumpWake pacNow pacPolicy txEntry)
-        Nothing      -> acc
+        Just txEntry -> (True, minMaybe acc (futureClaimWake txEntry))
+        Nothing      -> (live, acc)
 
     futureClaimWake txEntry =
       let claimWake = txClaimReadyAt pacClaimDelay txEntry in
       if claimWake > pacNow then Just claimWake
                             else Nothing
 
-    minMaybe :: Ord a => Maybe a -> Maybe a -> Maybe a
-    minMaybe Nothing y         = y
-    minMaybe x Nothing         = x
-    minMaybe (Just x) (Just y) = Just (min x y)
+-- | Compute the time delay until the peer should next wake to check for
+-- work, from the outlook's claim wake ('advertisedOutlook'): the earlier
+-- of that and the earliest bump-ready time among the txs this peer holds
+-- buffered.  Scoped to 'peerDownloadedTxs' to match 'bumpStuckEntries':
+-- only peers with the body buffered can issue a bump, so non-buffering
+-- peers don't schedule wakes for entries they can't touch.
+nextWakeDelay :: PeerActionContext peeraddr txid tx
+              -> Maybe Time
+              -> Maybe DiffTime
+nextWakeDelay PeerActionContext { pacNow, pacPolicy, pacPeerState, pacSharedState } nextClaimWake =
+    (`diffTime` pacNow) <$> minMaybe nextClaimWake nextBumpWake
+  where
+    nextBumpWake =
+      IntMap.foldlWithKey' stepBump Nothing (peerDownloadedTxs pacPeerState)
+
+    stepBump acc k _tx =
+      case IntMap.lookup k (sharedTxTable pacSharedState) of
+        Just txEntry -> minMaybe acc (nextStuckBumpWake pacNow pacPolicy txEntry)
+        Nothing      -> acc
+
+minMaybe :: Ord a => Maybe a -> Maybe a -> Maybe a
+minMaybe Nothing y         = y
+minMaybe x Nothing         = x
+minMaybe (Just x) (Just y) = Just (min x y)
 
 -- | Assign a tx lease to a peer and increment the attempt count.
 claimTx :: peeraddr
@@ -645,7 +699,9 @@ claimTx :: peeraddr
 claimTx peeraddr leaseUntil txEntry@TxEntry { txAttempt } =
   txEntry {
     txLease   = TxLeased peeraddr leaseUntil,
-    txAttempt = txAttempt + 1
+    txAttempt = txAttempt + 1,
+    -- a claim ends a review: the lease is a write anyway
+    txDoom    = Undoomed
   }
 
 -- | Time at which a leased entry becomes eligible for an inflight cap bump.
@@ -695,7 +751,7 @@ nextStuckBumpWake _ _ _ = Nothing
 -- happen for downloaded TXs.
 --
 -- 'sharedGeneration' is bumped when entries change so other peers wake out
--- of 'awaitSharedChange' and re-evaluate eligibility under the new cap.
+-- of 'awaitPark' and re-evaluate eligibility under the new cap.
 bumpStuckEntries :: forall peeraddr txid tx.
                     Time
                  -> TxDecisionPolicy
@@ -705,7 +761,9 @@ bumpStuckEntries :: forall peeraddr txid tx.
 bumpStuckEntries now policy downloadedTxs st =
     if anyBumped
        then st { sharedTxTable    = txTable',
-                 sharedGeneration = sharedGeneration st + 1 }
+                 sharedGeneration = sharedGeneration st + 1,
+                 sharedRevision   = sharedRevision st + 1,
+                 sharedClaimable  = sharedClaimable st + 1 }
        else st
   where
     (anyBumped, txTable') =
@@ -818,10 +876,10 @@ drainPeerScore policy now peerState@PeerTxLocalState { peerScore }
 {-# INLINE drainPeerScore #-}
 
 -- | Apply a batch of accept/reject events to the peer's local score.
--- Drains the score by elapsed time at 'scoreRate', then adds the
--- rejection count and subtracts 'scoreAcceptDecrement' per accept;
--- clamps to @[0, scoreMax]@. Returns the new score value (for
--- tracing) and the updated local state.
+-- Drains the score by elapsed time at 'scoreRate', subtracts
+-- 'scoreAcceptDecrement' per accept from what remains, then adds the
+-- rejection count; clamps to @[0, scoreMax]@. Returns the new score
+-- value (for tracing) and the updated local state.
 applyPeerEvents :: TxDecisionPolicy
                 -> Time
                 -> Int  -- ^ accepted count (decrements score)
@@ -843,9 +901,13 @@ applyPeerEvents policy@TxDecisionPolicy { scoreMax, scoreAcceptDecrement }
   where
     rejGain = fromIntegral rejectedCount :: Double
     accDec  = fromIntegral acceptedCount * scoreAcceptDecrement
+    -- The accepts forgive earlier rejections, never this batch's: a batch
+    -- mixing invalid bodies with valid ones would otherwise net to
+    -- nothing, up to seven invalid beside three valid at the default
+    -- decrement and a window's worth per batch.
     peerScore' =
       let !drained = currentPeerScore policy now peerScore
-          !final   = min scoreMax (max 0 (drained + rejGain - accDec)) in
+          !final   = min scoreMax (max 0 (drained - accDec) + rejGain) in
       peerScore { peerScoreValue = final, peerScoreTs = now }
 {-# INLINE applyPeerEvents #-}
 
@@ -888,100 +950,235 @@ txIdAckable PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedState }
     -- unacknowledged.
     IntMap.notMember k (sharedTxTable pacSharedState)
 
--- | Shared-state cleanup
+-- | 'sweepSharedStateUpTo' with no limit: what repeated bounded sweeps
+-- round the table amount to; the tests' and the benchmark's oracle.
+sweepSharedState :: HasRawTxId txid
+                 => DiffTime
+                 -> Time
+                 -> SharedTxState peeraddr txid
+                 -> (SharedTxState peeraddr txid, IntSet)
+sweepSharedState grace now st =
+    case sweepSharedStateUpTo maxBound grace now sweepStart st of
+      (st', _, _, doomed) -> (st', doomed)
+{-# INLINABLE sweepSharedState #-}
+
+-- | Shared-state cleanup, at most @limit@ units of work per sweep.
 --
--- Drops three kinds of dead entries in one pass:
+-- Two kinds of dead entries go:
 --
--- * Retained entries whose retention deadline has passed.  Only the
---   'sharedRetainedTxs' membership is removed; the txid lookup tables
---   ('sharedTxIdToKey', 'sharedKeyToTxId') are preserved here because
---   peers may still hold the key in 'peerUnacknowledgedTxIds' until
---   they ack it.
--- * Orphaned 'sharedTxTable' entries: entries with a released lease,
---   no in-flight attempt, and no live peer still tracking the key.
---   These are safe to fully tear down (lookup tables included): by
---   definition no peer references them.
--- * Stale lookup-table entries: keys present only in 'sharedTxIdToKey'
---   / 'sharedKeyToTxId' with no peer still referencing them.  Bounds
---   the lookup tables so they don't grow unboundedly.
+-- * Retained entries whose retention deadline has passed, with their
+--   lookup entries ('sharedTxIdToKey', 'sharedKeyToTxId'): a lookup entry
+--   lives with its residence.  A peer still holding the key in its
+--   unacknowledged queue acknowledges it as resolved ('txIdAckable'), and
+--   a body arriving for it counts as late.  The sweep drops these itself.
+-- * Abandoned 'sharedTxTable' entries: claimable for a grace with no
+--   attempt and no submission, and advertised by no live peer, their
+--   advertisers having left or omitted the body.  The sweep dooms the
+--   candidates among the entries it examines ('TxDoom'); the counters
+--   thread then asks every live peer's advertised set, one peer at a time,
+--   and 'reviewDoomed' drops the doomed entries no peer holds, with their
+--   lookup entries, and spares the rest.  An advertisement or a claim of a
+--   doomed entry meanwhile clears the doom, so no review drops an entry a
+--   peer came to advertise after the doom: its reply committed before it,
+--   and the peer's set shows the key, or after, and cleared it.
 --
--- The @liveReferences@ set is the union of every active peer's
--- 'pifAdvertised' and 'pifAcksPending', snapshotted by the caller in
--- the same STM transaction as this function so it is coherent with the
--- 'sharedTxTable' read.
+-- The sweep reads nothing but the state, and the peers' sets are read
+-- outside its transaction, one per transaction.  Advertising an existing
+-- entry writes nothing shared unless the entry is under review.
 --
 -- Bumps only 'sharedRevision' (the structural dirty bit), not
--- 'sharedGeneration' (the wake counter).  None of the three cleanup
--- categories grant other peers new options: expired-retained drops
--- and orphan removals never affect a referenced key, and stale-lookup
--- removal doesn't touch any peer-visible state.  Waking parked peers
--- here would cost a full 'nextPeerAction' pass per peer for nothing.
-sweepSharedState :: HasRawTxId txid
-                 => Time
-                 -> IntSet
-                 -> SharedTxState peeraddr txid
-                 -> SharedTxState peeraddr txid
-sweepSharedState now liveReferences st
-    | IntSet.null orphans
-   && IntSet.null expiredRetained
-   && IntSet.null staleLookups = st
+-- 'sharedGeneration' (the wake counter): neither removal grants another
+-- peer an option.  Waking parked peers here would cost a full
+-- 'nextPeerAction' pass per peer for nothing.
+--
+-- A sweep expires up to half of the limit, rounded up, as retained
+-- entries, the earliest first, the rest waiting, and examines what the
+-- expiry left of the limit as entries of 'sharedTxTable' for candidates
+-- to doom, from its cursor on and round the table, so that repeated
+-- sweeps cover the whole table.  Also whether any expired entry remains,
+-- so the caller can go on with 'expireSharedStateUpTo' at once, the
+-- cursor to go on from, and the keys doomed, for the review.  A limit of
+-- zero or less does nothing but still reports the backlog.
+sweepSharedStateUpTo :: HasRawTxId txid
+                     => Int
+                     -> DiffTime
+                     -- ^ the grace: how long an entry is claimable, or
+                     -- spared, before it is a candidate
+                     -> Time
+                     -> SweepCursor
+                     -> SharedTxState peeraddr txid
+                     -> (SharedTxState peeraddr txid, Bool, SweepCursor, IntSet)
+sweepSharedStateUpTo limit grace now cursor st
+    | expired == 0 && IntSet.null doomed = (st, more, cursor', IntSet.empty)
     | otherwise =
-        ( dropLookupOnly staleLookups
-        . dropTxKeys orphans
-        $ st { sharedRetainedTxs =
-                 retainedDeleteKeys expiredRetained (sharedRetainedTxs st) }
-        ) { sharedRevision = sharedRevision st + 1 }
+        ( doomedSt { sharedRevision = sharedRevision st + 1 }
+        , more
+        , cursor'
+        , doomed )
   where
-    expiredRetained = retainedExpiredKeys now (sharedRetainedTxs st)
-    orphans =
-      IntMap.keysSet
-        (IntMap.filterWithKey isOrphan (sharedTxTable st))
+    -- The expiry takes at most half the limit, rounded up, so that a
+    -- backlog of expired entries never starves the walk: the drain between
+    -- sweeps is where a backlog goes.
+    (expiredSt, more, expired) = expireUpTo (limit - limit `div` 2) now st
 
-    retainedAfter  = retainedKeysSet (sharedRetainedTxs st)
-                      `IntSet.difference` expiredRetained
-    referencedKeys = IntMap.keysSet (sharedTxTable st)
-                      `IntSet.union` retainedAfter
-                      `IntSet.union` liveReferences
-    staleLookups   = IntMap.keysSet (sharedKeyToTxId st)
-                      `IntSet.difference` referencedKeys
+    -- The candidates among the next table entries are doomed; the review
+    -- drops or spares them.  The walk takes what the expiry left of the
+    -- limit: one transaction does at most the limit of work in all.
+    (tableEntries, from') =
+      walkFrom (limit - expired) (sweepFrom cursor) (sharedTxTable expiredSt)
+    doomed =
+      IntSet.fromList [ k | (k, entry) <- tableEntries, candidate entry ]
+    doomedSt =
+      expiredSt {
+        sharedTxTable =
+          IntSet.foldl' (\tbl k -> IntMap.adjust doom k tbl)
+                        (sharedTxTable expiredSt) doomed
+      }
+    doom entry = entry { txDoom = Doomed }
+    cursor' = SweepCursor from'
 
-    isOrphan _ TxEntry { txLease = TxLeased {} } = False
-    isOrphan k TxEntry { txAttempt, txInSubmission }
-      | txAttempt > 0                     = False
-      | txInSubmission                    = False
-      | IntSet.member k liveReferences    = False
-      | otherwise                         = True
+    -- A candidate: claimable since the cutoff, a grace ago, or longer,
+    -- nobody attempting or submitting it, not under review already; a
+    -- spared entry once its grace has passed.  The cutoff is computed
+    -- once: a 'Time' is a 'Fixed' of picoseconds, a big integer past 106
+    -- days of uptime, and a sum per entry would allocate one each.
+    cutoff = addTime (negate grace) now
+    candidate TxEntry { txLease = TxLeased {} } = False
+    candidate TxEntry { txLease = TxClaimable since, txAttempt, txInSubmission, txDoom }
+      | txAttempt > 0  = False
+      | txInSubmission = False
+      | otherwise      =
+          case txDoom of
+            Undoomed  -> since <= cutoff
+            Doomed    -> False
+            Spared at -> at <= cutoff
+{-# INLINABLE sweepSharedStateUpTo #-}
 
-    -- Remove transaction entries from all shared state maps by key.
-    dropTxKeys keys s
-      | IntSet.null keys = s
-      | otherwise =
-          s {
-            sharedTxTable     = IntMap.withoutKeys (sharedTxTable s) keys,
-            sharedRetainedTxs = retainedDeleteKeys keys (sharedRetainedTxs s),
-            sharedTxIdToKey   = IntSet.foldl' (deleteTxId (sharedKeyToTxId s))
-                                              (sharedTxIdToKey s) keys,
-            sharedKeyToTxId   = IntMap.withoutKeys (sharedKeyToTxId s) keys
-          }
+-- | The review of the entries a sweep doomed, given the keys among them
+-- that some live peer advertises: those still doomed that nobody holds
+-- are dropped with their lookup entries, the rest spared, candidates
+-- again a grace later.  A doomed entry is claimable with no attempt and
+-- no submission, as the sweep found it: a claim clears the doom, and
+-- nothing else leases, attempts or submits an entry.  A key no longer
+-- doomed, its doom cleared by an advertisement or a claim meanwhile, or
+-- gone, is left alone.  Also the keys dropped.  Bumps the revision when
+-- anything changed, never the wake counter: a drop grants nobody an
+-- option.
+reviewDoomed :: HasRawTxId txid
+             => Time
+             -> IntSet
+             -- ^ the doomed keys some live peer advertises
+             -> IntSet
+             -- ^ the keys the sweep doomed
+             -> SharedTxState peeraddr txid
+             -> (SharedTxState peeraddr txid, IntSet)
+reviewDoomed now held doomed st
+    | IntSet.null reviewed = (st, IntSet.empty)
+    | otherwise =
+        -- the dropped are table entries, never retained: no retained
+        -- delete
+        ( (dropLookupEntries dropped
+             st { sharedTxTable = IntMap.withoutKeys sparedTable dropped })
+            { sharedRevision = sharedRevision st + 1 }
+        , dropped )
+  where
+    reviewed = IntSet.filter stillDoomed doomed
+    stillDoomed k =
+      maybe False ((== Doomed) . txDoom) (IntMap.lookup k (sharedTxTable st))
+    (spared, dropped) = IntSet.partition (`IntSet.member` held) reviewed
+    sparedTable =
+      IntSet.foldl' (\tbl k -> IntMap.adjust (\e -> e { txDoom = Spared now }) k tbl)
+                    (sharedTxTable st) spared
+{-# INLINABLE reviewDoomed #-}
 
-    -- Remove only the txid <-> key lookup entries.  Used for keys that
-    -- have outlived their 'sharedTxTable' and retained residence but had
-    -- their lookup entries kept while peers still carried the txid in
-    -- 'peerUnacknowledgedTxIds'.
-    dropLookupOnly keys s
-      | IntSet.null keys = s
-      | otherwise =
-          s {
-            sharedTxIdToKey = IntSet.foldl' (deleteTxId (sharedKeyToTxId s))
-                                            (sharedTxIdToKey s) keys,
-            sharedKeyToTxId = IntMap.withoutKeys (sharedKeyToTxId s) keys
-          }
+-- | The keys of the entries under review ('Doomed'): what a counters
+-- thread starting over an existing state reviews at its first tick.
+doomedKeys :: SharedTxState peeraddr txid -> IntSet
+doomedKeys = IntMap.keysSet . IntMap.filter ((== Doomed) . txDoom) . sharedTxTable
 
+-- | At most @limit@ entries of the map in key order from the key on, going
+-- on from the start once the end is reached, so that a walk takes its
+-- limit or the whole map; and the key to go on from, the one after the
+-- last entry taken.  Keys are non-negative and far from 'maxBound'.
+walkFrom :: Int -> Int -> IntMap.IntMap a -> ([(Int, a)], Int)
+walkFrom limit from m
+    | limit <= 0 = ([], from)
+    | otherwise  = go limit [] 0 (IntMap.toAscList onward ++ IntMap.toAscList before)
+  where
+    -- The entries from the key on, then those before it.
+    (before, onward) = IntMap.spanAntitone (< from) m
+
+    -- The first @n@ entries in order, and the key after the last of them:
+    -- zero when there is none, so that a walk of an empty table starts
+    -- over.
+    go :: Int -> [(Int, a)] -> Int -> [(Int, a)] -> ([(Int, a)], Int)
+    go 0 acc next _                 = (reverse acc, next)
+    go _ acc next []                = (reverse acc, next)
+    go n acc _    (e@(k, _) : rest) = go (n - 1) (e : acc) (k + 1) rest
+{-# INLINABLE walkFrom #-}
+
+-- | Expiry alone: 'sweepSharedStateUpTo' without the walks, for draining a
+-- backlog.
+expireSharedStateUpTo :: HasRawTxId txid
+                      => Int
+                      -> Time
+                      -> SharedTxState peeraddr txid
+                      -> (SharedTxState peeraddr txid, Bool)
+expireSharedStateUpTo limit now st
+    | expired > 0 = (bumped, more)
+    | otherwise   = (st, more)
+  where
+    (expiredSt, more, expired) = expireUpTo limit now st
+    bumped = expiredSt { sharedRevision = sharedRevision st + 1 }
+{-# INLINABLE expireSharedStateUpTo #-}
+
+-- | Expire at most @limit@ retained entries, the earliest first, with
+-- their lookup entries.  Also whether any expired entry remains, and
+-- how many expired; the revision is the caller's to bump.
+expireUpTo :: HasRawTxId txid
+           => Int
+           -> Time
+           -> SharedTxState peeraddr txid
+           -> (SharedTxState peeraddr txid, Bool, Int)
+expireUpTo limit now st
+    | IntSet.null expiredRetained = (st, more, 0)
+    | otherwise =
+        ( dropLookupEntries expiredRetained st { sharedRetainedTxs = retained' }
+        , more
+        , IntSet.size expiredRetained )
+  where
+    now' = retainNow now
+    (expiredRetained, retained') =
+      retainedExpireUpTo limit now' (sharedRetainedTxs st)
+    -- a backlog is a fact about the state, whatever the limit allowed:
+    -- a sweep left no budget still asks for the drain
+    more = retainedDueBy now' retained'
+{-# INLINABLE expireUpTo #-}
+
+-- | Whether a key is in the tx table or retained.
+residentKey :: SharedTxState peeraddr txid -> Int -> Bool
+residentKey st k =
+  IntMap.member k (sharedTxTable st) || retainedMember k (sharedRetainedTxs st)
+
+-- | Remove the txid <-> key lookup entries of keys that lost their
+-- residence: a lookup entry lives with its residence and goes with it
+-- ('expireUpTo', 'reviewDoomed').
+dropLookupEntries :: HasRawTxId txid
+                  => IntSet -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
+dropLookupEntries keys s
+  | IntSet.null keys = s
+  | otherwise =
+      s {
+        sharedTxIdToKey = IntSet.foldl' (deleteTxId (sharedKeyToTxId s))
+                                        (sharedTxIdToKey s) keys,
+        sharedKeyToTxId = IntMap.withoutKeys (sharedKeyToTxId s) keys
+      }
+  where
     deleteTxId keyToTxId txIdToKey k =
       case IntMap.lookup k keyToTxId of
         Just txid -> Map.delete (getRawTxId txid) txIdToKey
         Nothing   -> txIdToKey
-{-# INLINABLE sweepSharedState #-}
+{-# INLINABLE dropLookupEntries #-}
 
 -- | Handle a batch of tx bodies received from one peer.
 --
@@ -1006,7 +1203,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
     txidToKey = sharedTxIdToKey sharedState
 
     requestedKeys = requestedTxBatchSet requestedBatch
-    retainUntil   = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil   = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     -- Dequeue the next requested tx batch to process.
     (requestedBatch, remainingRequestedBatches) =
@@ -1019,10 +1216,10 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
            batch StrictSeq.:<| batches ->
              (batch, batches)
 
-    -- Process each received tx, collecting late counts, pending
-    -- requests, the keys still buffered by this peer, and updated
-    -- shared state.  @bufferedKeys@ is the subset of @requestedKeys@
-    -- that ended up buffered locally; the rest are released below.
+    -- Process each received tx, collecting the pending requests, the
+    -- keys still buffered by this peer, and updated shared state.
+    -- @bufferedKeys@ is the subset of @requestedKeys@ that ended up
+    -- buffered locally; the rest are released below.
     --
     -- @wakeChangeFromHandle@ is set only when the mempool branch fires,
     -- since its retained-insert can enable a late ack on another peer
@@ -1030,8 +1227,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
     -- leave the shared state untouched or perform a structural no-op
     -- (defensive 'IntMap.adjust' under the active/retained disjointness
     -- invariant).
-    ( lateCount
-      , pendingRequestedKeys
+    ( pendingRequestedKeys
       , bufferedKeys
       , sharedStateHandled
       , peerDownloadedTxs'
@@ -1039,8 +1235,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
       ) =
       List.foldl'
         handleOne
-        ( 0
-        , requestedKeys
+        ( requestedKeys
         , IntSet.empty
         , sharedState
         , peerDownloadedTxs peerState
@@ -1048,28 +1243,48 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
         )
         txs
 
-    -- Process omitted (not received) txs: count a penalty for every omitted
-    -- request and release this peer's lease where it still held one.
+    -- Every body not buffered is late: for a tx retained or in the
+    -- mempool already, for a key resolved or re-interned since the
+    -- request, or for none.
+    lateCount = length txs - IntSet.size bufferedKeys
+
+    -- Release this peer's lease on every pending key whose entry lives,
+    -- where it still held one, and count the omitted: the requested keys
+    -- no body answered, every body answering a distinct txid of this
+    -- batch, as the client rejects a reply naming one it did not request
+    -- or naming one twice.  A pending key whose residence ended
+    -- meanwhile, resolved by another peer and expired, has no lookup
+    -- entry any more, so a body for it arrives under an unknown txid, or
+    -- under a fresh key if the txid was advertised again since, and
+    -- answers one such key: late rather than omitted, and the live
+    -- pending keys never outnumber the requested keys left unanswered.
     --
     -- @wakeChangeFromOmit@ is set only when a lease is actually released
     -- (other advertisers can now claim).
-    (omittedCount, sharedStateReleased, wakeChangeFromOmit) =
-      IntSet.foldl' handleOmitted (0, sharedStateHandled, False) pendingRequestedKeys
+    livePending = IntSet.filter keyWasLive pendingRequestedKeys
+    (sharedStateReleased, wakeChangeFromOmit) =
+      IntSet.foldl' handleOmitted (sharedStateHandled, False) livePending
+    omittedCount = IntSet.size requestedKeys - length txs
 
     -- Keys this peer is no longer attempting (everything in the batch
     -- except still-buffered keys).  Used to update both the per-peer
     -- in-flight set and the shared 'txAttempt' counters via 'releaseLease'.
     releasedKeys = requestedKeys `IntSet.difference` bufferedKeys
 
-    -- Bump both counters only when something happened that other peers
+    -- Bump the counters only when something happened that other peers
     -- need to react to.  In the common case (all bodies received, no
     -- mempool race) no bump fires and the structural-but-pointer-different
     -- 'sharedStateReleased' is discarded by 'writeSharedStateIfChanged'.
+    -- The released keys this peer advertised cost nothing shared: the
+    -- sweep's review finds the ones left abandoned.
     sharedState'
       | wakeChangeFromHandle || wakeChangeFromOmit =
           sharedStateReleased {
             sharedGeneration = sharedGeneration sharedState + 1,
-            sharedRevision   = sharedRevision   sharedState + 1
+            sharedRevision   = sharedRevision   sharedState + 1,
+            -- an omitted body released a lease: claimable by another
+            sharedClaimable  = sharedClaimable sharedState
+                             + (if wakeChangeFromOmit then 1 else 0)
           }
       | otherwise =
           sharedState
@@ -1091,15 +1306,14 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
         pifAdvertised = pifAdvertised peerInFlight `IntSet.difference` releasedKeys
       }
 
-    keyWasLive k =
-         IntMap.member k (sharedTxTable sharedState)
-      || retainedMember k (sharedRetainedTxs sharedState)
+    keyWasLive = residentKey sharedState
 
-    -- Fold function over received txs: classify as late, already in mempool, or buffer for
-    -- download.
+    -- Fold function over received txs: a body answering a pending key
+    -- this peer attempts is buffered; one for a tx retained or in the
+    -- mempool already, for a key answered already or re-interned since
+    -- the request, or for no key at all, is dropped, late.
     handleOne
-      ( !lateCountAcc
-      , !pendingKeysAcc
+      ( !pendingKeysAcc
       , !bufferedAcc
       , !sharedAcc
       , !downloadedAcc
@@ -1108,8 +1322,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
       (txid, tx) =
         case Map.lookup (getRawTxId txid) txidToKey of
              Nothing ->
-               ( lateCountAcc + 1
-               , pendingKeysAcc
+               ( pendingKeysAcc
                , bufferedAcc
                , sharedAcc
                , downloadedAcc
@@ -1124,8 +1337,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
                    -- when classifying a txid as retained.  So the key is
                    -- not in 'sharedTxTable' here and there is nothing to
                    -- decrement; skip the record update.
-                   ( lateCountAcc + 1
-                   , IntSet.delete k pendingKeysAcc
+                   ( IntSet.delete k pendingKeysAcc
                    , bufferedAcc
                    , sharedAcc
                    , downloadedAcc
@@ -1138,8 +1350,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
                            sharedRetainedTxs =
                              retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc)
                          }
-                   in ( lateCountAcc + 1
-                      , IntSet.delete k pendingKeysAcc
+                   in ( IntSet.delete k pendingKeysAcc
                       , bufferedAcc
                       , sharedAcc'
                       , downloadedAcc
@@ -1148,41 +1359,40 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
                | otherwise ->
                    case IntMap.lookup k (sharedTxTable sharedAcc) of
                         Just _txEntry
-                          | IntSet.member k (pifAttempting peerInFlight) ->
-                              ( lateCountAcc
-                              , IntSet.delete k pendingKeysAcc
+                          -- The body answers this batch.  One for a key this
+                          -- peer requested in a later batch, the txid interned
+                          -- afresh since, is late here and comes again with
+                          -- that batch's reply.
+                          | IntSet.member k (pifAttempting peerInFlight)
+                          , IntSet.member k pendingKeysAcc ->
+                              ( IntSet.delete k pendingKeysAcc
                               , IntSet.insert k bufferedAcc
                               , sharedAcc
                               , IntMap.insert k tx downloadedAcc
                               , wakeAcc
                               )
                         _ ->
-                              ( lateCountAcc + 1
-                              , IntSet.delete k pendingKeysAcc
+                              ( IntSet.delete k pendingKeysAcc
                               , bufferedAcc
                               , sharedAcc
                               , downloadedAcc
                               , wakeAcc
                               )
 
-    -- Handle omitted (not received) txs: release this peer's lease so
+    -- Handle an omitted (not received) tx: release this peer's lease so
     -- another advertiser can claim the tx, decrement 'txAttempt'.
-    handleOmitted (!omittedCountAcc, !sharedAcc, !wakeAcc) k
-      | keyWasLive k =
-          case IntMap.lookup k (sharedTxTable sharedAcc) of
-            Just txEntry ->
-              ( omittedCountAcc + 1
-              , sharedAcc {
-                  sharedTxTable =
-                    IntMap.insert k (releaseLease txEntry)
-                      (sharedTxTable sharedAcc)
-                }
-              , True
-              )
-            Nothing ->
-              (omittedCountAcc + 1, sharedAcc, wakeAcc)
-      | otherwise =
-          (omittedCountAcc + 1, sharedAcc, wakeAcc)
+    handleOmitted (!sharedAcc, !wakeAcc) k =
+      case IntMap.lookup k (sharedTxTable sharedAcc) of
+        Just txEntry ->
+          ( sharedAcc {
+              sharedTxTable =
+                IntMap.insert k (releaseLease txEntry)
+                  (sharedTxTable sharedAcc)
+            }
+          , True
+          )
+        Nothing ->
+          (sharedAcc, wakeAcc)
 
     releaseLease txEntry@TxEntry { txLease, txAttempt } =
       txEntry {
@@ -1197,14 +1407,17 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
 -- | Handle the result of submitting buffered txs to the mempool.
 --
 -- Accepted txs leave the active table and move into the retained set so later
--- txid advertisements can be acknowledged without re-requesting the body.
+-- txid advertisements can be acknowledged without re-requesting the body;
+-- one whose key is gone meanwhile is retained under a fresh key, which
+-- is why the accepted txids come along.
 -- Txs rejected by the mempool release this peer's lease and clear
 -- 'txInSubmission' so another advertiser may try later.
-handleSubmittedTxs :: Eq peeraddr
+handleSubmittedTxs :: (Eq peeraddr, HasRawTxId txid)
                    => Time
                    -> TxDecisionPolicy
                    -> peeraddr
-                   -> [TxKey]
+                   -> [(TxKey, txid)]
+                   -- ^ the accepted txs, by the key they were submitted under
                    -> [TxKey]
                    -> PeerTxLocalState tx
                    -> PeerTxInFlight
@@ -1213,7 +1426,7 @@ handleSubmittedTxs :: Eq peeraddr
 handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInFlight sharedState =
   (peerState', peerInFlight', sharedState')
   where
-    acceptedKeys = IntSet.fromList (unTxKey <$> acceptedTxs)
+    acceptedKeys = IntSet.fromList (unTxKey . fst <$> acceptedTxs)
     rejectedKeys = IntSet.fromList (unTxKey <$> rejectedTxs)
     submittedKeys = acceptedKeys `IntSet.union` rejectedKeys
 
@@ -1222,11 +1435,17 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
           IntMap.withoutKeys (peerDownloadedTxs peerState) submittedKeys,
         peerAvailableTxIds =
           IntMap.withoutKeys (peerAvailableTxIds peerState) submittedKeys,
-        -- An accepted tx from this peer is a demonstrable sign of
-        -- progress: clear the empty-reply backoff flag so the txid
-        -- picker may resume issuing pipelined 'ack=0, req=N' requests.
-        peerLastTxIdReplyWasEmpty =
-          null acceptedTxs && peerLastTxIdReplyWasEmpty peerState
+        -- what the mempool accepted from this peer it had from no one
+        -- else: the peer is that much of a source.  Not while the coin or
+        -- its standing has it fast: a fast peer wins the races and would
+        -- make a source of itself, keeping the standing once the coin
+        -- drops it.  A peer producing at the slow cadence is the source the
+        -- rule is after, and one fast by that standing keeps producing to
+        -- keep it.
+        peerNovelAt =
+          if peerTier peerState == FastTier
+             then peerNovelAt peerState
+             else recordNovel policy now (length acceptedTxs) (peerNovelAt peerState)
       }
 
     -- Submission outcomes clear the peer's submission and advertised
@@ -1251,18 +1470,49 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
     -- reject releases the lease (other advertisers can claim).
     sharedState' =
       sharedStateAfterRejected {
-        sharedGeneration = sharedGeneration sharedState + 1
+        sharedGeneration = sharedGeneration sharedState + 1,
+        sharedRevision   = sharedRevision   sharedState + 1,
+        -- a rejection reopens its entry: out of submission, and this
+        -- peer's lease, where it held one, released ('markRejected'), so
+        -- another peer may claim it, at once or once the lease it still
+        -- carries lapses.  Not a rejected key whose entry is gone:
+        -- nothing of it opens to anyone.
+        sharedClaimable  = sharedClaimable sharedState
+                         + (if reopenedAny then 1 else 0)
       }
 
-    retainedUntil = addTime (bufferedTxsMinLifetime policy) now
+    -- whether a rejected key still has an entry, the one 'markRejected'
+    -- reopens
+    reopenedAny =
+      any (`IntMap.member` sharedTxTable sharedStateAfterAccepted) (IntSet.toList rejectedKeys)
 
-    acceptSubmittedTx sharedAcc (TxKey k) =
-      sharedAcc {
-        sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc),
-        sharedRetainedTxs =
-          retainedInsertMax k retainedUntil (sharedRetainedTxs sharedAcc)
-      }
+    retainedUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
+    acceptSubmittedTx sharedAcc (TxKey k, txid)
+      | IntMap.member k (sharedKeyToTxId sharedAcc) = retainUnder k sharedAcc
+      -- The key's lookup entries are gone: another peer found the tx in
+      -- the mempool and retained it meanwhile, and that retention expired
+      -- while this submission was blocked.  The txid is retained under
+      -- the key it has now, or gets now: afresh, so that a lagging peer's
+      -- advertisement of it is acknowledged rather than fetched and
+      -- rejected; retained again, the retention is extended; active again
+      -- under another key, by such an advertisement, that entry is
+      -- retained as after a mempool hit, since the mempool holds the tx
+      -- now, so that nobody fetches it and is penalised for it (a peer
+      -- with its body in flight sees a late body).
+      | otherwise =
+          case internTxId txid sharedAcc of
+            (_, TxKey k', sharedAcc') -> retainUnder k' sharedAcc'
+
+    -- The accepted tx retained under a key: out of the table, where an
+    -- active entry held it, and retained until the deadline, or the later
+    -- one it already has.
+    retainUnder k st =
+      st { sharedTxTable     = IntMap.delete k (sharedTxTable st),
+           sharedRetainedTxs = retainedInsertMax k retainedUntil (sharedRetainedTxs st) }
+
+    -- A rejected key stays active for its other advertisers; this peer is
+    -- done with it.
     updateRejected sharedAcc k =
       sharedAcc {
         sharedTxTable = IntMap.adjust markRejected k (sharedTxTable sharedAcc)
@@ -1332,7 +1582,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
     (peerState'', peerInFlight'', sharedState'')
   where
     peerAdvertisedKeys0 = pifAdvertised peerInFlight
-    peerAcksPending0    = pifAcksPending peerInFlight
 
     -- Fold over received txids: build unacknowledged list, update tables.
     --
@@ -1349,7 +1598,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       , peerAvailableTxIds'
       , sharedStateHandled
       , peerAdvertisedKeys'
-      , peerAcksPending'
       , wakeChange
       , revisionOnlyChange
       ) =
@@ -1359,7 +1607,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
         , peerAvailableTxIds peerState
         , sharedState
         , peerAdvertisedKeys0
-        , peerAcksPending0
         , False
         , False
         )
@@ -1368,27 +1615,21 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
     peerUnacknowledgedTxIds' =
       peerUnacknowledgedTxIds peerState <> StrictSeq.fromList (reverse receivedTxKeysRev)
 
-    peerState'' = peerState {
+    -- the reply answers the oldest outstanding request
+    peerState'' = (snd (takeTxIdReply peerState)) {
         peerUnacknowledgedTxIds = peerUnacknowledgedTxIds',
         peerRequestedTxIds =
           assert (requestedTxIds <= peerRequestedTxIds peerState)
                  (peerRequestedTxIds peerState - requestedTxIds),
-        peerAvailableTxIds = peerAvailableTxIds',
-        -- Track empty-reply state so the txid picker can back off
-        -- 'ack=0, req=N' pipelined requests until the peer makes
-        -- progress.
-        peerLastTxIdReplyWasEmpty = null txidsAndSizes
+        peerAvailableTxIds = peerAvailableTxIds'
       }
 
-    -- An empty reply leaves both sets unchanged (the fold doesn't fire),
-    -- so skip the record rebuild.
+    -- An empty reply leaves the advertised set unchanged (the fold doesn't
+    -- fire), so skip the record rebuild.
     peerInFlight'' =
         if null txidsAndSizes
            then peerInFlight
-           else peerInFlight {
-               pifAdvertised  = peerAdvertisedKeys',
-               pifAcksPending = peerAcksPending'
-             }
+           else peerInFlight { pifAdvertised = peerAdvertisedKeys' }
 
     sharedState''
       | wakeChange =
@@ -1403,14 +1644,13 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       | otherwise =
           sharedState
 
-    retainUntil = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     -- Process each received txid: classify as retained, in mempool, or new entry.
     step
       :: ( [TxKey]
          , IntMap.IntMap SizeInBytes
          , SharedTxState peeraddr txid
-         , IntSet.IntSet
          , IntSet.IntSet
          , Bool                     -- wakeChange
          , Bool                     -- revisionOnlyChange
@@ -1420,7 +1660,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
          , IntMap.IntMap SizeInBytes
          , SharedTxState peeraddr txid
          , IntSet.IntSet
-         , IntSet.IntSet
          , Bool
          , Bool
          )
@@ -1429,7 +1668,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       , !availableAcc
       , !sharedAcc
       , !peerAdvertisedKeysAcc
-      , !peerAcksPendingAcc
       , !wakeAcc
       , !revOnlyAcc
       )
@@ -1441,7 +1679,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
           , IntMap.delete k availableAcc
           , sharedAcc'
           , IntSet.delete k peerAdvertisedKeysAcc
-          , IntSet.insert k peerAcksPendingAcc
           , wakeAcc
           , revOnlyAcc'
           )
@@ -1456,7 +1693,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
                 retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc')
             }
           , IntSet.delete k peerAdvertisedKeysAcc
-          , IntSet.insert k peerAcksPendingAcc
           , True
           , True
           )
@@ -1468,6 +1704,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
               let txEntry = TxEntry {
                               txLease = TxClaimable now,
                               txAttempt = 0,
+                              txDoom = Undoomed,
                               txInSubmission = False,
                               currentMaxInflightMultiplicity =
                                 txInflightMultiplicity policy
@@ -1478,20 +1715,28 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
                      sharedTxTable = IntMap.insert k txEntry (sharedTxTable sharedAcc')
                    }
                  , IntSet.insert k peerAdvertisedKeysAcc
-                 , IntSet.insert k peerAcksPendingAcc
                  , wakeAcc
                  , True
                  )
-            Just _ ->
-              -- Existing entry; another peer already advertised.  No
-              -- 'sharedTxTable' change beyond optional interning.
+            Just entry ->
+              -- Existing entry: this peer advertises it too, which only
+              -- its own sets record, unless the entry is under review for
+              -- abandonment, which the advertisement ends: spared from now,
+              -- so the next walk does not doom it again at once on its old
+              -- claimable time.
               ( txKey : unacknowledgedAcc
               , IntMap.insert k txSize availableAcc
-              , sharedAcc'
+              , case txDoom entry of
+                  Doomed ->
+                    sharedAcc' {
+                      sharedTxTable =
+                        IntMap.insert k entry { txDoom = Spared now }
+                                      (sharedTxTable sharedAcc')
+                    }
+                  _ -> sharedAcc'
               , IntSet.insert k peerAdvertisedKeysAcc
-              , IntSet.insert k peerAcksPendingAcc
               , wakeAcc
-              , revOnlyAcc'
+              , revOnlyAcc' || txDoom entry == Doomed
               )
       where
         retainedAcc = sharedRetainedTxs sharedAcc'

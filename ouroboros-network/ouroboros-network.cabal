@@ -260,6 +260,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound.V2.Policy
     Ouroboros.Network.TxSubmission.Inbound.V2.Registry
     Ouroboros.Network.TxSubmission.Inbound.V2.State
+    Ouroboros.Network.TxSubmission.Inbound.V2.Tier
     Ouroboros.Network.TxSubmission.Inbound.V2.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Mempool.Simple
@@ -308,7 +309,7 @@ library
     cardano-prelude,
     cardano-strict-containers >=0.1.4,
     cborg >=0.2.1 && <0.3,
-    containers,
+    containers >=0.6.7,
     contra-tracer,
     deepseq,
     dlist,
@@ -324,6 +325,7 @@ library
     ouroboros-network:{api, framework, protocols},
     psqueues >=0.2.3 && <0.3,
     random,
+    splitmix,
     strict-checked-vars ^>=0.2,
     time,
     transformers,
@@ -764,6 +766,7 @@ executable demo-tx-submission
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
     quickcheck-instances,
+    random,
     serialise,
     splitmix,
     statistics,
@@ -1103,14 +1106,19 @@ benchmark sim-benchmarks
   main-is: Main.hs
   other-modules:
     Bench.TxSubmissionV2Server
+    Bench.TxSubmissionV2Sweep
 
   build-depends:
+    random,
     base,
+    bytestring,
     containers,
     contra-tracer,
     deepseq,
-    io-classes:{io-classes, strict-stm},
+    io-classes:{io-classes, si-timers, strict-stm},
+    nothunks,
     ouroboros-network,
+    ouroboros-network:api,
     ouroboros-network:ouroboros-network-tests-lib,
     ouroboros-network:protocols,
     pretty-simple,
