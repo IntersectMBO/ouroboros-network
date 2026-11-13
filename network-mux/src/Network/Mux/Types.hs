@@ -239,6 +239,7 @@ data EgressState = EgressState {
     esHeld :: {-# UNPACK #-} !Int,
     esSent :: {-# UNPACK #-} !Word64
   }
+  deriving (Eq, Show)
 
 type EgressVar m = StrictTVar m EgressState
 

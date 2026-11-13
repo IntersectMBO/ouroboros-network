@@ -192,6 +192,152 @@ newWanton held = do
     want <- newTVarIO BL.empty
     return Wanton { want, held }
 
+-- | An entry owns one increment of 'esHeld' on 'protocolState', released
+-- by 'completeBatch' after a successful write. Its byte count includes SDU
+-- headers. Further SDUs of the same protocol and direction add bytes to the
+-- entry without taking another hold.
+data BatchProtocol m = BatchProtocol {
+    protocolState :: !(EgressVar m),
+    protocolBytes :: !Int
+  }
+
+data Batch m = Batch {
+    -- SDUs are accumulated in reverse; buildBatch returns them in wire order.
+    batchSDUs      :: [SDU],
+    batchBytes     :: !Int,
+    batchProtocols :: !(Map.Map (MiniProtocolNum, MiniProtocolDir) (BatchProtocol m))
+  }
+
+emptyBatch :: Batch m
+emptyBatch = Batch [] 0 Map.empty
+
+-- | Add an `SDU` to a `Batch`.
+--
+-- NOTE: the `key` and `len` arguments could be derived from `SDU`, but we
+-- are passing them directly since they are already evaluated at the call
+-- site.
+addToBatch :: (MiniProtocolNum, MiniProtocolDir)
+           -> SDU
+           -> Int
+           -- ^ SDU size including the header
+           -> BatchProtocol m
+           -> Batch m
+           -> Batch m
+addToBatch
+  key sdu len
+  batchProtocol
+  Batch {
+    batchSDUs,
+    batchBytes,
+    batchProtocols
+  }
+  =
+  Batch {
+    batchSDUs      = sdu : batchSDUs,
+    batchBytes     = batchBytes + len,
+    batchProtocols = Map.insert key batchProtocol batchProtocols
+  }
+
+
+-- | Build a batch of SDUs to submit in one go to the bearer. The egress
+-- queue is processed one SDU at a time to ensure that we don't cause
+-- starvation. The batch size is limited by the bearer (e.g. the SO_SNDBUF
+-- for Socket) or the number of SDUs.
+--
+-- Each SDU is taken in its own transaction. Every protocol entry owns one
+-- hold, acquired by 'takeIntoBatch' in the transaction that first takes
+-- its bytes. Both exit paths preserve those entries for 'completeBatch'.
+withBatch :: forall m a b.
+             ( MonadMonotonicTime m
+             , MonadSTM m
+             )
+          => EgressQueue m
+          -> SDUSize
+          -> Int
+          -- ^ stop after reaching this many bytes, including SDU headers.
+          -> (Time -> Batch m -> STM m b)
+          -- ^ completion callback
+          -> (Batch m -> m a)
+          -- ^ continuation to run once a batch is formed.  That's where we
+          -- scheduling a socket write happens. 
+          -> m (Time, a, b)
+withBatch egressQueue sduSize batchSize completeHook k = do
+    batch <- buildBatch
+    a <- k batch
+    end <- getMonotonicTime
+    atomically $ do
+      completeBatch batch
+      b <- completeHook end batch
+      return (end, a, b)
+  where
+    buildBatch :: m (Batch m)
+    buildBatch = do
+        batch <- atomically $ do
+          demand <- readTBQueue egressQueue
+          takeIntoBatch emptyBatch demand
+        go 1 batch
+      where
+        maxSDUsPerBatch :: Int
+        maxSDUsPerBatch = 100
+
+        finish :: Batch m -> Batch m
+        finish b = b { batchSDUs = reverse (batchSDUs b) }
+
+        go :: Int -> Batch m -> m (Batch m)
+        go !n batch
+          | n >= maxSDUsPerBatch
+          = return (finish batch)
+
+          | batchBytes batch >= batchSize
+          = return (finish batch)
+
+          | otherwise = do
+              next <- atomically $ do
+                demand <- tryReadTBQueue egressQueue
+                traverse (takeIntoBatch batch) demand
+              case next of
+                 Just batch' -> go (n + 1) batch'
+                 Nothing     -> return (finish batch)
+
+        -- The caller dequeues the demand in this transaction too: it
+        -- reserves room for requeueing the remainder, and prevents a drain
+        -- from seeing an empty queue before the fragment is held.
+        -- Recording a new protocol and incrementing its held count always
+        -- happen together, including for the batch's first SDU.
+        takeIntoBatch
+            :: Batch m
+            -> TranslocationServiceRequest m
+            -> STM m (Batch m)
+        takeIntoBatch batch@Batch { batchProtocols }
+                      (TLSRDemand mpc md w) = do
+            sdu <- takeSingleWanton egressQueue sduSize mpc md w
+            let key = (mpc, md)
+                !bytes = sduLength sdu
+            batchProtocol <- case Map.lookup key batchProtocols of
+               Nothing -> do
+                 -- We are inserting a new key (miniProtocolNum,
+                 -- miniProtocolDir) into the batch, thus increment the
+                 -- `esHeld` in `EgressState`
+                 --
+                 -- NOTE: in HEAD~ this logic was bolted into
+                 -- `takeSingleWanton`'s `first` argument.
+                 modifyTVar (held w) $ \es -> es { esHeld = esHeld es + 1 }
+                 return (BatchProtocol (held w) bytes)
+               Just p -> return p { protocolBytes = protocolBytes p + bytes }
+            return $ addToBatch key sdu bytes batchProtocol batch
+          where
+            sduLength :: SDU -> Int
+            sduLength sdu = fromIntegral msHeaderLength + fromIntegral (msLength sdu)
+
+    -- | Release each hold and count its bytes in the same transaction,
+    -- once the whole batch has been written.
+    completeBatch :: Batch m -> STM m ()
+    completeBatch Batch { batchProtocols } =
+        forM_ batchProtocols $ \BatchProtocol { protocolState, protocolBytes } ->
+          modifyTVar protocolState $ \EgressState { esHeld, esSent } ->
+            EgressState { esHeld = esHeld - 1,
+                          esSent = esSent + fromIntegral protocolBytes }
+
 -- | A soft limit on the egress buffer ('Wanton') size, 0x3ffff bytes, one
 -- short of 256 KiB. A mini-protocol's send appends to its buffer only while
 -- the buffer holds fewer bytes, and forces its message's encoding up to it,
@@ -246,72 +392,63 @@ muxer egressQueue tracer counters laneEgress
     -- a batch pays the one unmask application.
     mask $ \unmask -> batch timeout unmask 0
   where
+    completionHook :: Time -> Batch m -> STM m Bool
+    completionHook = \end Batch { batchBytes = len } -> do
+      case laneEgress of
+        Credit budget -> takeOnCredit budget end len
+        _ -> return ()
+      isEmptyTBQueue egressQueue
+
     -- one batch, then the next, carrying how long the batch took to write,
     -- for the bearer's standing in the budget's counters
     batch :: TimeoutFn m -> (forall a. m a -> m a) -> DiffTime -> m void
     batch timeout unmask !wrote = do
       start <- getMonotonicTime
-      -- the demand and its fragment in one transaction: between the two the
-      -- queue would read empty with nothing held, and a drain waiting for
-      -- both would let the mux go with the fragment unsent
-      (mpc, md, d, sdu) <- atomically $ do
-        TLSRDemand mpc md d <- readTBQueue egressQueue
-        sdu <- takeSingleWanton egressQueue sduSize mpc md d True
-        return (mpc, md, d, sdu)
-      (sdus, len, perProtocol, taken) <- buildBatch sdu mpc md d
-      -- the batch, and each mini-protocol it carries, released once written,
-      -- and the protocol's bytes counted in the same write: the count rides
-      -- a variable the release updates anyway, so it costs no update of its
-      -- own
-      let release =
-            forM_ taken $ \(key, w) ->
-              let n = fromIntegral (Map.findWithDefault 0 key perProtocol)
-              in modifyTVar (held w) (\(EgressState h s) -> EgressState (h - 1) (s + n))
+      (end, t2, empty) <-
+        withBatch egressQueue sduSize batchSize completionHook $
+          \Batch { batchSDUs = sdus, batchBytes = len, batchProtocols } -> do
 
-      -- Scheduled egress: a batch is written only once the bearer can take it
-      -- without blocking AND its lane has the bytes -- granted by the budget's
-      -- bucket or the slice's, or, for the node's own requests, taken on
-      -- credit once written. A bearer whose peer is not draining never
-      -- consumes tokens. Each lane ends at the instant the write may start.
-      t2 <- case laneEgress of
-           Unscheduled -> getMonotonicTime
-           Credit _ -> gate timeout >> getMonotonicTime
-           Reserved slice budget -> do
-             t0 <- getMonotonicTime
-             gate timeout
-             t1 <- getMonotonicTime
-             -- the slice's own share, charged to the budget on credit in the
-             -- same transaction, or the budget's idle capacity
-             void $ awaitGrantWaited (Just budget) (t1 `diffTime` t0) wrote slice len
-             getMonotonicTime
-           Scheduled_ bucketHandle chargeVar -> do
-             let chargeNow t rank = do
-                   sink <- readTVar chargeVar
-                   sink t rank (Map.mapKeysWith (+) fst perProtocol)
-             t0 <- getMonotonicTime
-             gate timeout
-             t1 <- getMonotonicTime
-             -- charged in the grant's transaction, so connections sharing
-             -- an allowance see each other's spending at once
-             source <- awaitGrantCharged Nothing (t1 `diffTime` t0) wrote chargeNow bucketHandle len
-             t2 <- getMonotonicTime
-             traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1)
-                                                (source == FromFloor))
-             return t2
-      -- A write that throws, part of the batch sent or none, is neither
-      -- counted nor charged: the connection is gone with it.
-      unmask (void (writeMany tracer timeout sdus))
-      end <- getMonotonicTime
-      -- one transaction after every write: the release, which counts the
-      -- bytes, the credit charge (bytes handed to the kernel; the scheduled
-      -- lane's allowance was charged at its grant) and whether there is more
-      -- to send
-      empty <- atomically $ do
-        release
-        case laneEgress of
-             Credit budget -> takeOnCredit budget end len
-             _             -> return ()
-        isEmptyTBQueue egressQueue
+          -- Scheduled egress: a batch is written only once the bearer can take it
+          -- without blocking AND its lane has the bytes -- granted by the budget's
+          -- bucket or the slice's, or, for the node's own requests, taken on
+          -- credit once written. A bearer whose peer is not draining never
+          -- consumes tokens. Each lane ends at the instant the write may start.
+          t2 <- case laneEgress of
+             Unscheduled -> getMonotonicTime
+
+             Credit _    -> gate timeout
+                         >> getMonotonicTime
+
+             Reserved slice budget -> do
+               t0 <- getMonotonicTime
+               gate timeout
+               t1 <- getMonotonicTime
+               -- the slice's own share, charged to the budget on credit in the
+               -- same transaction, or the budget's idle capacity
+               void $ awaitGrantWaited (Just budget) (t1 `diffTime` t0) wrote slice len
+               getMonotonicTime
+
+             Scheduled_ bucketHandle chargeVar -> do
+               let chargeNow :: Time -> Rank -> STM m ()
+                   chargeNow t rank = do
+                     sink <- readTVar chargeVar
+                     sink t rank (Map.mapKeysWith (+) fst
+                                   (Map.map protocolBytes batchProtocols))
+               t0 <- getMonotonicTime
+               gate timeout
+               t1 <- getMonotonicTime
+               -- charged in the grant's transaction, so connections sharing
+               -- an allowance see each other's spending at once
+               source <- awaitGrantCharged Nothing (t1 `diffTime` t0) wrote chargeNow bucketHandle len
+               t2 <- getMonotonicTime
+               traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1)
+                                                  (source == FromFloor))
+               return t2
+          -- A write that throws, part of the batch sent or none, is neither
+          -- counted nor charged: the connection is gone with it.
+          unmask (void (writeMany tracer timeout sdus))
+          return t2
+
       when empty $ do
         let delta = diffTime end start
         threadDelay (egressInterval - delta)
@@ -325,62 +462,18 @@ muxer egressQueue tracer counters laneEgress
              Just SDUWriteTimeout -> atomically (countGateTimeout counters)
              _                    -> return ()
         throwIO (e :: SomeException)
-    maxSDUsPerBatch :: Int
-    maxSDUsPerBatch = 100
-
-    sduLength :: SDU -> Int
-    sduLength sdu = fromIntegral msHeaderLength + fromIntegral (msLength sdu)
-
-    -- Build a batch of SDUs to submit in one go to the bearer.
-    -- The egress queue is still processed one SDU at the time
-    -- to ensure that we don't cause starvation.
-    -- The batch size is either limited by the bearer
-    -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
-    --
-    -- Returns the SDUs in order, their length with headers, and that length
-    -- per mini-protocol and direction, and the mini-protocols held with
-    -- their keys, all accumulated as the batch is built so nothing walks it
-    -- again.
-    buildBatch :: SDU -> MiniProtocolNum -> MiniProtocolDir -> Wanton m
-               -> m ([SDU], Int, Map.Map (MiniProtocolNum, MiniProtocolDir) Int,
-                     [((MiniProtocolNum, MiniProtocolDir), Wanton m)])
-    buildBatch sdu0 mpc0 md0 w0 = go [sdu0] 1 len0 (Map.singleton key0 len0) [(key0, w0)]
-     where
-      len0 = sduLength sdu0
-      key0 = (mpc0, md0)
-      go sdus !n !len per taken
-        | n >= maxSDUsPerBatch || len >= batchSize = return (reverse sdus, len, per, taken)
-        | otherwise = do
-            demand_m <- atomically $ do
-              next <- tryReadTBQueue egressQueue
-              case next of
-                Nothing -> return Nothing
-                Just (TLSRDemand mpc md d) -> do
-                  let first = Map.notMember (mpc, md) per
-                  sdu <- takeSingleWanton egressQueue sduSize mpc md d first
-                  return (Just (mpc, md, d, first, sdu))
-            case demand_m of
-                 Just (mpc, md, d, first, sdu) -> do
-                   let key = (mpc, md)
-                   let !l = sduLength sdu
-                   go (sdu:sdus) (n + 1) (len + l) (Map.insertWith (+) key l per)
-                      (if first then (key, d) : taken else taken)
-                 Nothing -> return (reverse sdus, len, per, taken)
-
--- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
--- data remaining requeue the `TranslocationServiceRequest` (this
--- ensures that any other items on the queue will get some service
--- first.
+-- | Pull a `maxSDU`s worth of data out of the `Wanton`. If data remains,
+-- requeue the `TranslocationServiceRequest` so other queued demands get
+-- service first.
 takeSingleWanton :: MonadSTM m
                  => EgressQueue m
                  -> SDUSize
                  -> MiniProtocolNum
                  -> MiniProtocolDir
                  -> Wanton m
-                 -> Bool         -- ^ the batch's first SDU of this mini-protocol
                  -> STM m SDU
 takeSingleWanton egressQueue (SDUSize sduSize)
-                 mpc md wanton first = do
+                 mpc md wanton = do
     blob <- do
       -- extract next SDU
       d <- readTVar (want wanton)
@@ -394,9 +487,6 @@ takeSingleWanton egressQueue (SDUSize sduSize)
           -- must be inside the same STM transaction.
           writeTVar (want wanton) rest
           writeTBQueue egressQueue (TLSRDemand mpc md wanton)
-      -- held until written, once per batch: the muxer releases it after
-      -- the write
-      when first $ modifyTVar (held wanton) (\es -> es { esHeld = esHeld es + 1 })
       -- return data to send
       pure frag
     let sdu = SDU {

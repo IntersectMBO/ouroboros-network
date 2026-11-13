@@ -143,6 +143,8 @@ tests =
                    prop_mux_counters_snapshot_split
     , testProperty "bytes the bearer took are counted, the last batch's once the write returns"
                    prop_mux_written_is_counted
+    , testProperty "each batch holds its protocols once and counts them when written"
+                   prop_mux_batch_accounting
     , testProperty "bytes the bearer delivered are counted, the last SDU's once the read returns"
                    prop_mux_read_is_counted
     , testProperty "a write blocked part way takes the cancellation, nothing counted"
@@ -4226,6 +4228,149 @@ prop_mux_partial_write_cancelled (Batches batches) =
       t1 <- getMonotonicTime
       (,) (t1 `diffTime` t0) <$> counted
 
+type EgressSnapshotMap = M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) Mx.EgressState
+
+newtype Fragments = Fragments {
+    getFragments :: [((Mx.MiniProtocolNum, Mx.MiniProtocolDir), Int)]
+  }
+  deriving Show
+
+instance Arbitrary Fragments where
+  arbitrary = do
+    -- Keep snapshots small while exercising repeated protocol keys.
+    count <- choose (0, 4)
+    miniProtocolNums <- vectorOf count (choose (0, 3))
+    let keys = [ (Mx.MiniProtocolNum n, d)
+               | n <- miniProtocolNums
+               , d <- [ Mx.InitiatorDir
+                      , Mx.ResponderDir
+                      ]
+               ]
+    fragments <- vectorOf (length keys) $ frequency
+      [ (2, pure 0)
+      , (4, choose (1, 8))
+      , (1, pure 100)
+      , (3, choose (101, 150))
+      ]
+    return $ Fragments $ keys `zip` fragments
+
+  shrink (Fragments fragments) =
+      [ Fragments fragments'
+      | fragments' <- shrinkList shrinkDemand fragments
+      ]
+    where
+      shrinkDemand (key, n) = [ (key, n') | n' <- shrink n, n' >= 0 ]
+
+
+newtype BatchedSDUs = BatchedSDUs Int
+  deriving Show
+
+instance Arbitrary BatchedSDUs where
+  arbitrary = BatchedSDUs <$> frequency
+    [ (1, pure 1)
+    , (2, arbitrary `suchThat` (> 1) `suchThat` (<= 100))
+    , (2, arbitrary `suchThat` (> 100))
+    ]
+  shrink (BatchedSDUs a) =
+    [ BatchedSDUs a'
+    | a' <- shrink a
+    , a' > 0
+    ]
+
+
+
+-- | At every write, exactly the protocols in that batch are held, once each,
+-- and only earlier writes are counted. After the last write all holds are
+-- released and every byte, including SDU headers, is counted. Small and large
+-- bearer limits exercise a singleton batch, repeated protocols, and the
+-- muxer's 100-SDU limit; both directions of the same protocol have their own
+-- state, including protocols with nothing to send.
+prop_mux_batch_accounting :: BatchedSDUs -> Fragments -> Property
+prop_mux_batch_accounting = \(BatchedSDUs batchSDUs) (Fragments fragments) ->
+      let totalFragments = sum (snd <$> fragments)
+          fragmentsPerProtocol = M.fromListWith (+) fragments
+      in 
+      checkCoverage $
+      cover 10 (batchSDUs == 1 && totalFragments > 0) "singleton batches" $
+      cover 10 (batchSDUs > 100 && totalFragments > 100) "SDU limit" $
+      cover 10 (any (== 0) (M.elems fragmentsPerProtocol)) "idle protocols" $
+      case runSimOrThrow (sim batchSDUs
+                              (fst <$> fragments)
+                              (snd <$> fragments)) of
+        Nothing -> counterexample "the muxer did not count all bytes" False
+        Just observed ->
+          conjoin [ counterexample ("write " ++ show i) (actual === wanted)
+                  | (i, (actual, wanted)) <- zip [0 :: Int ..] observed ]
+  where
+    sdu = 64
+    wireBytes = sdu + fromIntegral Mx.msHeaderLength
+
+    sim :: forall s.
+           Int
+        -> [(Mx.MiniProtocolNum, Mx.MiniProtocolDir)]
+        -> [Int]
+        -> IOSim s (Maybe [(EgressSnapshotMap, EgressSnapshotMap)])
+    sim batchSDUs keys fragments  = do
+        queue <- newTBQueueIO (fromIntegral (length keys))
+        slots <- atomically $ Counters.newByteSlots keys
+        sent <- newTVarIO M.empty
+        observed <- newTVarIO []
+        let readStates :: STM (IOSim s) EgressSnapshotMap
+            readStates = traverse readTVar slots
+
+            bearer = Mx.Bearer {
+                Mx.write = \_ _ _ -> error "single writes are not used",
+                Mx.writeMany = \_ _ sdus -> do
+                  atomically $ do
+                    actual <- readStates
+                    earlier <- readTVar sent
+                    let bytes = writtenBytes sdus
+                        wanted = M.mapWithKey
+                          (\key _ ->
+                            Mx.EgressState {
+                                Mx.esHeld = if M.member key bytes then 1 else 0,
+                                Mx.esSent = M.findWithDefault 0 key earlier
+                              }
+                          )
+                         slots
+                    modifyTVar observed ((actual, wanted) :)
+                    modifyTVar sent (M.unionWith (+) bytes)
+                  getMonotonicTime,
+                Mx.read = \_ _ -> error "the muxer does not read",
+                Mx.sduSize = Mx.SDUSize (fromIntegral sdu),
+                Mx.batchSize = batchSDUs * wireBytes,
+                Mx.name = "batch-accounting",
+                Mx.egressInterval = 0,
+                Mx.awaitWritable = \_ _ -> return ()
+              }
+        atomically $ forM_ (zip keys fragments) $ \(key@(mpc, md), n) ->
+          when (n > 0) $ do
+            w <- newTVar (BL.replicate (fromIntegral (n * sdu)) 0x55)
+            let wanton = Egress.Wanton w (slots M.! key)
+            writeTBQueue queue (Egress.TLSRDemand mpc md wanton)
+
+        -- drain the queue with a muxer thread
+        mx <- async (void (Egress.muxer queue nullTracer Nothing Egress.Unscheduled bearer))
+
+        done <- timeout 10 $ atomically $ do
+          final <- readStates
+          check (sum (map Mx.esSent (M.elems final)) == expectedSentBytes)
+          samples <- readTVar observed
+          let -- Several demands can share a protocol's state, so sum their bytes.
+              expected :: EgressSnapshotMap
+              expected =
+                  M.map (Mx.EgressState 0)
+                . M.fromListWith (+)
+                $ [ (key, fromIntegral (n * wireBytes))
+                  | (key, n) <- zip keys (fragments ++ repeat 0)
+                  ]
+          return (reverse samples ++ [(final, expected)])
+        cancel mx
+        return done
+      where
+        expectedSentBytes :: Word64
+        expectedSentBytes = fromIntegral $ sum fragments * wireBytes
+
 -- | A full egress queue with producers blocked on it: @fqCapacity@ demands
 -- queued, one per mini-protocol, and @fqBlocked@ more whose producers wait
 -- for room. Each demand is @n@ SDUs of payload, so requeueing what is left
@@ -4627,6 +4772,12 @@ prop_tiers = once $
     names    = map Mx.numberName places
     credited = [Mx.PartnerTier, Mx.PoolTier, Mx.StrangerTier]
 
+-- | 'Bucket.Ready' carries the bucket's new full instant, whereas
+-- 'Bucket.NotReady' carries the instant at which to retry the request.
+grantTime :: Time -> Bucket.GrantAt -> Time
+grantTime now (Bucket.Ready _)        = now
+grantTime _   (Bucket.NotReady ready) = ready
+
 -- | The cases that matter for the pure laws: an oversized request is served
 -- on credit, and 'Bucket.tokenLevel' saturates once the bucket is full, so a
 -- law stated over the level alone says little about those grants.
@@ -4636,7 +4787,7 @@ labelTake BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
     . classify (ready == tkNow)  "granted at once"
     . classify (level < 0)       "in debt"
   where
-    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready      = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     level      = Bucket.tokenLevel tkRate tkCap tkFull tkNow
 
 -- | Grants at the earliest instant the bytes are there: never before the
@@ -4649,7 +4800,7 @@ prop_grantAt_ready tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
       && level >= target - eps
       && (ready == tkNow || level <= target + eps)
   where
-    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready      = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     level      = Bucket.tokenLevel tkRate tkCap tkFull ready
     target     = fromIntegral (min tkNeed tkCap) :: Double
     eps        = byteEps tkRate
@@ -4724,7 +4875,7 @@ prop_grantAt_tight bw =
       && level <= target - 1 + byteEps tkRate
   where
     tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } = waitTake bw
-    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready      = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     probe      = negate (realToFrac (1 / tkRate)) `addTime` ready
     level      = Bucket.tokenLevel tkRate tkCap tkFull probe
     target     = fromIntegral (min tkNeed tkCap) :: Double
@@ -4735,17 +4886,25 @@ prop_grantAt_take :: BucketTake -> Property
 prop_grantAt_take tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
     labelTake tk $
     classify (tkFull <= ready) "full at the grant" $
-    counterexample (show (levelBefore, levelAfter)) $
-      abs (levelAfter - (levelBefore - fromIntegral tkNeed)) <= byteEps tkRate
+    case Bucket.grantAt tkRate tkCap tkFull ready tkNeed of
+      Bucket.NotReady retryAt ->
+        counterexample ("not ready at the grant instant: "
+                         ++ show (ready, retryAt)) False
+      Bucket.Ready full' ->
+        let levelAfter = Bucket.tokenLevel tkRate tkCap full' ready
+        in counterexample (show (levelBefore, levelAfter)) $
+             abs (levelAfter - (levelBefore - fromIntegral tkNeed)) <= byteEps tkRate
   where
-    (ready, full') = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready       = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     levelBefore = Bucket.tokenLevel tkRate tkCap tkFull ready
-    levelAfter  = Bucket.tokenLevel tkRate tkCap full' ready
 
 -- | A rate of zero grants everything at once.
 prop_grantAt_disabled :: BucketTake -> Property
 prop_grantAt_disabled BucketTake { tkCap, tkNow, tkFull, tkNeed } =
-    fst (Bucket.grantAt 0 tkCap tkFull tkNow tkNeed) === tkNow
+    case Bucket.grantAt 0 tkCap tkFull tkNow tkNeed of
+      Bucket.Ready full' -> full' === tkNow
+      Bucket.NotReady ready ->
+        counterexample ("disabled bucket waits until " ++ show ready) False
 
 -- | A short bearer wakes no earlier than its bytes are there and less than a
 -- microsecond later.
@@ -4754,7 +4913,7 @@ prop_wakeAt BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
     counterexample (show (ready, wake)) $
       ready == tkNow || (wake >= ready && wake `diffTime` ready < 1e-6)
   where
-    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    ready      = grantTime tkNow (Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed)
     wake       = Bucket.wakeAt tkNow ready
 
 -- | A rate change keeps the token level.
@@ -5552,10 +5711,10 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
       -- the budget's head checks
       | Just h <- headBy (keyB now) wb, Nothing <- kb =
           if crossed True then [RTie] else
-          let (ready, fb') = Bucket.grantAt schRate schCapacity fb now (arBytes h)
-              lst'         = Just (now, True)
-          in if ready == now
-                then RGrant FromBudget (grant h)
+          let lst' = Just (now, True)
+          in case Bucket.grantAt schRate schCapacity fb now (arBytes h) of
+               Bucket.Ready fb' ->
+                     RGrant FromBudget (grant h)
                    : RBudgetQueue now (length wb - 1) (arBearer h, arTake h) False
                    : let wb'  = List.delete h wb
                          -- the slice's head checks next, after this grant
@@ -5564,29 +5723,35 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
                      ++ go now fb' fs (next h now pending) wb' ws Nothing
                            (if wake then Nothing else ks) (sb && not wake)
                            (if wake then Nothing else lst')
-                else go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks sb lst'
+               Bucket.NotReady ready ->
+                 go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks sb lst'
       -- the slice's head checks: its own bucket, else the budget's idle capacity
       | Just h <- headBy keyS ws, Nothing <- ks =
-          let need          = arBytes h
-              (readyS, fs') = Bucket.grantAt sliceRate schCapacity fs now need
-              (readyB, fb') = Bucket.grantAt schRate schCapacity fb now need
-              idle          = null wb
+          let need = arBytes h
+              idle = null wb
+              sleep ready = go now fb fs pending wb ws kb
+                              (Just (Bucket.wakeAt now ready)) (not idle)
+                              (Just (now, False))
           in if crossed False then [RTie] else
-             if readyS == now
-                then RGrant FromSlice (grant h)
+             case Bucket.grantAt sliceRate schCapacity fs now need of
+               Bucket.Ready fs' ->
+                     RGrant FromSlice (grant h)
                    : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
                    : go now (Bucket.chargeAt schRate fb now need) fs'
                         (next h now pending) wb (List.delete h ws) kb Nothing False
                         (Just (now, False))
-             else if idle && readyB == now
-                then RGrant Borrowed (grant h)
-                   : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
-                   : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing False
-                        (Just (now, False))
-             else [ RSleptOnBudget | idle, readyB < readyS ]
-               ++ go now fb fs pending wb ws kb
-                     (Just (Bucket.wakeAt now (if idle then min readyS readyB else readyS)))
-                     (not idle) (Just (now, False))
+               Bucket.NotReady readyS
+                 | not idle -> sleep readyS
+                 | otherwise ->
+                     case Bucket.grantAt schRate schCapacity fb now need of
+                       Bucket.Ready fb' ->
+                             RGrant Borrowed (grant h)
+                           : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
+                           : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing False
+                                (Just (now, False))
+                       Bucket.NotReady readyB ->
+                         [ RSleptOnBudget | readyB < readyS ]
+                           ++ sleep (min readyS readyB)
       -- a waiting request's refresh before both wakes and the next request:
       -- if its key moves, whoever is then the budget's head checks at once,
       -- the request itself if it stays or becomes the head, or the one its

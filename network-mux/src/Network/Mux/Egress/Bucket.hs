@@ -79,6 +79,7 @@ module Network.Mux.Egress.Bucket
   , Open
     -- * Pure core
   , tokenLevel
+  , GrantAt (..)
   , grantAt
   , wakeAt
   , atRate
@@ -471,19 +472,29 @@ tokenLevel :: Double -> Int -> Time -> Time -> Double
 tokenLevel rate cap full now =
   fromIntegral cap - rate * realToFrac (max 0 (full `diffTime` now))
 
--- | For a request of @need@ bytes made at @now@: the grant instant, when the
--- bytes are there (@now@ if already), and the full instant of the bucket
--- after taking them then.  A request larger than the capacity waits for a
--- full bucket and is served on credit.  Rate @<= 0@ disables the bucket.
+
+-- | What 'grantAt' answers a request: taken now, or when to ask again.
+data GrantAt = Ready !Time
+             -- ^ taken at @now@; the bucket's new full instant
+             -- (@now@ for a disabled bucket)
+             | NotReady !Time
+             -- ^ short at @now@; the instant the bytes will be there.
+
+-- | For a request of @need@ bytes made at @now@: 'Ready' with the bucket's
+-- full instant after the take if the bytes are there, otherwise 'NotReady'
+-- with the instant they will be.  A request larger than the capacity waits
+-- for a full bucket and is served on credit.  Rate @<= 0@ disables the
+-- bucket: every request is 'Ready', and the bucket stays full.
 grantAt :: Double  -- ^ rate, bytes/s
         -> Int     -- ^ capacity
         -> Time    -- ^ full
         -> Time    -- ^ now
         -> Int     -- ^ need
-        -> (Time, Time)
+        -> GrantAt
 grantAt rate cap full now need
-  | rate <= 0 = (now, now)
-  | otherwise = (ready, accrual need `addTime` max full ready)
+  | rate <= 0    = Ready now
+  | ready <= now = Ready (accrual need `addTime` max full ready)
+  | otherwise    = NotReady ready
   where
     target = min need cap
     -- @target@ bytes are there within @accrual (cap - target)@ of full
@@ -581,10 +592,9 @@ tryTake :: MonadSTM m => Bucket m -> Time -> Int -> STM m (Either Time ())
 tryTake Bucket { bRate, bCapacity, bFull } now need = do
   rate <- readTVar bRate
   full <- readTVar bFull
-  let (ready, full') = grantAt rate bCapacity full now need
-  if ready == now
-     then Right () <$ writeTVar bFull full'
-     else return (Left ready)
+  case grantAt rate bCapacity full now need of
+    NotReady ready -> return (Left ready)
+    Ready full'    -> Right () <$ writeTVar bFull full'
 
 -- | Take @need@ bytes on credit: never waits, the bucket repays later.
 takeOnCredit :: MonadSTM m => Bucket m -> Time -> Int -> STM m ()
