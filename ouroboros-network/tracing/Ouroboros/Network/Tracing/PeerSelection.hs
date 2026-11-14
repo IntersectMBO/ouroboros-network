@@ -10,6 +10,7 @@ import Data.Text (pack)
 import Numeric (showOct)
 
 import Cardano.Logging
+import Ouroboros.Network.Diffusion.PoolRelays (TracePoolRelays (..))
 import Ouroboros.Network.Diffusion.Types qualified as Diff
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers (..),
@@ -427,3 +428,56 @@ instance MetaTrace TraceLedgerPeers where
       , Namespace [] ["TraceLedgerPeersDomains"]
       , Namespace [] ["UsingBigLedgerPeerSnapshot"]
       ]
+
+--
+-- Pool relays: the big-ledger pools' relays behind the egress scheduler's
+-- credit buckets
+--
+
+instance LogFormatting TracePoolRelays where
+  forMachine _dtal (PoolRelaysPolled pools kept addresses held) =
+    mconcat
+      [ "kind" .= String "PoolRelaysPolled"
+      , "pools" .= pools
+      , "kept" .= kept
+      , "addresses" .= addresses
+      , "held" .= held
+      ]
+  forMachine _dtal PoolRelaysDisabled =
+    mconcat
+      [ "kind" .= String "PoolRelaysDisabled"
+      ]
+  forMachine _dtal (PoolRelaysResolveFailed reason) =
+    mconcat
+      [ "kind" .= String "PoolRelaysResolveFailed"
+      , "reason" .= reason
+      ]
+
+  forHuman = pack . show
+
+instance MetaTrace TracePoolRelays where
+    namespaceFor PoolRelaysPolled {}        = Namespace [] ["Polled"]
+    namespaceFor PoolRelaysDisabled {}      = Namespace [] ["Disabled"]
+    namespaceFor PoolRelaysResolveFailed {} = Namespace [] ["ResolveFailed"]
+
+    severityFor (Namespace _ ["Polled"]) _        = Just Info
+    severityFor (Namespace _ ["Disabled"]) _      = Just Info
+    severityFor (Namespace _ ["ResolveFailed"]) _ = Just Warning
+    severityFor _ _                               = Nothing
+
+    documentFor (Namespace _ ["Polled"]) = Just $ mconcat
+      [ "A poll of the ledger's big pools is through: the pools in the list, how many"
+      , " kept their credit bucket from the poll before, the relay addresses indexed,"
+      , " and the names kept as last known because their lookup failed for the moment." ]
+    documentFor (Namespace _ ["Disabled"]) = Just
+      "Ledger peers are disabled, so no pool has a credit bucket."
+    documentFor (Namespace _ ["ResolveFailed"]) = Just
+      "Resolving the relays failed; the previous index stays until the next poll."
+    documentFor _ = Nothing
+
+    allNamespaces = [
+        Namespace [] ["Polled"]
+      , Namespace [] ["Disabled"]
+      , Namespace [] ["ResolveFailed"]
+      ]
+

@@ -522,6 +522,7 @@ library cardano-diffusion-tests-lib
     typed-protocols:{typed-protocols, examples},
 
   exposed-modules:
+    Test.Cardano.Network.Diffusion.Configuration
     Test.Cardano.Network.Diffusion.Policies
     Test.Cardano.Network.Diffusion.Testnet
     Test.Cardano.Network.Diffusion.Testnet.ChainedTxs

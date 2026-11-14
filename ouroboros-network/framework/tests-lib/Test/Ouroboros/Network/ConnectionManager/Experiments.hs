@@ -294,6 +294,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
           muxTracers
           noBindForkPolicy
           Nothing                  -- no mux counters
+          Nothing                  -- no scheduled egress
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
@@ -457,6 +458,8 @@ withBidirectionalConnectionManager
     -> StdGen
     -> Snocket m socket peerAddr
     -> Mx.MakeBearer m socket
+    -> Maybe (Mx.EgressPolicy m)
+    -- ^ scheduled egress
     -> CM.ConnStateIdSupply m
     -> (socket -> m ()) -- ^ configure socket
     -> socket
@@ -482,7 +485,7 @@ withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
                                    tracer inboundTracer muxTracer debugTracer
                                    stdGen
-                                   snocket makeBearer connStateIdSupply
+                                   snocket makeBearer egressPolicy connStateIdSupply
                                    confSock socket
                                    localAddress
                                    accumulatorInit nextRequests
@@ -495,6 +498,9 @@ withBidirectionalConnectionManager name timeouts
             ((Compose . WithName name) `Mx.contramapTracers'` muxTracer)
             noBindForkPolicy
             Nothing                  -- no mux counters
+            -- every connection of the experiments ranks alike
+            ((\policy -> (policy, \_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ _ -> return ())))
+               <$> egressPolicy)
             HandshakeArguments {
                 -- TraceSendRecv
                 haHandshakeTracer = WithName name `contramap` nullTracer,
@@ -775,7 +781,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                                            nullTracer nullTracer nullTracer
                                            nullTracer Mx.nullTracers nullTracer
                                            stdGen''
-                                           snocket makeBearer connStateIdSupply
+                                           snocket makeBearer Nothing connStateIdSupply
                                            confSock socket Nothing
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
@@ -842,6 +848,7 @@ bidirectionalExperiment
     -> Timeouts
     -> Snocket m socket peerAddr
     -> Mx.MakeBearer m socket
+    -> Maybe (Mx.EgressPolicy m)  -- ^ scheduled egress, shared by both nodes
     -> (socket -> m ()) -- ^ configure socket
     -> socket
     -> socket
@@ -888,6 +895,7 @@ bidirectionalExperimentWith
     -> Timeouts
     -> Snocket m socket peerAddr
     -> Mx.MakeBearer m socket
+    -> Maybe (Mx.EgressPolicy m)  -- ^ scheduled egress, shared by both nodes
     -> (socket -> m ()) -- ^ configure socket
     -> socket
     -> socket
@@ -897,8 +905,8 @@ bidirectionalExperimentWith
     -> ClientAndServerData req
     -> m Property
 bidirectionalExperimentWith
-    inboundTracer muxTracers useLock stdGen timeouts snocket makeBearer confSock socket0 socket1 localAddr0 localAddr1
-    clientAndServerData0 clientAndServerData1 = do
+    inboundTracer muxTracers useLock stdGen timeouts snocket makeBearer egressPolicy confSock socket0
+    socket1 localAddr0 localAddr1 clientAndServerData0 clientAndServerData1 = do
       let (stdGen', stdGen'') = Random.splitGen stdGen
       lock <- newTMVarIO ()
       connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
@@ -906,7 +914,7 @@ bidirectionalExperimentWith
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
                                          nullTracer nullTracer nullTracer inboundTracer muxTracers
-                                         nullTracer stdGen' snocket makeBearer
+                                         nullTracer stdGen' snocket makeBearer egressPolicy
                                          connStateIdSupply confSock
                                          socket0 (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
@@ -916,7 +924,7 @@ bidirectionalExperimentWith
         (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
                                              nullTracer nullTracer nullTracer inboundTracer muxTracers
-                                             nullTracer stdGen'' snocket makeBearer
+                                             nullTracer stdGen'' snocket makeBearer egressPolicy
                                              connStateIdSupply confSock
                                              socket1 (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]

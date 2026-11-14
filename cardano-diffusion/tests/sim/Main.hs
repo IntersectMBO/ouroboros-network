@@ -3,6 +3,7 @@ module Main (main) where
 import Main.Utf8 (withUtf8)
 import Test.Tasty
 
+import Test.Cardano.Network.Diffusion.Configuration qualified (tests)
 import Test.Cardano.Network.Diffusion.Policies qualified (tests)
 import Test.Cardano.Network.Diffusion.Testnet qualified (tests)
 import Test.Cardano.Network.OrphanInstances.Tests qualified (tests)
@@ -20,6 +21,7 @@ tests =
   [ Test.Cardano.Network.OrphanInstances.Tests.tests
 
     -- network logic
+  , Test.Cardano.Network.Diffusion.Configuration.tests
   , Test.Cardano.Network.Diffusion.Policies.tests
   , Test.Cardano.Network.PeerSelection.LocalRootPeers.tests
   , Test.Cardano.Network.PeerSelection.PublicRootPeers.tests

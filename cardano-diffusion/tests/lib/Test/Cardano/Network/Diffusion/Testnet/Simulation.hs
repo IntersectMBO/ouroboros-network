@@ -27,6 +27,12 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
   , diffusionSimulation
   , diffusionSimulationWithCounters
   , diffusionSimulation'
+  , EgressArgs (..)
+  , EgressScript (..)
+  , egressRun
+  , Egress (..)
+  , withEgress
+  , genSharedEgress
   , DiffSimResult
   , Command (..)
     -- * Tracing
@@ -65,7 +71,7 @@ import Data.List (delete, nub, partition)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe, listToMaybe, mapMaybe, maybeToList)
+import Data.Maybe (fromMaybe, isJust, listToMaybe, mapMaybe, maybeToList)
 import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -179,6 +185,8 @@ data SimArgs =
       -- ^ Tx submission outbound version.  All simulations nodes run the same
       -- `TxOutboundVersion`, since we use `UnversionedProtocol`.  With
       -- `TxOutboundV_1` all nodes must use the same `naTxSubmissionConfig`.
+    , saEgress            :: Maybe EgressArgs
+      -- ^ scheduled egress at every node; 'Nothing' leaves it unscheduled
     }
 
 -- | Render `SimArgs`, ignores the tx submission arguments; useful for
@@ -192,13 +200,15 @@ instance Show SimArgs where
     show SimArgs { saSlot,
                    saQuota,
                    saTxDecisionPolicy,
-                   saTxOutboundVersion
+                   saTxOutboundVersion,
+                   saEgress
                  } =
       unwords [ "SimArgs"
               , show saSlot
               , show saQuota
               , "(" ++ show saTxDecisionPolicy ++ ")"
               , show saTxOutboundVersion
+              , "(" ++ show saEgress ++ ")"
               ]
 
 data ServiceDomainName =
@@ -376,7 +386,8 @@ mainnetSimArgs numberOfNodes txDecisionPolicy txOutboundVersion =
                 then 20 `div` numberOfNodes
                 else 100,
       saTxDecisionPolicy   = txDecisionPolicy,
-      saTxOutboundVersion  = txOutboundVersion
+      saTxOutboundVersion  = txOutboundVersion,
+      saEgress             = Nothing
     }
 
 
@@ -871,11 +882,16 @@ genHotDiffusionScript = genDiffusionScript genLocalRootPeers
 
 
 instance Arbitrary DiffusionScript where
-  arbitrary = (\(a,b,c) -> DiffusionScript a b c)
-              <$> frequency [ (1, arbitrary >>= genNonHotDiffusionScript)
-                            , (1, arbitrary >>= genHotDiffusionScript)]
+  arbitrary = do
+    (a, b, c) <- frequency [ (1, arbitrary >>= genNonHotDiffusionScript)
+                           , (1, arbitrary >>= genHotDiffusionScript)]
+    egress <- genSharedEgress
+    return (DiffusionScript a { saEgress = egress } b c)
   -- TODO: shrink dns map
   shrink (DiffusionScript sargs dnsScript0 players0) =
+    -- egress off first: a failure that goes away is egress's
+    [ DiffusionScript sargs { saEgress = Nothing } dnsScript0 players0
+    | isJust (saEgress sargs) ] <>
     [DiffusionScript sargs dnsScript0 players
     | players <- shrinkPlayers players0
     ] <>
@@ -930,7 +946,10 @@ data HotDiffusionScript = HotDiffusionScript
   deriving Show
 
 instance Arbitrary HotDiffusionScript where
-  arbitrary = (\(a,b,c) -> HotDiffusionScript a b c) <$> (arbitrary >>= genHotDiffusionScript)
+  arbitrary = do
+    (a, b, c) <- arbitrary >>= genHotDiffusionScript
+    egress <- genSharedEgress
+    return (HotDiffusionScript a { saEgress = egress } b c)
   shrink (HotDiffusionScript sargs dnsMap hds) =
     [ HotDiffusionScript sa dnsMap' ds
     | DiffusionScript sa dnsMap' ds <- shrink (DiffusionScript sargs dnsMap hds) ]
@@ -1070,6 +1089,106 @@ diffusionSimulationWithCounters
   -> IOSim s DiffSimResult
 diffusionSimulationWithCounters interval bearerInfo diffusionScript =
   diffusionSimulationM bearerInfo diffusionScript dynamicTracer CardanoChurn interval
+
+-- | Scheduled egress for every node of a simulation: the Cardano lane rule,
+-- with a budget and a bucket small enough for the simulation's traffic to
+-- wait, a slice, and a short rotation period.
+data EgressArgs = EgressArgs {
+    eaBudget   :: Double,     -- ^ bytes/s
+    eaCapacity :: Int,        -- ^ bytes
+    eaSlicePct :: Int,
+    eaPeriod   :: DiffTime,
+    eaTenure   :: DiffTime,   -- ^ before a hot-both-ways peer is a partner
+    eaLock     :: DiffTime    -- ^ before a stranger's own bucket opens
+  }
+  deriving Show
+
+-- | Budgets from a trickle to a few times what the simulation sends, so grants
+-- wait; capacities below one SDU up to two; the slice anywhere from none to
+-- half; rotation periods short enough to re-deal within a run; a stranger
+-- lock of none, a minute or a quarter of an hour.
+instance Arbitrary EgressArgs where
+    arbitrary = do
+      budget <- (* 1000) <$> choose (1, 64)
+      cap    <- choose (1024, 24576)
+      pct    <- elements [0, 5, 15, 30, 50]
+      period <- secondsToDiffTime <$> choose (5, 600)
+      tenure <- secondsToDiffTime <$> choose (0, 3600)
+      lock   <- secondsToDiffTime <$> elements [0, 60, 887]
+      return EgressArgs { eaBudget = budget, eaCapacity = cap, eaSlicePct = pct,
+                          eaPeriod = period, eaTenure = tenure, eaLock = lock }
+    shrink ea@EgressArgs { eaBudget, eaCapacity, eaSlicePct, eaLock } =
+         [ ea { eaBudget = b }   | b <- [64000], b > eaBudget ]
+      ++ [ ea { eaCapacity = c } | c <- [24576], c > eaCapacity ]
+      ++ [ ea { eaSlicePct = 0 } | eaSlicePct /= 0 ]
+      ++ [ ea { eaLock = 0 }     | eaLock /= 0 ]
+
+-- | Egress for every generated script: engaged but rarely binding. The budget
+-- is far above the simulation's traffic, so properties that depend on timing
+-- see the lanes, the lock and the gate but not a slow node.
+genSharedEgress :: Gen (Maybe EgressArgs)
+genSharedEgress = frequency
+    [ (1, return Nothing)
+    , (2, fmap Just $
+            EgressArgs <$> ((* 1e6) <$> choose (1, 100))
+                       <*> choose (24576, 262144)
+                       <*> elements [0, 5, 15, 30]
+                       <*> (secondsToDiffTime <$> choose (5, 600))
+                       <*> (secondsToDiffTime <$> choose (0, 3600))
+                       <*> (secondsToDiffTime <$> elements [0, 60, 887])) ]
+
+egressScheduling :: EgressArgs -> Diffusion.EgressScheduling
+egressScheduling EgressArgs { eaBudget, eaCapacity, eaSlicePct, eaPeriod, eaTenure, eaLock } =
+    Cardano.defaultEgressScheduling {
+      Diffusion.esBudget          = eaBudget,
+      Diffusion.esCapacity        = eaCapacity,
+      Diffusion.esSlicePercent    = eaSlicePct,
+      Diffusion.esRotationPeriod  = eaPeriod,
+      Diffusion.esNotSentLowWat   = Nothing,
+      Diffusion.esTenureThreshold = eaTenure,
+      Diffusion.esStrangerLock    = eaLock
+    }
+
+-- | A script whose nodes all run scheduled egress, for the egress
+-- properties; the script is the one source of the egress they run. Its first
+-- shrink turns egress off, so a failure that goes away with it is egress's;
+-- then egress's parameters; then the script, egress kept. Once off, only the
+-- script shrinks.
+newtype EgressScript = EgressScript DiffusionScript
+  deriving Show
+
+instance Arbitrary EgressScript where
+    arbitrary = do
+      DiffusionScript sa dm nodes <- arbitrary
+      egress <- arbitrary
+      return (EgressScript (DiffusionScript sa { saEgress = Just egress } dm nodes))
+    shrink (EgressScript ds@(DiffusionScript sa dm nodes)) = case saEgress sa of
+      Nothing     -> [ EgressScript ds' | ds' <- shrink ds ]
+      Just egress ->
+           [ EgressScript (DiffusionScript sa { saEgress = Nothing } dm nodes) ]
+        ++ [ EgressScript (DiffusionScript sa { saEgress = Just e } dm nodes)
+           | e <- shrink egress ]
+        ++ [ EgressScript ds' | ds'@(DiffusionScript sa' _ _) <- shrink ds
+                              , isJust (saEgress sa') ]
+
+-- | The script an 'EgressScript' runs: itself.
+egressRun :: EgressScript -> DiffusionScript
+egressRun (EgressScript ds) = ds
+
+-- | Scheduled egress for a property that builds its own script: generated
+-- on, shrunk off first, then by its parameters.
+newtype Egress = Egress (Maybe EgressArgs)
+  deriving Show
+
+instance Arbitrary Egress where
+    arbitrary = Egress . Just <$> arbitrary
+    shrink (Egress Nothing)       = []
+    shrink (Egress (Just egress)) = Egress Nothing : map (Egress . Just) (shrink egress)
+
+-- | A script with its egress set to @egress@.
+withEgress :: Egress -> DiffusionScript -> DiffusionScript
+withEgress (Egress egress) (DiffusionScript sa dm nodes) =
+  DiffusionScript sa { saEgress = egress } dm nodes
 
 -- | Run an arbitrary topology in `IOSim`.
 -- This runs the simulator with the Ouroboros churn mechanism.
@@ -1230,6 +1349,7 @@ diffusionSimulationM
             , saQuota                 = quota
             , saTxDecisionPolicy      = txDecisionPolicy
             , saTxOutboundVersion     = txOutboundVersion
+            , saEgress                = egress
             }
             NodeArgs
             { naSeed                   = seed
@@ -1401,6 +1521,7 @@ diffusionSimulationM
               , Node.aTxDecisionPolicy     = txDecisionPolicy
               , Node.aTxs                  = txs
               , Node.aMuxCountersInterval  = muxCountersInterval
+              , Node.aEgressScheduling     = egressScheduling <$> egress
               }
 
           tracers = mkTracers addr nodeId

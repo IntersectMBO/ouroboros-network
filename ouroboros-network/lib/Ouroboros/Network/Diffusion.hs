@@ -25,9 +25,7 @@ import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (IOException)
-#if !defined(mingw32_HOST_OS) && !defined(wasm32_HOST_ARCH)
 import Control.Monad (when)
-#endif
 import Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import Control.Monad.Class.MonadAsync qualified as Async
 import Control.Monad.Class.MonadFork
@@ -45,15 +43,15 @@ import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes, isJust)
+import Data.Maybe (catMaybes, isJust, maybeToList)
 import Data.Typeable (Proxy (..), Typeable)
 import Data.Void (Void)
 import System.Exit (ExitCode)
-import System.Random (StdGen, newStdGen, splitGen)
+import System.Random (StdGen, genWord64, newStdGen, splitGen)
 
 import Network.DNS (Resolver)
 import Network.Mux qualified as Mx
-import Network.Mux.Bearer (withReadBufferIO)
+import Network.Mux.Bearer (makeSocketBearerWith, withReadBufferIO)
 import Network.Mux.Types
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
@@ -65,6 +63,8 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context (ExpandedInitiatorContext)
 import Ouroboros.Network.Diffusion.Configuration
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
+import Ouroboros.Network.Diffusion.PoolAllowances
+import Ouroboros.Network.Diffusion.PoolRelays
 import Ouroboros.Network.Diffusion.Types
 import Ouroboros.Network.Diffusion.Utils
 import Ouroboros.Network.ExitPolicy
@@ -85,8 +85,7 @@ import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (LocalAddress (..), LocalSocket (..),
-           RemoteAddress, localSocketFileDescriptor, makeLocalBearer,
-           makeSocketBearer')
+           RemoteAddress, localSocketFileDescriptor, makeLocalBearer)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 import Ouroboros.Network.Util (PrettyShow (..))
@@ -202,6 +201,7 @@ runM Interfaces
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
        , dtMuxCountersTracer
+       , dtPoolRelaysTracer
        }
      Arguments
        { daNtnDataFlow
@@ -220,6 +220,9 @@ runM Interfaces
        , daPeerChurnGovernor
        , daExtraChurnArgs
        , daSRVPrefix
+       , daEgressPoolKey
+       , daFreshBytes
+       , daFreshMaxBytes
        }
      Configuration
        { dcIPv4Address
@@ -241,6 +244,7 @@ runM Interfaces
        , dcMuxForkPolicy
        , dcLocalMuxForkPolicy
        , dcMuxCountersInterval
+       , dcEgressScheduling
        }
      Applications
        { daApplicationInitiatorMode
@@ -254,12 +258,26 @@ runM Interfaces
        , daPeerSharingRegistry
        }
   = do
+    -- Scheduled egress, when configured: the buckets behind it, shared by
+    -- every node-to-node mux and read by the counters loop, and the
+    -- residual tier's credit buckets, one per big-ledger pool, refilled by
+    -- the bytes the chain freshly announces and sized by the most one
+    -- announcement can carry, both read from consensus; a stranger's own
+    -- bucket is locked for 'esStrangerLock' of wall-clock time from its
+    -- connection
+    egress <- traverse (\es -> (,,) es <$> mkEgressPolicy es
+                                       <*> newPoolAllowances (Allowance <$> daFreshMaxBytes)
+                                                             (Fresh <$> daFreshBytes)
+                                                             (esStrangerLock es))
+                       dcEgressScheduling
+
     -- The mux counters, traced every interval for as long as diffusion runs:
     -- a set for the node-to-node muxes and, with a local address, one for
     -- the node-to-client muxes; at an interval of zero, or less, none. If we
     -- have a local address, race the remote and local threads. Otherwise
     -- just launch the remote thread.
-    Mx.withCounters dcMuxCountersInterval (isJust dcLocalAddress) dtMuxCountersTracer $
+    Mx.withCounters dcMuxCountersInterval (isJust dcLocalAddress)
+                    ((\(_, policy, _) -> Mx.egressBuckets policy) <$> egress) dtMuxCountersTracer $
       \muxCounters localMuxCounters -> do
         -- Thread to which 'RethrowPolicy' will throw fatal exceptions: the
         -- one that runs the remote thread, or waits on its race with the
@@ -268,11 +286,11 @@ runM Interfaces
         case dcLocalAddress of
           Just addr ->
             fmap (either id id) $
-              mkRemoteThread mainThreadId muxCounters
+              mkRemoteThread mainThreadId muxCounters egress
               `Async.race`
               mkLocalThread mainThreadId addr localMuxCounters
           Nothing ->
-              mkRemoteThread mainThreadId muxCounters
+              mkRemoteThread mainThreadId muxCounters egress
 
   where
     (ledgerPeersRng, rng1) = splitGen diRng
@@ -280,7 +298,27 @@ runM Interfaces
     (fuzzRng,        rng3) = splitGen rng2
     (cmLocalStdGen,  rng4) = splitGen rng3
     (cmStdGen1,      rng5) = splitGen rng4
-    (cmStdGen2, peerSelectionActionsRng) = splitGen rng5
+    (cmStdGen2,      rng6) = splitGen rng5
+    (egressRng,      rng7) = splitGen rng6
+    peerSelectionActionsRng = rng7
+
+    -- the buckets behind scheduled egress, shared by every node-to-node
+    -- connection; the rotation's seed comes from the diffusion RNG
+    mkEgressPolicy :: EgressScheduling -> m (Mx.EgressPolicy m)
+    mkEgressPolicy EgressScheduling { esBudget, esCapacity, esSlicePercent, esFloorPercent,
+                                      esRotationPeriod, esLaneOf } = do
+      let rotation = Mx.Rotation { Mx.roSeed      = fst (genWord64 egressRng)
+                                 , Mx.roPeriod    = esRotationPeriod
+                                 , Mx.roTurnsFrom = restTier }
+      budget <- Mx.newBucket esBudget esCapacity (Just rotation)
+      when (esFloorPercent > 0) $
+        Mx.attachFloor budget (fromIntegral esFloorPercent / 100)
+      slice  <- if esSlicePercent > 0
+                   then Just <$> Mx.newBucket (esBudget * fromIntegral esSlicePercent / 100)
+                                              esCapacity Nothing
+                   else return Nothing
+      return Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = slice,
+                               Mx.egressLaneOf = esLaneOf }
 
     mkInboundPeersMap :: IG.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing
@@ -354,6 +392,7 @@ runM Interfaces
                 }
                 dcLocalMuxForkPolicy
                 localMuxCounters
+                Nothing                       -- node-to-client egress is not scheduled
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -423,8 +462,10 @@ runM Interfaces
 
     -- | mkRemoteThread - create remote connection manager
     --
-    mkRemoteThread :: ThreadId m -> Maybe (Mx.Counters m) -> m Void
-    mkRemoteThread mainThreadId muxCounters = do
+    mkRemoteThread :: ThreadId m -> Maybe (Mx.Counters m)
+                   -> Maybe (EgressScheduling, Mx.EgressPolicy m, PoolAllowances m ntnAddr)
+                   -> m Void
+    mkRemoteThread mainThreadId muxCounters egress = do
       labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
@@ -460,6 +501,35 @@ runM Interfaces
                            (Nothing, Nothing) -> throwIO NoSocket
 
       localRootsVar <- newTVarIO mempty
+
+      -- a peer's standing, read as its bearer joins the queue: a local root,
+      -- a partner of long standing, a duplex peer hot both ways for
+      -- 'esTenureThreshold', or one of the rest, whom the credit buckets
+      -- then class
+      let standingOf :: DiffTime -> ntnAddr -> DataFlow -> STM m Bool -> Time -> STM m Standing
+          standingOf tenureThreshold addr dataFlow remoteHot now = do
+            groups <- readTVar localRootsVar
+            if any (\(_, _, m) -> Map.member addr m) groups
+               then return LocalRoot
+               else do
+                 since <- Map.lookup addr . PeerSelection.hotUpstreamSince
+                            <$> readTVar dcPublicPeerSelectionVar
+                 partner <- case since of
+                                 Just t | Duplex <- dataFlow
+                                        , now `diffTime` t >= tenureThreshold -> remoteHot
+                                 _ -> return False
+                 return (if partner then Partner else Other)
+
+          -- per connection: its rank rule and the sink its scheduled bytes
+          -- go to, sharing the buckets of its pool or its own
+          egressRuleOf :: EgressScheduling -> PoolAllowances m ntnAddr -> EgressPolicyRule m ntnAddr
+          egressRuleOf es allowances addr dataFlow remoteHot = do
+            now <- getMonotonicTime
+            mkEgressRule allowances (esUnchargedProtocols es) (daEgressPoolKey addr)
+                         (standingOf (esTenureThreshold es) addr dataFlow remoteHot) now
+
+          -- the connection handler's: the policy with the rule
+          egressHandler = (\(es, policy, allowances) -> (policy, egressRuleOf es allowances)) <$> egress
 
       -- churn will set initial targets
       peerSelectionTargetsVar <- newTVarIO PeerSelection.nullPeerSelectionTargets
@@ -538,6 +608,7 @@ runM Interfaces
               }
               dcMuxForkPolicy
               muxCounters
+              egressHandler
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
@@ -608,6 +679,38 @@ runM Interfaces
               paToPeerAddr = diNtnToPeerAddr
             , paDnsActions = diDnsActions dtDnsTracer lookupReqs diNtnToPeerAddr
             }
+
+          -- the thread that keeps the credit buckets' address index in step
+          -- with the ledger's big pools, when egress is scheduled and the
+          -- node serves: an initiator-only node queues nothing at the pool
+          -- tier. On lookup workers of its own, so the governor's lookups
+          -- never wait on it
+          withPoolRelays :: forall x. (Maybe (Async m Void) -> m x) -> m x
+          withPoolRelays k =
+            case (diffusionMode, egress) of
+                 (InitiatorAndResponderDiffusionMode, Just (_, _, allowances)) ->
+                   Async.withAsync
+                     (do labelThisThread "Pool relays"
+                         poolRelaysThread PoolRelaysArgs {
+                             prTracer       = dtPoolRelaysTracer,
+                             prConsensus    = daLedgerPeersCtx,
+                             prUseLedger    = dcReadUseLedgerPeers,
+                             prSnapshot     = dcReadLedgerPeerSnapshot,
+                             prSRVPrefix    = daSRVPrefix,
+                             prDNS          = dnsActions,
+                             prAddressKey   = daEgressPoolKey,
+                             -- the ledger peers thread's cadence, a different
+                             -- prime so the two never fall into step; stake
+                             -- changes once an epoch, relays whenever a pool
+                             -- re-registers, and a relay that moved sits in
+                             -- the stranger class until the next poll
+                             prPollInterval = 1871,
+                             -- a boot before DNS answers, or a poll that
+                             -- failed, is tried again sooner
+                             prRetryInterval = 61
+                           } allowances)
+                     (k . Just)
+                 _ -> k Nothing
       --
       -- Run peer selection (p2p governor)
       --
@@ -772,7 +875,8 @@ runM Interfaces
       --
       -- Part (b): capturing the major control-flow of runM:
       --
-      case diffusionMode of
+      withPoolRelays $ \poolRelaysThread_m ->
+       case diffusionMode of
 
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
@@ -793,7 +897,8 @@ runM Interfaces
                       peerChurnGovernor' $ \churnGovernorThread ->
                       -- wait for any thread to fail:
                       snd <$> Async.waitAny
-                                [ledgerPeersThread, localRootPeersProviderThread, governorThread, churnGovernorThread]
+                                ([ledgerPeersThread, localRootPeersProviderThread, governorThread, churnGovernorThread]
+                                 ++ maybeToList poolRelaysThread_m)
 
         -- InitiatorAndResponder mode, run peer selection and the server:
         InitiatorAndResponderDiffusionMode -> do
@@ -828,12 +933,12 @@ runM Interfaces
                                                       peerChurnGovernor') $
                                     \churnGovernorThread ->
                                       -- wait for any thread to fail:
-                                      snd <$> Async.waitAny [ ledgerPeersThread
-                                                            , localRootPeersProviderThread
-                                                            , governorThread
-                                                            , churnGovernorThread
-                                                            , inboundGovernorThread
-                                                            ]
+                                      snd <$> Async.waitAny ([ ledgerPeersThread
+                                                             , localRootPeersProviderThread
+                                                             , governorThread
+                                                             , churnGovernorThread
+                                                             , inboundGovernorThread
+                                                             ] ++ maybeToList poolRelaysThread_m)
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
@@ -921,6 +1026,7 @@ run extraParams tracers args apps = do
          $ withIOManager $ \iocp -> do
 
              interfaces <- mkInterfaces iocp tracer (dcEgressPollInterval args)
+                                        (dcEgressScheduling args >>= esNotSentLowWat)
 
              runM interfaces
                   tracers
@@ -934,14 +1040,15 @@ run extraParams tracers args apps = do
 
 mkInterfaces :: IOManager
              -> Tracer IO (DiffusionTracer ntnAddr LocalAddress)
-             -> DiffTime
+             -> DiffTime      -- ^ mux egress poll interval
+             -> Maybe Int     -- ^ TCP_NOTSENT_LOWAT for node-to-node sockets
              -> IO (Interfaces Socket
                                RemoteAddress
                                LocalSocket
                                LocalAddress
                                Resolver
                                IO)
-mkInterfaces iocp tracer egressPollInterval = do
+mkInterfaces iocp tracer egressPollInterval notSentLowWat = do
   diRng <- newStdGen
   diConnStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
 
@@ -950,7 +1057,7 @@ mkInterfaces iocp tracer egressPollInterval = do
 
   return $ Interfaces {
     diNtnSnocket                = Snocket.socketSnocket iocp,
-    diNtnBearer                 = makeSocketBearer' egressInterval,
+    diNtnBearer                 = makeSocketBearerWith egressInterval notSentLowWat,
     diWithBuffer                = withReadBufferIO,
     diNtnConfigureSocket        = configureSocket,
     diNtnConfigureSystemdSocket =

@@ -16,6 +16,7 @@ module Cardano.Network.Diffusion.Configuration
   , TxSubmissionLogicVersion (..)
   , defaultTxSubmissionLogicVersion
   , defaultNodeTxSubmissionConfig
+  , defaultEgressScheduling
   , srvPrefix
     -- * Re-exports
   , ChainSyncIdleTimeout (..)
@@ -28,9 +29,14 @@ module Cardano.Network.Diffusion.Configuration
   ) where
 
 import Cardano.Network.NodeToNode (MiniProtocolParameters (..),
-           NodeTxSubmissionConfig (..), mkDefaultMiniProtocolParameters)
+           NodeTxSubmissionConfig (..), keepAliveMiniProtocolNum,
+           mkDefaultMiniProtocolParameters, txSubmissionMiniProtocolNum)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (NumberOfBigLedgerPeers (..))
+import Network.Mux qualified as Mx
+import Network.Mux.Types (MiniProtocolDir (..))
+import Ouroboros.Network.Diffusion.Configuration qualified as Diffusion
+import Ouroboros.Network.Diffusion.Types (EgressScheduling (..))
 
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
            GenesisBlockFetchConfiguration (..))
@@ -42,6 +48,28 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncIdleTimeout (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy qualified as V2
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TxSubmissionLogicVersion (..))
+
+-- | Scheduled egress ('Diffusion.defaultEgressSchedulingWith'):
+--
+-- Responder traffic is ranked in the budget's bucket, its own requests go
+-- direct, and the tx bodies its peers pull go in the reserved slice. In
+-- tx-submission the responder is the side that asks, so its requests go
+-- direct too, and the initiator's replies, the bodies, are the slice's.
+--
+-- Under a saturated budget the ranked order serves the rest tier, peers
+-- with neither standing nor credit, only with what the others leave, so a
+-- reply there can outwait the remote's time limit (chain-sync's is the
+-- shortest) and cost the connection: under load the node sheds the peers
+-- it neither depends on nor has credited, by their own timeouts.
+defaultEgressScheduling :: EgressScheduling
+defaultEgressScheduling = (Diffusion.defaultEgressSchedulingWith laneOf) {
+    -- one small reply per request, nothing a client can drive to volume
+    esUnchargedProtocols = [keepAliveMiniProtocolNum]
+  }
+  where
+    laneOf num InitiatorDir | num == txSubmissionMiniProtocolNum = Mx.Slice
+    laneOf num ResponderDir | num == txSubmissionMiniProtocolNum = Mx.Direct
+    laneOf num dir = Mx.directionSplit num dir
 
 -- | Default number of bootstrap peers
 --

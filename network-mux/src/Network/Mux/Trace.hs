@@ -17,6 +17,7 @@ module Network.Mux.Trace
   , handleIOException
     -- * Trace events
   , Trace (..)
+  , Rank (..)
   , ChannelTrace (..)
   , BearerTrace (..)
     -- * Tracers
@@ -177,6 +178,8 @@ data Trace =
     | TraceStarting
     | TraceStopping
     | TraceStopped
+    | TraceEgressRank Rank
+      -- ^ the tier this mux's peer is served in
 
 instance Show Trace where
     show (TraceState new) =
@@ -216,6 +219,7 @@ instance Show Trace where
     show TraceStarting = "Mux starting"
     show TraceStopping = "Mux stopping"
     show TraceStopped  = "Mux stoppped"
+    show (TraceEgressRank rank) = "Egress rank " ++ show rank
 
 
 -- | Bundle of tracers used directly by mux.

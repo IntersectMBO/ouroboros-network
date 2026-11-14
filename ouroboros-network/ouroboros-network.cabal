@@ -229,6 +229,8 @@ library
     Ouroboros.Network.Diffusion
     Ouroboros.Network.Diffusion.Configuration
     Ouroboros.Network.Diffusion.Policies
+    Ouroboros.Network.Diffusion.PoolAllowances
+    Ouroboros.Network.Diffusion.PoolRelays
     Ouroboros.Network.Diffusion.Topology
     Ouroboros.Network.Diffusion.Types
     Ouroboros.Network.Diffusion.Utils
@@ -1013,6 +1015,9 @@ library ouroboros-network-tests-lib
     Test.Ouroboros.Network.PeerSelection.PeerGraph
     Test.Ouroboros.Network.PeerSelection.PeerMetric
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+    Test.Ouroboros.Network.Diffusion.EgressRule
+    Test.Ouroboros.Network.Diffusion.PoolAllowances
+    Test.Ouroboros.Network.Diffusion.PoolRelays
     Test.Ouroboros.Network.TxSubmission
     Test.Ouroboros.Network.TxSubmission.AppV1
     Test.Ouroboros.Network.TxSubmission.AppV2
@@ -1032,10 +1037,19 @@ test-suite ouroboros-network-sim-tests
   type: exitcode-stdio-1.0
   hs-source-dirs: tests/sim
   main-is: Main.hs
+  other-modules:
+    Test.Ouroboros.Network.Tracing.MuxCounters
+
   build-depends:
+    QuickCheck,
     base >=4.14 && <4.23,
-    ouroboros-network:{ouroboros-network-tests-lib, protocols-tests-lib},
+    containers,
+    io-classes:si-timers,
+    network-mux,
+    ouroboros-network:{ouroboros-network-tests-lib, protocols-tests-lib, tracing},
     tasty,
+    tasty-quickcheck,
+    trace-dispatcher,
     with-utf8,
 
   ghc-options:
@@ -1059,6 +1073,7 @@ test-suite ouroboros-network-io-tests
   hs-source-dirs: tests/io
   main-is: Main.hs
   other-modules:
+    Test.Ouroboros.Network.Diffusion.PoolRelays.IO
     Test.Ouroboros.Network.Pipe
     Test.Ouroboros.Network.Socket
 
@@ -1074,7 +1089,8 @@ test-suite ouroboros-network-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{api, api-tests-lib, framework, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, protocols, protocols-tests-lib, tests-lib},
+    random,
     serialise,
     tasty,
     tasty-quickcheck,
