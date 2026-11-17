@@ -1664,12 +1664,16 @@ prop_TxSubmissionImpairmentState_shrinkValid st = conjoin
   | s <- shrink st
   ]
 
+-- | The wrapper's own shrinks, the base state's assembled with the
+-- impairment map cut down and the map's own: each differs from the
+-- input, as the assembled state, not as the map alone.
 prop_TxSubmissionImpairmentState_shrinkSmaller :: TxSubmissionImpairmentState -> Property
 prop_TxSubmissionImpairmentState_shrinkSmaller st = conjoin
-  [ counterexample ("shrink emitted self: " ++ show s) (s /= st)
-  | s <- shrink st
+  [ counterexample ("shrink emitted self: " ++ show st') (st' /= st)
+  | st' <- shrink st
   ]
 
+-- | The wrapper's own shrinks contain no duplicates.
 prop_TxSubmissionImpairmentState_shrinkNoDups :: TxSubmissionImpairmentState -> Property
 prop_TxSubmissionImpairmentState_shrinkNoDups st =
   let shrunk = shrink st in
@@ -1944,10 +1948,14 @@ prop_TxSubmissionDisconnectState_shrinkValid :: TxSubmissionDisconnectState -> P
 prop_TxSubmissionDisconnectState_shrinkValid st = conjoin
   [ counterexample (show s) (validTxSubmissionDisconnectState s) | s <- shrink st ]
 
+-- | The wrapper's own shrinks, the base state's assembled with the
+-- schedule cut down and the schedule's own: each differs from the input,
+-- as the assembled state, not as the schedule alone.
 prop_TxSubmissionDisconnectState_shrinkSmaller :: TxSubmissionDisconnectState -> Property
 prop_TxSubmissionDisconnectState_shrinkSmaller st = conjoin
-  [ counterexample ("shrink emitted self: " ++ show s) (s /= st) | s <- shrink st ]
+  [ counterexample ("shrink emitted self: " ++ show st') (st' /= st) | st' <- shrink st ]
 
+-- | The wrapper's own shrinks contain no duplicates.
 prop_TxSubmissionDisconnectState_shrinkNoDups :: TxSubmissionDisconnectState -> Property
 prop_TxSubmissionDisconnectState_shrinkNoDups st =
   let shrunk = shrink st in
