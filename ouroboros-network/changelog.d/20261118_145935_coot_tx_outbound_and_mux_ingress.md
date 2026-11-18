@@ -5,15 +5,14 @@ Uncomment the section that is right (remove the HTML comment wrapper).
 For top level release notes, leave all the headers commented out.
 -->
 
-<!--
-### Breaking
-
-- A bullet item for the Breaking category.
-
--->
-
 ### Non-Breaking
 
+- `txSubmissionOutbound`: each entry of the unacknowledged txids can be
+  requested only once.  A request for a `txid` is served from its first
+  entry which was not requested yet, so a `txid` announced again (its tx left
+  the mempool and was added again) can be requested again.  Requesting
+  a `txid` all of whose entries were already requested is a protocol error
+  (`ProtocolErrorDuplicateTxIds`).
 - `mkMiniProtocolInfos` and `toMiniProtocolInfos` set the start mode of each
   `MiniProtocolInfo`: initiators are started eagerly, responders according to
   `miniProtocolStart`.

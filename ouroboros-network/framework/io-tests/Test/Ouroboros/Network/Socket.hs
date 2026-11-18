@@ -116,9 +116,9 @@ testProtocols2 reqResp =
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = MiniProtocolLimits {
-                               maximumIngressQueue = defaultMiniProtocolLimit
-                             },
+        miniProtocolLimits = symmetricLimits MiniProtocolLimits {
+                                               maximumIngressQueue = defaultMiniProtocolLimit
+                                             },
         miniProtocolRun    = reqResp
       }
     ]

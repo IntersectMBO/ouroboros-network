@@ -129,6 +129,7 @@ import Cardano.Network.Protocol.KeepAlive.Type qualified as KeepAlive
 import Ouroboros.Network.Block hiding (blockNo)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.Mux (DirectionalLimits (..))
 import Ouroboros.Network.Protocol.Handshake hiding (Accept (..),
            RefuseReason (..))
 import Ouroboros.Network.Util.ShowProxy
@@ -1319,7 +1320,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                                                        NodeToClient -> NodeToClient.localChainSyncMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
                             miniProtocolLimits     = case protocol of
-                                                       NodeToNode -> NodeToNode.chainSyncProtocolLimits NodeToNode.defaultMiniProtocolParameters
+                                                       NodeToNode -> initiatorLimits (NodeToNode.chainSyncProtocolLimits NodeToNode.defaultMiniProtocolParameters)
                                                        NodeToClient -> NodeToClient.maximumMiniProtocolLimits,
                             miniProtocolCapability = Nothing,
                             miniProtocolStartMode  = Mx.StartEagerly
@@ -1358,7 +1359,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                           [MiniProtocolInfo {
                             miniProtocolNum        = NodeToNode.keepAliveMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
-                            miniProtocolLimits     = NodeToNode.keepAliveProtocolLimits NodeToNode.defaultMiniProtocolParameters,
+                            miniProtocolLimits     = initiatorLimits (NodeToNode.keepAliveProtocolLimits NodeToNode.defaultMiniProtocolParameters),
                             miniProtocolCapability = Nothing,
                             miniProtocolStartMode  = Mx.StartEagerly
                           }]

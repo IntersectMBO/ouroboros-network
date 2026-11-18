@@ -322,7 +322,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
             in MiniProtocol {
                 miniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                miniProtocolLimits = symmetricLimits (Mux.MiniProtocolLimits maxBound),
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     miniProtocolNum
@@ -334,7 +334,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
             in MiniProtocol {
                 miniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                miniProtocolLimits = symmetricLimits (Mux.MiniProtocolLimits maxBound),
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     miniProtocolNum
@@ -346,7 +346,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
             in MiniProtocol {
                 miniProtocolNum,
                 miniProtocolStart  = StartOnDemandAny,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                miniProtocolLimits = symmetricLimits (Mux.MiniProtocolLimits maxBound),
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     (Mux.MiniProtocolNum 3)
