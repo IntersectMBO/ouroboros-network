@@ -129,6 +129,11 @@ tests =
   , testProperty "async exception in cleanup (IO)"  unit_mux_async_exception_in_cleanup_io
   , testProperty "kill before the peer closes (Sim)" unit_mux_kill_then_close_iosim
   , testProperty "kill before the peer closes (IO)"  unit_mux_kill_then_close_io
+  , testGroup "unexpected ingress" $ concat
+      [ [ testProperty (show ingressCase ++ " (Sim)") (prop_mux_ingress_not_running_iosim ingressCase)
+        , testProperty (show ingressCase ++ " (IO)")  (prop_mux_ingress_not_running_io ingressCase)
+        ]
+      | ingressCase <- [minBound .. maxBound] ]
   , testGroup "Counters"
     [ testGroup "each failure is counted once, where it belongs"
         [ testProperty (show failure) (once (prop_mux_counters_failure failure))
@@ -421,7 +426,7 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
                        miniProtocolDir = Mx.ResponderDirectionOnly,
                        miniProtocolLimits = defaultMiniProtocolLimits,
                        miniProtocolCapability = Nothing,
-                       miniProtocolStartMode  = Mx.StartEagerly
+                       miniProtocolStartMode  = Mx.StartOnDemand
                      }
 
     clientMux <- Mx.new clientTracer Nothing [clientApp]
@@ -2776,7 +2781,7 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
                       miniProtocolDir = Mx.ResponderDirectionOnly,
                       miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
                       miniProtocolCapability = Nothing,
-                      miniProtocolStartMode  = Mx.StartEagerly
+                      miniProtocolStartMode  = Mx.StartOnDemand
                     }
                   ]
     withAsync (Mx.run mux bearer) $ \_ -> do
@@ -2925,6 +2930,7 @@ compareErrors Mx.UnknownMiniProtocol {} Mx.UnknownMiniProtocol {} = True
 compareErrors Mx.BearerClosed {}        Mx.BearerClosed {}        = True
 compareErrors Mx.IngressQueueOverRun {} Mx.IngressQueueOverRun {} = True
 compareErrors Mx.InitiatorOnly {}       Mx.InitiatorOnly {}       = True
+compareErrors Mx.UnexpectedIngress {}   Mx.UnexpectedIngress {}   = True
 compareErrors Mx.IOException {}         Mx.IOException {}         = True
 compareErrors Mx.SDUDecodeError {}      Mx.SDUDecodeError {}      = True
 compareErrors Mx.SDUReadTimeout {}      Mx.SDUReadTimeout {}      = True
@@ -3252,8 +3258,8 @@ resetError = errnoToIOError "recv" eCONNRESET Nothing Nothing
 -- last bytes, fails the mux, counted as that mini-protocol's failure.
 data MuxFailure = ReadTimeout | ReadError | ReadReset | ReadResetIdle | PeerClosed | PeerClosedIdle
                 | PeerClosedKilled | PeerClosedKilledDraining | DecodeError | UnknownProtocol
-                | InitiatorOnlyData | Overrun | ReadOther | WriteTimeout | WriteError | WriteReset
-                | WriteResetIdle | WriteOther | ProtocolFailure
+                | InitiatorOnlyData | IdleEagerData | Overrun | ReadOther | WriteTimeout | WriteError | WriteReset
+                | WriteResetIdle | WriteOther | ProtocolFailure | EagerTrailing
   deriving (Show, Eq, Enum, Bounded)
 
 -- | A mux that fails in the given way counts that failure, once, and nothing
@@ -3300,6 +3306,7 @@ prop_mux_counters_failure failure =
       DecodeError              -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
       UnknownProtocol          -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
       InitiatorOnlyData        -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
+      IdleEagerData            -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
       PeerClosed               -> failed Mx.noFailures { Mx.mfPeerClosed = 1 }
       PeerClosedIdle           -> failed Mx.noFailures
       -- a kill fails the mux before the peer closes
@@ -3309,6 +3316,9 @@ prop_mux_counters_failure failure =
                                     { Mx.mfMiniProtocols = M.singleton (num, Mx.InitiatorDir) 1 }
       ProtocolFailure          -> failed Mx.noFailures
                                     { Mx.mfMiniProtocols = M.singleton (num, Mx.InitiatorDir) 1 }
+      -- trailing bytes left by a mini-protocol started eagerly are the
+      -- peer's protocol error
+      EagerTrailing            -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
 
     -- The failures, and no bytes.
     failed :: Mx.Failures -> Mx.Counts
@@ -3456,7 +3466,14 @@ prop_mux_counters_failure failure =
              UnknownProtocol          -> fromPeer (sdu (Mx.MiniProtocolNum 99) Mx.ResponderDir x)
              -- Data from an initiator, for a responder this mux does not run.
              InitiatorOnlyData        -> fromPeer (sdu num Mx.InitiatorDir x)
-             Overrun                  -> fromPeer (sdu num Mx.ResponderDir (BL.replicate 100 0))
+             -- Data from a responder, for the initiator, which is started
+             -- eagerly but is not running.
+             IdleEagerData            -> fromPeer (sdu num Mx.ResponderDir x)
+             -- The initiator runs, but doesn't read, so the data overruns its
+             -- queue.
+             Overrun                  -> do
+               initiator (\_ -> threadDelay 3600)
+               fromPeer (sdu num Mx.ResponderDir (BL.replicate 100 0))
              WriteTimeout             -> initiator (\chan -> Mx.send chan x)
              WriteError               -> initiator (\chan -> Mx.send chan x)
              WriteReset               -> initiator $ \chan ->
@@ -3466,6 +3483,9 @@ prop_mux_counters_failure failure =
              PeerClosed               -> initiator (\chan -> nowRunning >> void (Mx.recv chan))
              ReadReset                -> initiator (\chan -> nowRunning >> void (Mx.recv chan))
              ProtocolFailure          -> initiator (\_ -> throwIO protocolBroken)
+             EagerTrailing            ->
+               void $ Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly
+                        (\_ -> return ((), Just x))
              PeerClosedKilled         -> do
                initiator $ \chan -> do
                  myThreadId >>= atomically . putTMVar tidVar
@@ -3562,7 +3582,282 @@ peerSDU num dir payload = Mx.SDU {
                                , Mx.mhLength    = fromIntegral (BL.length payload) },
     Mx.msBlob   = payload }
 
+-- | When data arrives for a mini-protocol which is not running, see
+-- 'prop_mux_ingress_not_running'.
+--
+data IngressCase =
+    EagerBeforeStart
+    -- ^ data for a mini-protocol started eagerly, before it was started
+  | EagerAfterFinish
+    -- ^ data for a mini-protocol started eagerly, after it finished
+  | EagerAfterKill
+    -- ^ data for a mini-protocol started eagerly, after it was killed; the
+    -- mux fails with 'Mx.MiniProtocolAsyncException'
+  | EagerTrailingBytes
+    -- ^ a mini-protocol started eagerly terminates leaving trailing bytes
+  | EagerUnreadIngress
+    -- ^ data for a mini-protocol started eagerly arrives while it runs, but
+    -- after its last read, so it is still queued when it terminates
+  | OnDemandBeforeStart
+    -- ^ data for a mini-protocol started on demand, before it was started
+  | OnDemandAfterFinish
+    -- ^ data for a mini-protocol started on demand, after it finished
+  | OnDemandAfterKill
+    -- ^ data for a mini-protocol started on demand, after it was killed; the
+    -- mux fails with 'Mx.MiniProtocolAsyncException'
+  deriving (Show, Eq, Enum, Bounded)
+
+-- | A mini-protocol started eagerly sends the opening message, so data
+-- received while it is not running (before it was started or after it
+-- finished), or bytes it leaves unread when it terminates, end the mux with
+-- 'Mx.UnexpectedIngress'.  Data received for a mini-protocol started on
+-- demand while it is not running is queued, and read once it runs.  A
+-- mini-protocol killed from outside, whatever its start mode, fails the mux
+-- with 'Mx.MiniProtocolAsyncException' (and the mux traces
+-- 'Mx.TraceMiniProtocolKilled'); data received for it in the meantime is
+-- discarded, rather than failing the mux with 'Mx.UnexpectedIngress' or
+-- 'Mx.IngressQueueOverRun': the peer might still reply to a request sent
+-- before the kill.  The data is counted, so all the bytes sent are counted
+-- as received.
+--
+prop_mux_ingress_not_running
+  :: forall m.
+     ( Alternative (STM m)
+     , MonadAsync m
+     , MonadDelay m
+     , MonadEvaluate m
+     , MonadFork m
+     , MonadLabelledSTM m
+     , MonadMask m
+     , MonadThrow (STM m)
+     , MonadTimer m
+     )
+  => DiffTime
+  -- ^ how long the mux has to fail, before it is considered running
+  -> IngressCase
+  -> NonEmptyByteString
+  -> NonEmptyByteString
+  -> Mx.MiniProtocolNum
+  -> m Property
+prop_mux_ingress_not_running settle ingressCase (NonEmptyByteString x0) (NonEmptyByteString y0) num =
+    label (show ingressCase) . counterexample (show ingressCase) <$> run
+  where
+    ingressLimit :: Int
+    ingressLimit = 4000
+
+    -- each payload is queued on its own, it must fit in the ingress queue, or
+    -- the mux fails with 'Mx.IngressQueueOverRun' instead
+    x, y :: BL.ByteString
+    x = BL.take (fromIntegral ingressLimit) x0
+    y = BL.take (fromIntegral ingressLimit) y0
+
+    startMode :: Mx.StartOnDemandOrEagerly
+    startMode = case ingressCase of
+      OnDemandBeforeStart -> Mx.StartOnDemand
+      OnDemandAfterFinish -> Mx.StartOnDemand
+      OnDemandAfterKill   -> Mx.StartOnDemand
+      _                   -> Mx.StartEagerly
+
+    run :: m Property
+    run = do
+      counters <- Counters.newCounters
+      writeQueue <- atomically $ newTBQueue 10
+      readQueue <- atomically $ newTBQueue 10
+      bearer <- getBearer makeQueueChannelBearer (-1)
+                  QueueChannel { writeQueue, readQueue } Nothing
+      let info :: MiniProtocolInfo Mx.InitiatorMode
+          info = MiniProtocolInfo {
+                   miniProtocolNum        = num,
+                   miniProtocolDir        = Mx.InitiatorDirectionOnly,
+                   miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = ingressLimit },
+                   miniProtocolCapability = Nothing,
+                   miniProtocolStartMode  = startMode
+                 }
+      -- mini-protocols killed from outside the mux, as traced by the mux
+      killedVar <- newTVarIO []
+      -- bytes sent to our initiator, SDU headers included
+      sentVar <- newTVarIO 0
+      -- set once all the data for a killed mini-protocol was sent
+      sentAfterKillVar <- newEmptyTMVarIO
+      let -- Bytes received for our initiator, as counted by the demuxer.
+          received :: STM m Word64
+          received = M.findWithDefault 0 (num, Mx.InitiatorDir) . Mx.mcReceived
+                 <$> Counters.readCounters counters
+
+          -- Wait until the demuxer processed all the bytes sent.
+          waitReceived :: m ()
+          waitReceived = atomically $ do
+            sent <- readTVar sentVar
+            received >>= check . (>= sent)
+
+          tracers :: Mx.Tracers m
+          tracers = Mx.nullTracers {
+              Mx.tracer = Tracer $ emit $ \(Identity ev) -> case ev of
+                Mx.TraceMiniProtocolKilled n d _ -> do
+                  atomically $ modifyTVar killedVar ((n, d) :)
+                  -- Hold the monitor, which traces the kill before it
+                  -- cancels anything, until the demuxer processed the data
+                  -- sent after the kill, or if the data was not counted
+                  -- (e.g. it overran the ingress queue), for a while.
+                  void $ timeout 5 $ do
+                    atomically $ readTMVar sentAfterKillVar
+                    waitReceived
+                _ -> return ()
+            }
+      mux <- Mx.new tracers (Just counters) [info]
+      let -- Data from the peer's responder, for our initiator.
+          sendBytes :: BL.ByteString -> m ()
+          sendBytes bs = atomically $ do
+            writeTBQueue readQueue (Mx.encodeSDU (peerSDU num Mx.ResponderDir bs))
+            modifyTVar sentVar (+ (fromIntegral Mx.msHeaderLength + fromIntegral (BL.length bs)))
+
+          runMiniProtocol :: (Mx.ByteChannel m -> m (a, Maybe BL.ByteString))
+                          -- ^ mini-protocol callback
+                          -> m (STM m (Either SomeException a))
+          runMiniProtocol = Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly
+
+          -- Read a message via mini-protocol `Channel`.
+          recvBytes :: Mx.ByteChannel m
+                    -> m (Maybe BL.ByteString, Maybe BL.ByteString)
+          recvBytes chan = (\msg -> (msg, Nothing)) <$> Mx.recv chan
+
+          waitStatus :: (Mx.MiniProtocolStatus -> Bool) -> m ()
+          waitStatus p = atomically $
+            Mx.miniProtocolStateMap mux M.! (num, Mx.InitiatorDir) >>= check . p
+
+      withAsync (Mx.run mux bearer) $ \muxA -> do
+        let -- The mux ends with 'UnexpectedIngress' for our initiator.
+            unexpectedIngress :: m Property
+            unexpectedIngress = do
+              res <- timeout 10 (waitCatch muxA)
+              return $ case res of
+                Just (Left e)
+                  | Just (Mx.UnexpectedIngress n d) <- fromException e
+                  , n == num
+                  , d == Mx.InitiatorDir
+                  -> property True
+                _ -> counterexample ("mux result: " ++ show res) False
+
+            -- Kill the mini-protocol run by the given callback (which should
+            -- block), then send it more data than its ingress queue can
+            -- hold: the mux traces the kill and fails with
+            -- 'Mx.MiniProtocolAsyncException', the data is discarded.  The
+            -- tracer holds the monitor until the demuxer processed the data.
+            -- The data is counted only if it is discarded: the filler alone
+            -- overruns the queue, and an SDU which overruns it is not
+            -- counted.
+            killThenSend :: (Mx.ByteChannel m -> m ())
+                         -> m Property
+            killThenSend app = do
+              tidVar <- newEmptyTMVarIO
+              _ <- runMiniProtocol $ \chan -> do
+                     myThreadId >>= atomically . putTMVar tidVar
+                     app chan
+                     return ((), Nothing)
+              tid <- atomically (takeTMVar tidVar)
+              throwTo tid AsyncCancelled
+              waitStatus (== Mx.StatusKilled)
+              sendBytes x
+              sendBytes (filler 5000)
+              atomically $ putTMVar sentAfterKillVar ()
+              muxRes <- timeout 10 (waitCatch muxA)
+              killed <- readTVarIO killedVar
+              (sent, recv) <- atomically $ (,) <$> readTVar sentVar <*> received
+              return $ counterexample ("mux result: " ++ show muxRes)
+                     $ counterexample ("killed: " ++ show killed)
+                     $ case muxRes of
+                         Just (Left e) | Just (Mx.MiniProtocolAsyncException n d err) <- fromException e
+                                       , Just AsyncCancelled <- fromException (toException err)
+                                       , n == num
+                                       , d == Mx.InitiatorDir
+                                       ->      killed === [(num, Mx.InitiatorDir)]
+                                          .&&. counterexample "received bytes" (recv === sent)
+                         _             -> property False
+
+            -- The mini-protocol read the given message, and the mux runs on.
+            readAndRunning :: BL.ByteString
+                           -> Either SomeException (Maybe BL.ByteString)
+                           -> m Property
+            readAndRunning msg res = do
+              threadDelay settle
+              muxRes <- poll muxA
+              return $ counterexample ("mini-protocol result: " ++ show res)
+                     $ counterexample ("mux result: " ++ show muxRes)
+                     $ case (res, muxRes) of
+                         (Right (Just msg'), Nothing) -> msg' === msg
+                         _                            -> property False
+
+        case ingressCase of
+          EagerBeforeStart -> do
+            sendBytes x
+            unexpectedIngress
+
+          EagerAfterFinish -> do
+            done <- runMiniProtocol (\_ -> return ((), Nothing))
+            _ <- atomically done
+            waitStatus (== Mx.StatusIdle)
+            sendBytes x
+            unexpectedIngress
+
+          EagerAfterKill ->
+            -- blocked on recv
+            killThenSend (void . Mx.recv)
+
+          EagerTrailingBytes -> do
+            _ <- runMiniProtocol (\_ -> return ((), Just x))
+            unexpectedIngress
+
+          EagerUnreadIngress -> do
+            proceed <- newEmptyTMVarIO
+            _ <- runMiniProtocol $ \_ -> do
+                   -- terminate, without reading, once the data was queued
+                   atomically (takeTMVar proceed)
+                   return ((), Nothing)
+            sendBytes x
+            waitReceived
+            atomically (putTMVar proceed ())
+            unexpectedIngress
+
+          OnDemandBeforeStart -> do
+            sendBytes x
+            waitReceived
+            done <- runMiniProtocol recvBytes
+            atomically done >>= readAndRunning x
+
+          OnDemandAfterFinish -> do
+            sendBytes x
+            done <- runMiniProtocol recvBytes
+            _ <- atomically done
+            waitStatus (== Mx.StatusIdle)
+            sendBytes y
+            waitReceived
+            done' <- runMiniProtocol recvBytes
+            atomically done' >>= readAndRunning y
+
+          OnDemandAfterKill -> do
+            -- start it with data, then kill it while it is blocked on recv
+            sendBytes y
+            killThenSend (\chan -> Mx.recv chan >> void (Mx.recv chan))
+
+
 -- | A payload of so many bytes.
+prop_mux_ingress_not_running_iosim :: IngressCase
+                                   -> NonEmptyByteString
+                                   -> NonEmptyByteString
+                                   -> Mx.MiniProtocolNum
+                                   -> Property
+prop_mux_ingress_not_running_iosim ingressCase x y num =
+    runSimOrThrow (prop_mux_ingress_not_running 1 ingressCase x y num)
+
+prop_mux_ingress_not_running_io :: IngressCase
+                                -> NonEmptyByteString
+                                -> NonEmptyByteString
+                                -> Mx.MiniProtocolNum
+                                -> Property
+prop_mux_ingress_not_running_io ingressCase x y num =
+    ioProperty (prop_mux_ingress_not_running 0.01 ingressCase x y num)
+
+
 data CleanupTestException = CleanupTestException
   deriving (Show, Eq)
 
@@ -3891,6 +4186,8 @@ demuxerErrors =
   , ( toException (Mx.UnknownMiniProtocol (Mx.MiniProtocolNum 99))
     , \f -> f { Mx.mfProtocolErrors = Mx.mfProtocolErrors f + 1 } )
   , ( toException (Mx.InitiatorOnly (Mx.MiniProtocolNum 2))
+    , \f -> f { Mx.mfProtocolErrors = Mx.mfProtocolErrors f + 1 } )
+  , ( toException (Mx.UnexpectedIngress (Mx.MiniProtocolNum 2) Mx.InitiatorDir)
     , \f -> f { Mx.mfProtocolErrors = Mx.mfProtocolErrors f + 1 } )
   , ( toException (Mx.SDUDecodeError "x")
     , \f -> f { Mx.mfProtocolErrors = Mx.mfProtocolErrors f + 1 } )
@@ -4444,13 +4741,16 @@ prop_mux_read_is_counted (ReadCase sdus cancelled) =
           bearer :: Mx.Bearer (IOSim s)
           bearer = modelledBearer (const deliver) (const (error "the demuxer does not write"))
 
+          -- The mini-protocols are never started; they are started on demand
+          -- so that the demuxer queues (and counts) the data delivered to
+          -- them.
           apps :: [MiniProtocolInfo Mx.InitiatorMode]
           apps = [ MiniProtocolInfo {
                        miniProtocolNum        = Mx.MiniProtocolNum n,
                        miniProtocolDir        = Mx.InitiatorDirectionOnly,
                        miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 4000 },
                        miniProtocolCapability = Nothing,
-                       miniProtocolStartMode  = Mx.StartEagerly }
+                       miniProtocolStartMode  = Mx.StartOnDemand }
                  | n <- readNums
                  ]
       mux  <- Mx.new Mx.nullTracers (Just counters) apps
@@ -4565,13 +4865,16 @@ prop_mux_read_on_the_deadline (DeadlineCase landing n bytes) =
           bearer :: Mx.Bearer (IOSim s)
           bearer = modelledBearer readNext (const (error "the demuxer does not write"))
 
+          -- The mini-protocols are never started; they are started on demand
+          -- so that the demuxer queues (and counts) the data delivered to
+          -- them.
           apps :: [MiniProtocolInfo Mx.InitiatorMode]
           apps = [ MiniProtocolInfo {
                        miniProtocolNum        = num,
                        miniProtocolDir        = Mx.InitiatorDirectionOnly,
                        miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 4000 },
                        miniProtocolCapability = Nothing,
-                       miniProtocolStartMode  = Mx.StartEagerly }
+                       miniProtocolStartMode  = Mx.StartOnDemand }
                  ]
       mux  <- Mx.new Mx.nullTracers (Just counters) apps
       muxA <- async (Mx.run mux bearer)

@@ -67,6 +67,10 @@ data Error = UnknownMiniProtocol MiniProtocolNum
            | InitiatorOnly MiniProtocolNum
            -- ^ thrown when data arrives on a responder channel when the
            -- mux was set up as an 'InitiatorApp'.
+           | UnexpectedIngress MiniProtocolNum MiniProtocolDir
+           -- ^ Data arrived while a 'StartEagerly' mini-protocol was idle, or
+           -- its callback finished with trailing bytes or unread data in the
+           -- ingress queue. The direction is the local one.
            | IOException IOException String
            -- ^ 'IOException' thrown by
 
@@ -92,6 +96,9 @@ instance Exception Error where
     BearerClosed msg              -> formatToString ( "bearer closed:" %+ F.shown) msg
     IngressQueueOverRun pnum pdir -> formatToString ("ingress queue overrun for" %+ F.shown %+ F.shown) pnum pdir
     InitiatorOnly pnum            -> formatToString ("received data on initiator only protocol" %+ F.shown) pnum
+    UnexpectedIngress pnum pdir   ->
+      formatToString ("unexpected ingress for eager mini-protocol" %+ F.shown %+ F.shown
+                      %+ "(data received while idle or left unread at exit)") pnum pdir
     IOException e msg             -> formatToString (F.string F.% ":" %+ F.string) (displayException e) msg
     SDUDecodeError msg            -> formatToString ("SDU decode error:" %+ F.string) msg
     SDUReadTimeout                -> "SDU read timeout expired"

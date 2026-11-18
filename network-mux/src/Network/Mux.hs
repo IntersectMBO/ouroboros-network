@@ -342,7 +342,8 @@ miniProtocolJob TracersI {
                   miniProtocolInfo =
                     MiniProtocolInfo {
                       miniProtocolNum,
-                      miniProtocolDir
+                      miniProtocolDir,
+                      miniProtocolStartMode
                     },
                   miniProtocolIngressQueue,
                   miniProtocolStatusVar
@@ -364,6 +365,21 @@ miniProtocolJob TracersI {
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
+        -- A mini-protocol started eagerly cannot receive data while it is
+        -- not running (see 'Network.Mux.Ingress.demuxer'), so neither
+        -- trailing bytes nor bytes still in its ingress queue are allowed
+        -- when it terminates.  The latter could have arrived after the
+        -- callback's last read, e.g. while this transaction waits for the
+        -- egress to drain.  The queue is checked in the transaction which
+        -- marks the mini-protocol idle, so any later data is rejected by the
+        -- demuxer.
+        case miniProtocolStartMode of
+          StartEagerly -> do
+            empty <- nullIngressQueue miniProtocolIngressQueue
+            -- guard that ingress queue and remainder are empty
+            unless (empty && nullRemainder remainder) $
+              throwSTM (UnexpectedIngress miniProtocolNum miniProtocolDirEnum)
+          _ -> pure ()
         -- The Wanton w is the SDUs that are queued but not yet sent for this job.
         -- Job threads will be prevented from exiting until all their SDUs have been
         -- transmitted unless an exception/error is encountered. In that case all
@@ -382,6 +398,9 @@ miniProtocolJob TracersI {
 
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
 
+    nullRemainder :: Maybe BL.ByteString -> Bool
+    nullRemainder Nothing          = True
+    nullRemainder (Just remainder) = BL.null remainder
 
     -- An asynchronous exception, thrown to the mini-protocol thread from
     -- outside the mux (or raised by the RTS), is not reported by the job pool
@@ -403,12 +422,19 @@ miniProtocolJob TracersI {
     -- in the wait for the muxer to take the last bytes, which lasts as
     -- long as the muxer's write. The exception is rethrown, so the thread
     -- still dies of it.
+    --
+    -- A killed mini-protocol is never run again on this mux, so the data in
+    -- its ingress queue is dropped; the demuxer discards any data which
+    -- arrives later (the remote side might be sending a reply to a request
+    -- sent before the kill).
     handleAsyncException :: SomeAsyncException -> m a
     handleAsyncException err = do
       atomically $ do
         done <- not <$> isEmptyTMVar completionVar
         unless done $ do
           writeTVar miniProtocolStatusVar StatusKilled
+          modifyTVar miniProtocolIngressQueue $ \q ->
+            q { iqLength = 0, iqBuilder = mempty }
           writeTQueue cmdQueue
             (CmdMiniProtocolKilled miniProtocolNum miniProtocolDirEnum err)
       throwIO err
@@ -992,6 +1018,9 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
 -- * With 'StartOnDemand', the thread is not started until the first data is
 --   received for this mini-protocol. This is appropriate for mini-protocols
 --   where the opening message is sent by the remote peer.
+--
+-- Data received for a mini-protocol started eagerly while it is not running
+-- is a protocol error ('UnexpectedIngress'): the mux terminates.
 --
 -- The result is a STM action to block and wait on the protocol completion.
 -- It is safe to call this completion action multiple times: it will always

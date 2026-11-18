@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiWayIf            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -60,7 +61,10 @@ flipMiniProtocolDir ResponderDir = InitiatorDir
 -- >        ░│ci│ │  │ │bi│ │br│░ and the bearer torn down.
 -- >        ░│ci│ │cr│ │bi│ │br│░
 -- >        ░└──┘ └──┘ └──┘ └──┘░ Every ingress queue has a dedicated thread which will
--- >        ░░│░░░░│░░░░│░░░░│░░░ read application encoded data from its queue.
+-- >        ░░│░░░░│░░░░│░░░░│░░░ read application encoded data from its queue. Data
+-- >          │    │    │    │    for a mini-protocol started eagerly which is not
+-- >          │    │    │    │    running is a protocol violation: an UnexpectedIngress
+-- >          │    │    │    │    exception is thrown.
 -- >          │    │    │    │
 -- >           application data
 -- >          │    │    │    │
@@ -92,6 +96,8 @@ data MiniProtocolDispatchInfo m =
      MiniProtocolDispatchInfo
        !(IngressQueue m)
        !Int
+       !StartOnDemandOrEagerly
+       !(StrictTVar m MiniProtocolStatus)
    | MiniProtocolDirUnused
 
 
@@ -126,23 +132,39 @@ demuxer ptcls tracer bearer =
       Nothing   -> throwIO (UnknownMiniProtocol (msNum sdu))
       Just MiniProtocolDirUnused ->
                    throwIO (InitiatorOnly (msNum sdu))
-      Just (MiniProtocolDispatchInfo q qMax) ->
+      Just (MiniProtocolDispatchInfo q qMax startMode statusVar) ->
         atomically $ do
+          status <- readTVar statusVar
+          -- A mini-protocol started eagerly is only allowed to receive data
+          -- while it is running; a killed one is handled below.
+          when (startMode == StartEagerly) $
+            case status of
+              StatusRunning -> pure ()
+              StatusKilled  -> pure ()
+              _ -> throwSTM $ UnexpectedIngress (msNum sdu)
+                                                (flipMiniProtocolDir $ msDir sdu)
           IngressQueueState len buf received <- readTVar q
           let !blobLen   = BL.length (msBlob sdu)
               !len'      = len + blobLen
               -- The bytes read for the mini-protocol, header included and
               -- the blob as delivered, in the write that queues them.
               !received' = received + fromIntegral msHeaderLength + fromIntegral blobLen
-          if len' <= fromIntegral qMax
-              then do
+          if | StatusKilled <- status
+             -- A mini-protocol killed by an asynchronous exception is never
+             -- run again on this mux, but the peer does not know it and might
+             -- still send a valid reply.  The data is discarded (but counted),
+             -- rather than queued or treated as a protocol violation.
+             -> writeTVar q $ IngressQueueState len buf received'
+             | len' <= fromIntegral qMax
+             -> do
                 let !buf' = if len == 0
                                then -- Don't copy the payload if the queue was empty
                                  lazyByteStringInsert $ msBlob sdu
                                else -- Copy payloads smaller than 128 bytes
                                  buf <> lazyByteStringThreshold 128 (msBlob sdu)
                 writeTVar q $ IngressQueueState len' buf' received'
-              else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
+             | otherwise
+             -> throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum
@@ -188,15 +210,18 @@ setupDispatchTable ptcls =
                                    (maxpix, ResponderDir)) ]
 
              -- And override with the ones actually used.
-         ++ [ ((pix, dir), MiniProtocolDispatchInfo q qMax)
+         ++ [ ((pix, dir), MiniProtocolDispatchInfo q qMax miniProtocolStartMode
+                                                    miniProtocolStatusVar)
             | MiniProtocolState {
                 miniProtocolInfo =
                   MiniProtocolInfo {
                     miniProtocolNum,
                     miniProtocolDir,
-                    miniProtocolLimits
+                    miniProtocolLimits,
+                    miniProtocolStartMode
                   },
-                miniProtocolIngressQueue = q
+                miniProtocolIngressQueue = q,
+                miniProtocolStatusVar
               } <- ptcls
             , let pix  =
                    case pnumArray ! miniProtocolNum of

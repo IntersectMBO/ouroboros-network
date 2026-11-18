@@ -1042,6 +1042,7 @@ labelMuxError e =
     Mx.BearerClosed {}        -> "bearer closed"
     Mx.IngressQueueOverRun {} -> "ingress queue over run"
     Mx.InitiatorOnly {}       -> "initiator only"
+    Mx.UnexpectedIngress {}   -> "unexpected ingress"
     Mx.IOException {}         -> "io exception"
     Mx.SDUDecodeError {}      -> "sdu decode error"
     Mx.SDUReadTimeout {}      -> "sdu read timeout"

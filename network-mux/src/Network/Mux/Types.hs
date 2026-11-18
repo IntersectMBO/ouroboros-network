@@ -26,6 +26,7 @@ module Network.Mux.Types
   , IngressQueue
   , IngressQueueState (..)
   , newIngressQueue
+  , nullIngressQueue
   , MiniProtocolIx
   , MiniProtocolDir (..)
   , protocolDirEnum
@@ -67,8 +68,7 @@ import Quiet
 
 import GHC.Generics (Generic)
 
-import Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, StrictTVar,
-           newTVarIO)
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
 
 import Network.Mux.Channel (ByteChannel, Channel (..))
@@ -182,11 +182,15 @@ deriving instance Show (MiniProtocolDirection (mode :: Mode))
 --
 data StartOnDemandOrEagerly =
     -- | Start a mini-protocol promptly.  Must be used when the initial message
-    -- is sent by this side.
+    -- is sent by this side.  Data received for such a mini-protocol while it
+    -- is not running, and trailing bytes left when it terminates, are
+    -- a protocol error ('Network.Mux.Trace.UnexpectedIngress').
     StartEagerly
     -- | Start a mini-protocol when data is received for the given
     -- mini-protocol.  Must be used only when initial message is sent by the
-    -- remote side.
+    -- remote side.  Data received while the mini-protocol is not running is
+    -- queued (up to its 'maximumIngressQueue'), and trailing bytes left when
+    -- it terminates are kept for its next run.
   | StartOnDemand
     -- | Like `StartOnDemand`, but start a mini-protocol if data is received for
     -- any mini-protocol set to `StartOnDemand`.
@@ -232,6 +236,10 @@ type IngressQueue m = StrictTVar m IngressQueueState
 -- | An empty queue, nothing read.
 newIngressQueue :: MonadSTM m => m (IngressQueue m)
 newIngressQueue = newTVarIO (IngressQueueState 0 mempty 0)
+
+-- | Check that `IngressQueue` is empty
+nullIngressQueue :: MonadSTM m => IngressQueue m -> STM m Bool
+nullIngressQueue iq = ((== 0) . iqLength) <$> readTVar iq
 
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int

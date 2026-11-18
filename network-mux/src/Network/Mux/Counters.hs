@@ -290,6 +290,7 @@ demuxerFailure e
       Just IngressQueueOverRun {} -> \f -> f { mfOverruns = mfOverruns f + 1 }
       Just UnknownMiniProtocol {} -> protocolError
       Just InitiatorOnly {}       -> protocolError
+      Just UnexpectedIngress {}   -> protocolError
       Just SDUDecodeError {}      -> protocolError
       _                           -> otherError
   where
@@ -365,7 +366,9 @@ countFailure counters failure =
 
 -- | Count the exception a mini-protocol's thread died with, by its protocol
 -- and our side's direction, unless it is the mux's own or asynchronous,
--- which is the mux ending.
+-- which is the mux ending.  The exception is 'UnexpectedIngress' when
+-- a mini-protocol started eagerly left trailing bytes: the peer's protocol
+-- error, counted as such.
 countMiniProtocolFailure :: MonadSTM m
                          => Maybe (Counters m)
                          -> MiniProtocolNum
@@ -375,6 +378,9 @@ countMiniProtocolFailure :: MonadSTM m
 countMiniProtocolFailure counters num dir e =
   forM_ counters $ \Counters { countersFailures } ->
     case fromException e of
+      Just UnexpectedIngress {} ->
+        modifyTVar countersFailures $ \f ->
+          f { mfProtocolErrors = mfProtocolErrors f + 1 }
       Just MiniProtocolAsyncException {} ->
         modifyTVar countersFailures $ \f ->
           f { mfMiniProtocols = Map.insertWith (+) (num, dir) 1 (mfMiniProtocols f) }
