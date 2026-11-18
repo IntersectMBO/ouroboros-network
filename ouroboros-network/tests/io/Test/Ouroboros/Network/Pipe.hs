@@ -213,7 +213,6 @@ demo chain0 updates = do
                     clientMux
                     miniProtocolNum
                     miniProtocolDir
-                    Mx.StartEagerly
                     (\a -> do
                       r <- action a
                       return (r, Nothing)
@@ -239,7 +238,6 @@ demo chain0 updates = do
                     serverMux
                     miniProtocolNum
                     miniProtocolDir
-                    Mx.StartEagerly
                     (\a -> do
                       r <- action a
                       return (r, Nothing)

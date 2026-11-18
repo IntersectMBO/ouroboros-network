@@ -429,7 +429,6 @@ miniProtocolJob TracersI {
 
 data ControlCmd mode m =
      CmdStartProtocolThread
-       !StartOnDemandOrEagerly
        !(MiniProtocolState mode m)
        !(MiniProtocolAction m)
    | CmdShutdown
@@ -640,12 +639,12 @@ monitor tracers@TracersI {
               unless stopped (throwIO e)
 
         EventControlCmd (CmdStartProtocolThread
-                           StartEagerly
                            ptclState@MiniProtocolState {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
                                miniProtocolDir,
-                               miniProtocolCapability
+                               miniProtocolCapability,
+                               miniProtocolStartMode = StartEagerly
                              }
                            }
                            ptclAction) -> do
@@ -671,11 +670,11 @@ monitor tracers@TracersI {
           go monitorCtx
 
         EventControlCmd (CmdStartProtocolThread
-                           StartOnDemand
                            ptclState@MiniProtocolState {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
-                               miniProtocolDir
+                               miniProtocolDir,
+                               miniProtocolStartMode = StartOnDemand
                              }
                            }
                            ptclAction) -> do
@@ -689,11 +688,11 @@ monitor tracers@TracersI {
           go monitorCtx'
 
         EventControlCmd (CmdStartProtocolThread
-                           StartOnDemandAny
                            ptclState@MiniProtocolState {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
-                               miniProtocolDir
+                               miniProtocolDir,
+                               miniProtocolStartMode = StartOnDemandAny
                              }
                            }
                            ptclAction) -> do
@@ -914,19 +913,17 @@ runMiniProtocolSTM
   => Mux mode m
   -> MiniProtocolNum
   -> MiniProtocolDirection mode
-  -> StartOnDemandOrEagerly
   -> (ByteChannel m -> m (a, Maybe BL.ByteString))
   -> STM m (STM m (Either SomeException a))
 runMiniProtocolSTM Mux { muxMiniProtocols,
-                      muxControlCmdQueue,
-                      muxStatus
-                    }
-                ptclNum ptclDir
-                startMode
-                protocolAction
+                         muxControlCmdQueue,
+                         muxStatus }
+                   ptclNum ptclDir
+                   protocolAction
 
     -- Ensure the mini-protocol is known and get the status var
-  | Just ptclState@MiniProtocolState{miniProtocolStatusVar}
+  | Just ptclState@MiniProtocolState{miniProtocolStatusVar,
+                                     miniProtocolInfo}
       <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
 
   = do
@@ -943,7 +940,7 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
       status <- readTVar miniProtocolStatusVar
       unless (status == StatusIdle) $
         throwSTM (ProtocolAlreadyRunning ptclNum ptclDir' status)
-      let !status' = case startMode of
+      let !status' = case miniProtocolStartMode miniProtocolInfo of
                        StartOnDemand    -> StatusStartOnDemand
                        StartOnDemandAny -> StatusStartOnDemandAny
                        StartEagerly     -> StatusRunning
@@ -953,7 +950,6 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
       completionVar <- newEmptyTMVar
       writeTQueue muxControlCmdQueue $
         CmdStartProtocolThread
-          startMode
           ptclState
           (MiniProtocolAction protocolAction completionVar)
 
@@ -987,7 +983,8 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
 -- | Arrange to run a protocol thread (for a particular 'MiniProtocolNum' and
 -- 'MiniProtocolDirection') to interact on this protocol's 'Channel'.
 --
--- The protocol thread can either be started eagerly or on-demand:
+-- The protocol thread is started according to the 'miniProtocolStartMode'
+-- of the mini-protocol's 'MiniProtocolInfo', either eagerly or on-demand:
 --
 -- * With 'StartEagerly', the thread is started promptly. This is appropriate
 --   for mini-protocols where the opening message may be sent by this thread.
@@ -1031,8 +1028,7 @@ runMiniProtocol
   => Mux mode m
   -> MiniProtocolNum
   -> MiniProtocolDirection mode
-  -> StartOnDemandOrEagerly
   -> (ByteChannel m -> m (a, Maybe BL.ByteString))
   -> m (STM m (Either SomeException a))
-runMiniProtocol mux ptclNum ptclDir startMode protocolAction =
-    atomically $ runMiniProtocolSTM mux ptclNum ptclDir startMode protocolAction
+runMiniProtocol mux ptclNum ptclDir protocolAction =
+    atomically $ runMiniProtocolSTM mux ptclNum ptclDir protocolAction

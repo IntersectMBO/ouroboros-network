@@ -54,6 +54,7 @@ import System.Random.SplitMix qualified as SM
 
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
+import Network.Mux.Types qualified as Mx
 import Network.Socket (PortNumber)
 import Network.Socket qualified as Socket
 import Network.TypedProtocol.Codec (AnnotatedCodec, AnyMessage (..))
@@ -510,7 +511,6 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                     mux
                     txMiniProtocolNum
                     dir
-                    Mx.StartOnDemand
                     (\chann -> do
                       let reader =
                             Mempool.getReader
@@ -646,7 +646,6 @@ runTxOutbound stderrTracer inboundAddr outboundAddr
               mux
               txMiniProtocolNum
               dir
-              Mx.StartEagerly
               (\chann ->
                 Driver.runAnnotatedPeerWithLimits
                   (Mx.WithBearer addr' >$< txSubmissionTracer traceLock)
@@ -668,13 +667,18 @@ txMiniProtocolNum :: Mx.MiniProtocolNum
 txMiniProtocolNum = Mx.MiniProtocolNum 4
 
 
+-- | The initiator is started eagerly, the responder on demand.
+--
 protocols :: Mx.MiniProtocolDirection mode -> [Mx.MiniProtocolInfo mode]
 protocols miniProtocolDir =
   [ Mx.MiniProtocolInfo {
       Mx.miniProtocolNum        = txMiniProtocolNum,
       Mx.miniProtocolDir,
       Mx.miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
-      Mx.miniProtocolCapability = Nothing
+      Mx.miniProtocolCapability = Nothing,
+      Mx.miniProtocolStartMode  = case Mx.protocolDirEnum miniProtocolDir of
+                                    Mx.InitiatorDir -> Mx.StartEagerly
+                                    Mx.ResponderDir -> Mx.StartOnDemand
     }
   ]
 

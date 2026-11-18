@@ -318,7 +318,13 @@ prop_socket_recv_error f rerr =
 
     let app :: OuroborosApplicationWithMinimalCtx
                  Mx.ResponderMode Socket.SockAddr BL.ByteString IO Void ()
-        app = testProtocols2 reqRespResponder
+        -- The responder must be running when the receive error happens: a
+        -- mux whose only mini-protocol waits to be started on demand treats
+        -- a closed socket as a clean end.
+        app = OuroborosApplication
+                [ ptcl { miniProtocolStart = StartEagerly }
+                | ptcl <- getOuroborosApplication (testProtocols2 reqRespResponder)
+                ]
 
         reqRespResponder =
           ResponderProtocolOnly $
@@ -373,7 +379,6 @@ prop_socket_recv_error f rerr =
                           mux
                           miniProtocolNum
                           miniProtocolDir
-                          Mx.StartEagerly
                           (\a -> do
                             r <- action a
                             return (r, Nothing)

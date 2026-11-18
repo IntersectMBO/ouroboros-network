@@ -511,6 +511,10 @@ connectToNodeWithMux'
 -- until the first one terminates.  It returns the result (or error) of the
 -- first terminated mini-protocol.
 --
+-- Mini-protocols are started according to their 'MiniProtocolInfo' (see
+-- 'toMiniProtocolInfos'): initiators eagerly, responders according to
+-- 'miniProtocolStart'.
+--
 simpleMuxCallback
   :: forall muxMode addr vNumber vData m a b.
      ( Alternative (STM m)
@@ -537,7 +541,6 @@ simpleMuxCallback connectionId _ _ app mux aid = do
           mux
           miniProtocolNum
           miniProtocolDir
-          Mx.StartEagerly
           action
       | MiniProtocol{miniProtocolNum, miniProtocolRun}
           <- getOuroborosApplication app

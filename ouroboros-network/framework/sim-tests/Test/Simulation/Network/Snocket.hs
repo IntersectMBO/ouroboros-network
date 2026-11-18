@@ -286,7 +286,8 @@ clientServerSimulation payloads =
                         miniProtocolNum        = reqRespProtocolNum,
                         miniProtocolDir        = Mx.ResponderDirectionOnly,
                         miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
-                        miniProtocolCapability = Nothing
+                        miniProtocolCapability = Nothing,
+                        miniProtocolStartMode  = Mx.StartOnDemand
                       }
                     ])
             Mx.stop
@@ -300,7 +301,6 @@ clientServerSimulation payloads =
               resSTM <- runMiniProtocol
                           mux reqRespProtocolNum
                           Mx.ResponderDirectionOnly
-                          Mx.StartOnDemand
                           (\channel -> runPeer prtclTracer
                                                codecReqResp
                                                channel
@@ -340,7 +340,8 @@ clientServerSimulation payloads =
                                     miniProtocolNum        = reqRespProtocolNum,
                                     miniProtocolDir        = Mx.InitiatorDirectionOnly,
                                     miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
-                                    miniProtocolCapability = Nothing
+                                    miniProtocolCapability = Nothing,
+                                    miniProtocolStartMode  = Mx.StartEagerly
                                   }
                                 ]
 
@@ -351,7 +352,6 @@ clientServerSimulation payloads =
                   resSTM <- runMiniProtocol
                               mux reqRespProtocolNum
                               InitiatorDirectionOnly
-                              StartEagerly
                               (\channel -> runPeer prtclTracer
                                                    codecReqResp
                                                    channel

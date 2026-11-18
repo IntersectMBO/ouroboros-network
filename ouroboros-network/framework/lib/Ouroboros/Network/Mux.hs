@@ -246,13 +246,18 @@ data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
        -- ^ mini-protocol number
        miniProtocolStart  :: !Mux.StartOnDemandOrEagerly,
        -- ^ strategy for starting responder side; initiator side is always
-       -- started using `StartEagerly`.
+       -- started using `StartEagerly` (see 'mkMiniProtocolInfo').
        miniProtocolLimits :: !MiniProtocolLimits,
        -- ^ mini-protocol limits
        miniProtocolRun    :: !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b)
        -- ^ mini-protocol callback(s)
      }
 
+-- | Make the 'MiniProtocolInfo's of a 'MiniProtocol': one for each direction
+-- in which it runs.  Initiators are started eagerly, since they send the
+-- opening message of every mini-protocol, responders according to
+-- 'miniProtocolStart'.
+--
 mkMiniProtocolInfo :: ForkPolicyCb
                    -> Provenance
                    -> DataFlow
@@ -260,6 +265,7 @@ mkMiniProtocolInfo :: ForkPolicyCb
                    -> [MiniProtocolInfo mode]
 mkMiniProtocolInfo forkPolicy provenance dataFlow MiniProtocol {
      miniProtocolNum,
+     miniProtocolStart,
      miniProtocolLimits,
      miniProtocolRun
    }
@@ -270,7 +276,11 @@ mkMiniProtocolInfo forkPolicy provenance dataFlow MiniProtocol {
       Mux.miniProtocolLimits,
       Mux.miniProtocolCapability =
         forkPolicy miniProtocolNum
-                  (Mux.protocolDirEnum dir)
+                  (Mux.protocolDirEnum dir),
+      Mux.miniProtocolStartMode =
+        case Mux.protocolDirEnum dir of
+          Mux.InitiatorDir -> Mux.StartEagerly
+          Mux.ResponderDir -> miniProtocolStart
     }
   | dir <- case miniProtocolRun of
              InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]

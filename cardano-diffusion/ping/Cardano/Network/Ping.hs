@@ -1321,7 +1321,8 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                             miniProtocolLimits     = case protocol of
                                                        NodeToNode -> NodeToNode.chainSyncProtocolLimits NodeToNode.defaultMiniProtocolParameters
                                                        NodeToClient -> NodeToClient.maximumMiniProtocolLimits,
-                            miniProtocolCapability = Nothing
+                            miniProtocolCapability = Nothing,
+                            miniProtocolStartMode  = Mx.StartEagerly
                           }]
                   withAsync (Mx.run mx bearer) $ \_ ->
                     (Mx.runMiniProtocol mx
@@ -1330,7 +1331,6 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                          NodeToClient -> NodeToClient.localChainSyncMiniProtocolNum
                       )
                       Mx.InitiatorDirectionOnly
-                      Mx.StartEagerly
                       (\channel ->
                         runPeerWithLimitsRnd
                           nullTracer
@@ -1359,13 +1359,13 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                             miniProtocolNum        = NodeToNode.keepAliveMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
                             miniProtocolLimits     = NodeToNode.keepAliveProtocolLimits NodeToNode.defaultMiniProtocolParameters,
-                            miniProtocolCapability = Nothing
+                            miniProtocolCapability = Nothing,
+                            miniProtocolStartMode  = Mx.StartEagerly
                           }]
                   withAsync (Mx.run mx bearer) $ \_ ->
                     (Mx.runMiniProtocol mx
                       NodeToNode.keepAliveMiniProtocolNum
                       Mx.InitiatorDirectionOnly
-                      Mx.StartEagerly
                       (\channel ->
                         runPeerWithLimits
                           nullTracer

@@ -704,7 +704,6 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
           (case singMuxMode of
             SingInitiatorMode          -> Mx.InitiatorDirectionOnly
             SingInitiatorResponderMode -> Mx.InitiatorDirection)
-          Mx.StartEagerly
           (runMiniProtocolCb
             (case miniProtocolRun ptcl of
               InitiatorProtocolOnly initiator           -> initiator

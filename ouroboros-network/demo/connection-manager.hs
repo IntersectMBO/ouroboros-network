@@ -451,7 +451,6 @@ runInitiatorProtocols
           (case singMuxMode of
             SingInitiatorMode          -> Mux.InitiatorDirectionOnly
             SingInitiatorResponderMode -> Mux.InitiatorDirection)
-          Mux.StartEagerly
           (runMiniProtocolCb
             (case miniProtocolRun ptcl of
               InitiatorProtocolOnly initiator           -> initiator

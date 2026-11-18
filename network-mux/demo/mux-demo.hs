@@ -132,8 +132,7 @@ serverWorker bearer = do
     void $ forkIO $ do
       awaitResult <-
         runMiniProtocol mux (MiniProtocolNum 2)
-                             ResponderDirectionOnly
-                             StartOnDemand $ \channel ->
+                             ResponderDirectionOnly $ \channel ->
           runServerCBOR debugTracer channel (echoServer 0)
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
@@ -146,7 +145,8 @@ serverWorker bearer = do
                 miniProtocolNum        = MiniProtocolNum 2,
                 miniProtocolDir        = ResponderDirectionOnly,
                 miniProtocolLimits     = defaultProtocolLimits,
-                miniProtocolCapability = Nothing
+                miniProtocolCapability = Nothing,
+                miniProtocolStartMode  = StartOnDemand
               }
             ]
 
@@ -192,8 +192,7 @@ clientWorker bearer n msg = do
     void $ forkIO $ do
       awaitResult <-
         runMiniProtocol mux (MiniProtocolNum 2)
-                             InitiatorDirectionOnly
-                             StartEagerly $ \channel ->
+                             InitiatorDirectionOnly $ \channel ->
           runClientCBOR debugTracer channel (echoClient 0 n (BSC.pack msg))
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
@@ -206,7 +205,8 @@ clientWorker bearer n msg = do
                 miniProtocolNum        = MiniProtocolNum 2,
                 miniProtocolDir        = InitiatorDirectionOnly,
                 miniProtocolLimits     = defaultProtocolLimits,
-                miniProtocolCapability = Nothing
+                miniProtocolCapability = Nothing,
+                miniProtocolStartMode  = StartEagerly
               }
             ]
 

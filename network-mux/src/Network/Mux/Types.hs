@@ -151,8 +151,12 @@ data MiniProtocolInfo (mode :: Mode) =
        -- ^ Mini-protocol direction.
        miniProtocolLimits     :: !MiniProtocolLimits,
        -- ^ ingress queue limits for the protocol
-       miniProtocolCapability :: !(Maybe Int)
+       miniProtocolCapability :: !(Maybe Int),
        -- ^ capability on which the mini-protocol should run
+       miniProtocolStartMode  :: !StartOnDemandOrEagerly
+       -- ^ how the mini-protocol is started, see 'StartOnDemandOrEagerly'.
+       -- It's a static property of the mini-protocol: every run of it
+       -- (see 'Network.Mux.runMiniProtocol') uses this mode.
      }
   deriving Show
 
@@ -168,8 +172,17 @@ deriving instance Show (MiniProtocolDirection (mode :: Mode))
 
 -- | Strategy how to start a mini-protocol.
 --
+-- The strategy must match which side sends the opening message of the
+-- mini-protocol, not its direction: a mini-protocol which sends the opening
+-- message must be started eagerly, one which receives it can be started on
+-- demand.  For example, a protocol in which the server greets the client
+-- needs an eager responder.  The two notions are independent in the mux; an
+-- application might tie them together (e.g. in @ouroboros-network@
+-- initiators are always started eagerly and responders on demand).
+--
 data StartOnDemandOrEagerly =
-    -- | Start a mini-protocol promptly.
+    -- | Start a mini-protocol promptly.  Must be used when the initial message
+    -- is sent by this side.
     StartEagerly
     -- | Start a mini-protocol when data is received for the given
     -- mini-protocol.  Must be used only when initial message is sent by the

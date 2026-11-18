@@ -155,7 +155,7 @@ mkMiniProtocolState num = do
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
-                             (MiniProtocolLimits maxBound) Nothing
+                             (MiniProtocolLimits maxBound) Nothing StartEagerly
   return $ MiniProtocolState mpi mpq mpv
 
 -- | Run a server that accept connections on `ad`.

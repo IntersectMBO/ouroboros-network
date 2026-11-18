@@ -12,6 +12,11 @@ For top level release notes, leave all the headers commented out.
    by mux thread when an asynchronous exception interrupts mini-protocol job.
 - `Control.Concurrent.JobPool.cancelGroup` returns the results of all
   completed jobs which were not yet waited for.
+- `MiniProtocolInfo` has a new field, `miniProtocolStartMode`: how the
+  mini-protocol is started (`StartEagerly`, `StartOnDemand` or
+  `StartOnDemandAny`).  It's a static property of a mini-protocol, so
+  `runMiniProtocol` and `runMiniProtocolSTM` no longer take a
+  `StartOnDemandOrEagerly` argument.
 
 <!--
 ### Non-Breaking

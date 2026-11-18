@@ -175,7 +175,6 @@ demo chain0 updates delay = do
             clientMux
             miniProtocolNum
             miniProtocolDir
-            Mx.StartEagerly
             (\a -> do
               r <- action a
               return (r, Nothing)
@@ -201,7 +200,6 @@ demo chain0 updates delay = do
             serverMux
             miniProtocolNum
             miniProtocolDir
-            Mx.StartEagerly
             (\a -> do
               r <- action a
               return (r, Nothing)

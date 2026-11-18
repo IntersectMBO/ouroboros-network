@@ -34,6 +34,7 @@ import System.IOManager
 
 import Network.Mux as Mx
 import Network.Mux.Bearer qualified as Mx
+import Network.Mux.Types (MiniProtocolDir (..), protocolDirEnum)
 
 import Test.Mux.ReqResp
 
@@ -119,21 +120,29 @@ defaultProtocolLimits =
     }
 
 
+-- | Initiators are started eagerly, responders on demand.
+--
 protocols :: MiniProtocolDirection mode -> [MiniProtocolInfo mode]
 protocols miniProtocolDir =
   [ MiniProtocolInfo {
       miniProtocolNum        = MiniProtocolNum 2,
       miniProtocolDir,
       miniProtocolLimits     = defaultProtocolLimits,
-      miniProtocolCapability = Nothing
+      miniProtocolCapability = Nothing,
+      miniProtocolStartMode
     }
   , MiniProtocolInfo {
       miniProtocolNum        = MiniProtocolNum 3,
       miniProtocolDir,
       miniProtocolLimits     = defaultProtocolLimits,
-      miniProtocolCapability = Nothing
+      miniProtocolCapability = Nothing,
+      miniProtocolStartMode
     }
   ]
+  where
+    miniProtocolStartMode = case protocolDirEnum miniProtocolDir of
+      InitiatorDir -> StartEagerly
+      ResponderDir -> StartOnDemand
 
 --
 -- server: accept loop, server loop
@@ -189,14 +198,12 @@ serverWorkerSequential bearer len1 len2 = do
             mux
             (MiniProtocolNum 2)
             ResponderDirectionOnly
-            StartOnDemand
             (\chan -> runServerBin (reqrespTracer "server:praos") chan (serverReqResp len1))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              ResponderDirectionOnly
-             StartOnDemand
              (\chan -> runServerBin (reqrespTracer "server:leios") chan (serverReqResp len2))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
@@ -231,14 +238,12 @@ serverWorkerBursty bearer (n1, n2) len1 len2 = do
             mux
             (MiniProtocolNum 2)
             ResponderDirectionOnly
-            StartOnDemand
             (\chan -> runServerBurstBin (reqrespTracer "server:praos") chan (serverReqResp n1 len1))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              ResponderDirectionOnly
-             StartOnDemand
              (\chan -> runServerBurstBin (reqrespTracer "server:leios") chan (serverReqResp n2 len2))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
@@ -308,14 +313,12 @@ clientWorkerSequential bearer len n1 n2 = do
              mux
              (MiniProtocolNum 2)
              InitiatorDirectionOnly
-             StartEagerly
              (\chan -> runClientBin (reqrespTracer "client:praos") chan (clientReqResp '0' n1))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              InitiatorDirectionOnly
-             StartEagerly
              (\chan -> runClientBin (reqrespTracer "client:leios") chan (clientReqResp '1' n2))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
@@ -348,14 +351,12 @@ clientWorkerBursty bearer = do
              mux
              (MiniProtocolNum 2)
              InitiatorDirectionOnly
-             StartEagerly
              (\chan -> runClientBurstBin (reqrespTracer "client:praos") chan clientReqResp)
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              InitiatorDirectionOnly
-             StartEagerly
              (\chan -> runClientBurstBin (reqrespTracer "client:leios") chan clientReqResp)
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1

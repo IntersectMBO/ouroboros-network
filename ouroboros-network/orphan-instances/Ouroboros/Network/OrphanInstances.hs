@@ -562,13 +562,15 @@ instance ToJSON (Mux.MiniProtocolInfo mode) where
             Mux.miniProtocolNum = Mux.MiniProtocolNum miniProtocolNum,
             Mux.miniProtocolDir,
             Mux.miniProtocolLimits = Mux.MiniProtocolLimits { Mux.maximumIngressQueue },
-            Mux.miniProtocolCapability
+            Mux.miniProtocolCapability,
+            Mux.miniProtocolStartMode
          }
     = object
       [ "miniProtocolNum"        .= miniProtocolNum
       , "miniProtocolDir"        .= show miniProtocolDir
       , "maximumIngressQueue"    .= maximumIngressQueue
       , "miniProtocolCapability" .= miniProtocolCapability
+      , "miniProtocolStartMode"  .= show miniProtocolStartMode
       ]
 
 instance ToJSON Mux.Trace where
