@@ -8,6 +8,7 @@
 
 module Network.Mux.Tracing () where
 
+import Control.Exception (displayException)
 import Data.Aeson (Object, Value (String), object, (.=))
 import Data.Aeson.Key (Key)
 import Data.Aeson.Key qualified as Key
@@ -19,6 +20,7 @@ import Data.Text qualified as Text
 import Data.Typeable
 import Data.Word (Word64)
 import Formatting
+import Formatting qualified as F
 
 import Cardano.Logging
 import Network.Mux qualified as Mux
@@ -431,6 +433,12 @@ instance LogFormatting Mux.Trace where
       [ "kind" .= String "Mux.TraceStopped"
       , "msg"  .= String "Mux stoppped"
       ]
+    forMachine _dtal (Mux.TraceMiniProtocolKilled mid dir err) = mconcat
+      [ "kind" .= String "Mux.TraceMiniProtocolKilled"
+      , "miniProtocolNum" .= String (showT mid)
+      , "miniProtocolDir" .= String (showT dir)
+      , "error" .= String (Text.pack $ displayException err)
+      ]
 
     forHuman (Mux.TraceState new) =
       sformat ("State: " % shown) new
@@ -454,6 +462,9 @@ instance LogFormatting Mux.Trace where
     forHuman Mux.TraceStarting = "Mux Starting"
     forHuman Mux.TraceStopping = "Mux stopping"
     forHuman Mux.TraceStopped = "Mux stoppped"
+    forHuman (Mux.TraceMiniProtocolKilled mid dir err) =
+      sformat ("Killed" %+ F.parenthesised F.shown %+ "in" %+ F.shown %+ "by" %+ F.angled F.string)
+              mid dir (displayException err)
 
     asMetrics = \case
       Mux.TraceState{} -> []
@@ -474,6 +485,7 @@ instance LogFormatting Mux.Trace where
       Mux.TraceStarting{} -> []
       Mux.TraceStopping{} -> []
       Mux.TraceStopped{} -> []
+      Mux.TraceMiniProtocolKilled{} -> []
 
 instance MetaTrace Mux.Trace where
     namespaceFor Mux.TraceState {}                 =
@@ -500,6 +512,8 @@ instance MetaTrace Mux.Trace where
       Namespace [] ["Stopping"]
     namespaceFor Mux.TraceStopped                  =
       Namespace [] ["Stopped"]
+    namespaceFor Mux.TraceMiniProtocolKilled {}    =
+      Namespace [] ["MiniProtocolKilled"]
 
     severityFor (Namespace _ ["State"]) _            = Just Info
     severityFor (Namespace _ ["CleanExit"]) _        = Just Notice
@@ -513,6 +527,8 @@ instance MetaTrace Mux.Trace where
     severityFor (Namespace _ ["Starting"]) _         = Just Debug
     severityFor (Namespace _ ["Stopping"]) _         = Just Debug
     severityFor (Namespace _ ["Stopped"]) _          = Just Debug
+    severityFor (Namespace _ ["MiniProtocolKilled"]) _
+                                                     = Just Info
     severityFor _ _                                  = Nothing
 
     documentFor (Namespace _ ["State"])                 = Just
@@ -539,6 +555,8 @@ instance MetaTrace Mux.Trace where
       "Mux shutdown."
     documentFor (Namespace _ ["Stopped"])               = Just
       "Mux shutdown."
+    documentFor (Namespace _ ["MiniProtocolKilled"])    = Just
+      "Mini-protocol killed by an asynchronous exception"
     documentFor _ = Nothing
 
     metricsDocFor (Namespace _ ["State"])               = []
@@ -555,6 +573,7 @@ instance MetaTrace Mux.Trace where
     metricsDocFor (Namespace _ ["Starting"])            = []
     metricsDocFor (Namespace _ ["Stopping"])            = []
     metricsDocFor (Namespace _ ["Stopped"])             = []
+    metricsDocFor (Namespace _ ["MiniProtocolKilled"])  = []
     metricsDocFor _                                     = []
 
     allNamespaces = [
@@ -570,6 +589,7 @@ instance MetaTrace Mux.Trace where
       , Namespace [] ["Starting"]
       , Namespace [] ["Stopping"]
       , Namespace [] ["Stopped"]
+      , Namespace [] ["MiniProtocolKilled"]
       ]
 
 --------------------------------------------------------------------------------

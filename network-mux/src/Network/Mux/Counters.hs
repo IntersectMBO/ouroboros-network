@@ -374,8 +374,13 @@ countMiniProtocolFailure :: MonadSTM m
                          -> STM m ()
 countMiniProtocolFailure counters num dir e =
   forM_ counters $ \Counters { countersFailures } ->
-    unless (muxOwn e || isAsync e) $ modifyTVar countersFailures $ \f ->
-      f { mfMiniProtocols = Map.insertWith (+) (num, dir) 1 (mfMiniProtocols f) }
+    case fromException e of
+      Just MiniProtocolAsyncException {} ->
+        modifyTVar countersFailures $ \f ->
+          f { mfMiniProtocols = Map.insertWith (+) (num, dir) 1 (mfMiniProtocols f) }
+      _ ->
+        unless (muxOwn e || isAsync e) $ modifyTVar countersFailures $ \f ->
+          f { mfMiniProtocols = Map.insertWith (+) (num, dir) 1 (mfMiniProtocols f) }
 
 -- | A snapshot of one set's counters.
 data CountersTrace =

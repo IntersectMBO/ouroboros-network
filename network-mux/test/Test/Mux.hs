@@ -125,6 +125,10 @@ tests =
   , testProperty "send forces a prefix (IO)"    prop_mux_send_forces_prefix_only_io
   , testProperty "send forces a prefix (Sim)"   prop_mux_send_forces_prefix_only_sim
   , testProperty "send traces the length (Sim)" prop_mux_send_end_length
+  , testProperty "async exception in cleanup (Sim)" unit_mux_async_exception_in_cleanup_iosim
+  , testProperty "async exception in cleanup (IO)"  unit_mux_async_exception_in_cleanup_io
+  , testProperty "kill before the peer closes (Sim)" unit_mux_kill_then_close_iosim
+  , testProperty "kill before the peer closes (IO)"  unit_mux_kill_then_close_io
   , testGroup "Counters"
     [ testGroup "each failure is counted once, where it belongs"
         [ testProperty (show failure) (once (prop_mux_counters_failure failure))
@@ -3235,9 +3239,9 @@ resetError = errnoToIOError "recv" eCONNRESET Nothing Nothing
 
 -- | The ways a mux can end that the counters tell apart, and one they do
 -- not count: the peer closing, read while no mini-protocol is running,
--- after the last finished or after one was killed from outside, in its
--- action or waiting for the muxer to take its last bytes, which ends the
--- mux stopped.
+-- after the last finished, which ends the mux stopped.  A mini-protocol
+-- killed from outside, in its action or waiting for the muxer to take its
+-- last bytes, fails the mux, counted as that mini-protocol's failure.
 data MuxFailure = ReadTimeout | ReadError | ReadReset | ReadResetIdle | PeerClosed | PeerClosedIdle
                 | PeerClosedKilled | PeerClosedKilledDraining | DecodeError | UnknownProtocol
                 | InitiatorOnlyData | Overrun | ReadOther | WriteTimeout | WriteError | WriteReset
@@ -3246,9 +3250,9 @@ data MuxFailure = ReadTimeout | ReadError | ReadReset | ReadResetIdle | PeerClos
 
 -- | A mux that fails in the given way counts that failure, once, and nothing
 -- else, and ends failed; a close read with nothing running, after the last
--- protocol finished or after one was killed from outside, counts nothing
--- and ends it stopped, a reset then fails it; a killed protocol cannot be
--- started again. The protocol-level
+-- protocol finished, counts nothing and ends it stopped, a reset then fails
+-- it; a mini-protocol killed from outside fails the mux and is counted as
+-- that mini-protocol's failure. The protocol-level
 -- failures come from real SDUs through the demuxer; the timeouts, the I/O
 -- errors and the closes are thrown by the bearer, as the socket bearer does,
 -- and so is an error of another kind, as an encoding that would not force
@@ -3266,7 +3270,7 @@ prop_mux_counters_failure failure =
     -- Whether the mux ends stopped rather than failed: only on a close read
     -- with nothing running.
     stops :: MuxFailure -> Bool
-    stops f = f `elem` [PeerClosedIdle, PeerClosedKilled, PeerClosedKilledDraining]
+    stops f = f `elem` [PeerClosedIdle]
 
     -- Bytes too: nothing is written when the write fails or is held, and
     -- nothing read is counted: an SDU that overruns is not, the write that
@@ -3290,8 +3294,11 @@ prop_mux_counters_failure failure =
       InitiatorOnlyData        -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
       PeerClosed               -> failed Mx.noFailures { Mx.mfPeerClosed = 1 }
       PeerClosedIdle           -> failed Mx.noFailures
+      -- a kill fails the mux before the peer closes
       PeerClosedKilled         -> failed Mx.noFailures
+                                    { Mx.mfMiniProtocols = M.singleton (num, Mx.InitiatorDir) 1 }
       PeerClosedKilledDraining -> failed Mx.noFailures
+                                    { Mx.mfMiniProtocols = M.singleton (num, Mx.InitiatorDir) 1 }
       ProtocolFailure          -> failed Mx.noFailures
                                     { Mx.mfMiniProtocols = M.singleton (num, Mx.InitiatorDir) 1 }
 
@@ -3547,6 +3554,202 @@ peerSDU num dir payload = Mx.SDU {
     Mx.msBlob   = payload }
 
 -- | A payload of so many bytes.
+data CleanupTestException = CleanupTestException
+  deriving (Show, Eq)
+
+instance Exception CleanupTestException
+
+-- | A mini-protocol which fails, and while cleaning up kills another one, as
+-- 'bracketFetchClient' kills chain-sync when block-fetch fails, ends the mux
+-- with its own exception, and is counted as the failed one, even though the
+-- monitor learns about the kill first.  Like 'bracketFetchClient', it cleans
+-- up and rethrows its exception masked, so it can't be interrupted, and it
+-- waits after the kill, so the monitor reads the kill before its failure.
+--
+unit_mux_async_exception_in_cleanup
+  :: forall m.
+     ( Alternative (STM m)
+     , MonadAsync m
+     , MonadDelay m
+     , MonadEvaluate m
+     , MonadFork m
+     , MonadLabelledSTM m
+     , MonadMask m
+     , MonadThrow (STM m)
+     , MonadTimer m
+     )
+  => DiffTime
+  -- ^ how long the failed mini-protocol waits after the kill, before it
+  -- rethrows its exception
+  -> m Property
+unit_mux_async_exception_in_cleanup delay = run
+  where
+    numA, numB :: Mx.MiniProtocolNum
+    numA = Mx.MiniProtocolNum 2
+    numB = Mx.MiniProtocolNum 3
+
+    info :: Mx.MiniProtocolNum -> MiniProtocolInfo Mx.InitiatorMode
+    info num = MiniProtocolInfo {
+        miniProtocolNum        = num,
+        miniProtocolDir        = Mx.InitiatorDirectionOnly,
+        miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 4000 },
+        miniProtocolCapability = Nothing
+      }
+
+    run :: m Property
+    run = do
+      counters <- Counters.newCounters
+      writeQueue <- atomically $ newTBQueue 10
+      readQueue <- atomically $ newTBQueue 10
+      bearer <- getBearer makeQueueChannelBearer (-1)
+                  QueueChannel { writeQueue, readQueue } Nothing
+      mux <- Mx.new Mx.nullTracers (Just counters) [info numA, info numB]
+      withAsync (Mx.run mux bearer) $ \muxA -> do
+        tidVar <- newEmptyTMVarIO
+        -- B blocks on `recv`, until it is killed
+        _ <- Mx.runMiniProtocol mux numB Mx.InitiatorDirectionOnly Mx.StartEagerly $ \chan -> do
+               myThreadId >>= atomically . putTMVar tidVar
+               _ <- Mx.recv chan
+               return ((), Nothing)
+        -- A fails, kills B and waits until it is dead, then rethrows
+        _ <- Mx.runMiniProtocol mux numA Mx.InitiatorDirectionOnly Mx.StartEagerly $ \_ -> do
+               tid <- atomically (readTMVar tidVar)
+               r <- try (throwIO CleanupTestException)
+                      :: m (Either CleanupTestException ())
+               uninterruptibleMask_ $ do
+                 throwTo tid AsyncCancelled
+                 atomically $
+                       Mx.miniProtocolStateMap mux M.! (numB, Mx.InitiatorDir)
+                   >>= check . (== Mx.StatusKilled)
+                 threadDelay delay
+                 either throwIO return r
+               return ((), Nothing)
+        res <- waitCatch muxA
+        counts <- atomically (Counters.readCounters counters)
+        return $ counterexample ("mux result: " ++ show res)
+               $ counterexample ("counts: " ++ show counts)
+               $ case res of
+                   Left e | Just CleanupTestException <- fromException e
+                          -> Mx.mfMiniProtocols (Counters.mcFailures counts)
+                             === M.singleton (numA, Mx.InitiatorDir) 1
+                   _      -> property False
+
+unit_mux_async_exception_in_cleanup_iosim :: Property
+unit_mux_async_exception_in_cleanup_iosim =
+    once $ runSimOrThrow (unit_mux_async_exception_in_cleanup 1)
+
+unit_mux_async_exception_in_cleanup_io :: Property
+unit_mux_async_exception_in_cleanup_io =
+    once $ ioProperty (unit_mux_async_exception_in_cleanup 0.1)
+
+
+-- | The last running mini-protocol is killed, and the peer closes, before the
+-- monitor reads either: the mux fails with 'Mx.MiniProtocolAsyncException',
+-- counted as the killed mini-protocol's failure, as it does when the monitor
+-- reads the kill first; the close does not end it cleanly.  The monitor is
+-- held in a tracer, when it traces another mini-protocol's clean exit, until
+-- both are queued.
+--
+unit_mux_kill_then_close
+  :: forall m.
+     ( Alternative (STM m)
+     , MonadAsync m
+     , MonadDelay m
+     , MonadEvaluate m
+     , MonadFork m
+     , MonadLabelledSTM m
+     , MonadMask m
+     , MonadThrow (STM m)
+     , MonadTimer m
+     )
+  => DiffTime
+  -- ^ how long to wait for the demuxer to report the close
+  -> m Property
+unit_mux_kill_then_close delay = do
+    counters <- Counters.newCounters
+    writeQueue <- atomically $ newTBQueue 10
+    readQueue <- atomically $ newTBQueue 10
+    baseBearer <- getBearer makeQueueChannelBearer (-1)
+              QueueChannel { writeQueue, readQueue } Nothing
+    closeVar <- newEmptyTMVarIO
+    heldVar <- newEmptyTMVarIO
+    tracerLock <- newEmptyTMVarIO
+    let -- The peer closes once the test says so.
+        bearer = baseBearer
+          { Mx.read = \_ _ -> do
+              atomically (readTMVar closeVar)
+              throwIO (Mx.BearerClosed "peer")
+          }
+        tracers = Mx.nullTracers {
+            Mx.tracer = Tracer $ emit $ \(Identity ev) -> case ev of
+              Mx.TraceCleanExit n _ | n == numB -> do
+                atomically $ putTMVar heldVar ()
+                atomically $ readTMVar tracerLock
+              _ -> return ()
+          }
+    mux <- Mx.new tracers (Just counters) [info numA, info numB]
+    withAsync (Mx.run mux bearer) $ \muxA -> do
+      tidVar <- newEmptyTMVarIO
+      -- A blocks on `recv`, until it is killed
+      _ <- Mx.runMiniProtocol mux numA Mx.InitiatorDirectionOnly
+            Mx.StartEagerly
+            $ \chan -> mask $ \restore -> do
+              myThreadId >>= atomically . putTMVar tidVar
+              _ <- restore (Mx.recv chan)
+              return ((), Nothing)
+      -- B exits at once; the monitor is held when it traces that
+      _ <- Mx.runMiniProtocol mux numB Mx.InitiatorDirectionOnly
+             Mx.StartEagerly $ \_ ->
+               return ((), Nothing)
+      -- wait until the mux monitor thread is held on `TraceCleanExit` for
+      -- mini-protocol `B` and for `A` mini-protocol thread to start
+      tid <- atomically $ readTMVar heldVar
+                       >> readTMVar tidVar
+      -- kill `A` when it's blocked on `recv`
+      killThread tid
+      -- wait for `A` status change: `StatusKilled` is written in the same
+      -- transaction that `CmdMiniProtocolKilled` is queued.
+      atomically $
+            Mx.miniProtocolStateMap mux M.! (numA, Mx.InitiatorDir)
+        >>= check . (== Mx.StatusKilled)
+      -- the peer closes: the demuxer's read throw `BearerClosed`
+      atomically $ putTMVar closeVar ()
+      threadDelay delay
+      -- release the monitor held by the tracer lock
+      atomically $ putTMVar tracerLock ()
+      res <- waitCatch muxA
+      counts <- atomically (Counters.readCounters counters)
+      return $ counterexample ("mux result: " ++ show res)
+             $ counterexample ("counts: " ++ show counts)
+             $ case res of
+                 Left e | Just (Mx.MiniProtocolAsyncException n d _) <- fromException e
+                        , n == numA
+                        , d == Mx.InitiatorDir
+                        -> Counters.mcFailures counts
+                           === Mx.noFailures { Mx.mfMiniProtocols = M.singleton (numA, Mx.InitiatorDir) 1 }
+                 _      -> property False
+  where
+    numA, numB :: Mx.MiniProtocolNum
+    numA = Mx.MiniProtocolNum 2
+    numB = Mx.MiniProtocolNum 3
+
+    info :: Mx.MiniProtocolNum -> MiniProtocolInfo Mx.InitiatorMode
+    info num = MiniProtocolInfo {
+        miniProtocolNum        = num,
+        miniProtocolDir        = Mx.InitiatorDirectionOnly,
+        miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 4000 },
+        miniProtocolCapability = Nothing
+      }
+
+unit_mux_kill_then_close_iosim :: Property
+unit_mux_kill_then_close_iosim =
+    once $ runSimOrThrow (unit_mux_kill_then_close 1)
+
+unit_mux_kill_then_close_io :: Property
+unit_mux_kill_then_close_io =
+    once $ ioProperty (unit_mux_kill_then_close 0.1)
+
+
 filler :: Int -> BL.ByteString
 filler bytes = BL.replicate (fromIntegral bytes) 0xaa
 

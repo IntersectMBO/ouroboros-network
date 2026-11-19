@@ -81,6 +81,9 @@ data Error = UnknownMiniProtocol MiniProtocolNum
            -- ^ Result of runMiniProtocol's completionAction in case of
            -- an error or mux being closed while a mini-protocol was
            -- still running, this is not a clean exit.
+
+          | MiniProtocolAsyncException MiniProtocolNum MiniProtocolDir SomeAsyncException
+          -- ^ A mini-protocol was interrupted by an asynchronous exception.
            deriving Show
 
 instance Exception Error where
@@ -95,6 +98,9 @@ instance Exception Error where
     SDUWriteTimeout               -> "SDU write timeout expired"
     Shutdown Nothing st           -> formatToString ("mux shutdown error in state" %+ F.shown) st
     Shutdown (Just e) st          -> formatToString ("mux shutdown error" %+ F.parenthesised F.string %+ "in state" %+ F.shown) (displayException e) st
+    MiniProtocolAsyncException pnum pdir err
+                                  -> formatToString ("mini-protocol" %+ F.shown %+ F.shown %+ "received async exception" %+ F.string)
+                                     pnum pdir (displayException err)
 
 -- | Handler for 'IOException's which wraps them in 'Error'.
 --
@@ -173,6 +179,9 @@ data Trace =
     | TraceStartOnDemandAny MiniProtocolNum MiniProtocolDir
     | TraceStartedOnDemand MiniProtocolNum MiniProtocolDir
     | TraceTerminating MiniProtocolNum MiniProtocolDir
+    | TraceMiniProtocolKilled MiniProtocolNum MiniProtocolDir SomeAsyncException
+    -- ^ a mini-protocol thread was killed by an asynchronous exception
+    -- thrown from outside the mux; the mux is shut down.
     | forall mode. TraceNewMux [MiniProtocolInfo mode]
     | TraceStarting
     | TraceStopping
@@ -205,6 +214,10 @@ instance Show Trace where
       formatToString
         ("Started on demand" %+ F.parenthesised F.shown %+ "in" %+ F.shown)
         mid dir
+    show (TraceMiniProtocolKilled mid dir err) =
+      formatToString
+        ("Killed" %+ F.parenthesised F.shown %+ "in" %+ F.shown %+ "by" %+ F.angled F.string)
+        mid dir (displayException err)
     show (TraceTerminating mid dir) =
       formatToString
         ("Terminating" %+ F.parenthesised F.shown %+ "in" %+ F.shown)

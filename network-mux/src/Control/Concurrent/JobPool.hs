@@ -199,12 +199,14 @@ waitForJob :: MonadSTM m => JobPool WithQueue group m a -> STM m a
 waitForJob JobPool{completionQueue = CompletionQueue cq} = readTQueue cq
 
 -- | Cancel all threads in a given group.  Blocks until all threads terminated.
+-- Returns the results of all completed jobs which were not yet waited for,
+-- without blocking.
 --
 cancelGroup :: ( MonadAsync m
                , Eq group
                )
-            => JobPool q group m a -> group -> m ()
-cancelGroup JobPool { jobsVar } group = do
+            => JobPool q group m a -> group -> m [a]
+cancelGroup JobPool { jobsVar, completionQueue } group = do
     jobs <- readTVarIO jobsVar
     void $ Map.traverseWithKey
              (\(group', _) thread ->
@@ -212,3 +214,8 @@ cancelGroup JobPool { jobsVar } group = do
                   cancel thread
              )
              jobs
+    case completionQueue of
+      CompletionQueue cq ->
+        atomically $ flushTQueue cq
+      NoCompletionQueue ->
+        pure []

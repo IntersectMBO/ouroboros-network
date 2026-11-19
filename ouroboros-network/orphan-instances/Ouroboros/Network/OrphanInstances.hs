@@ -626,6 +626,12 @@ instance ToJSON Mux.Trace where
     Mux.TraceStopped ->
       object [ "type" .= String "Stopped"
              ]
+    Mux.TraceMiniProtocolKilled miniProtocolNum miniProtocolDir err ->
+      object [ "type" .= String "MiniProtocolKilled"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             , "error"           .= String (pack . displayException $ err)
+             ]
 
 
 instance ToJSON Mux.ChannelTrace where

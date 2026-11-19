@@ -1048,3 +1048,5 @@ labelMuxError e =
     Mx.SDUReadTimeout {}      -> "sdu read timeout"
     Mx.SDUWriteTimeout {}     -> "sdu write timeout"
     Mx.Shutdown {}            -> "shutdown"
+    Mx.MiniProtocolAsyncException {}
+                              -> "mini-protocol async exception"
