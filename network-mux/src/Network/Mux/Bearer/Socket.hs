@@ -18,10 +18,12 @@ import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
+import Control.Concurrent (threadWaitWrite)
 import Data.ByteString.Internal (create)
 import Foreign.Marshal.Utils
 import Network.Socket.ByteString qualified as Socket (sendMany)
 import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
+import System.Posix.Types (Fd (..))
 #else
 import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 #endif
@@ -63,9 +65,30 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout egressInterval sd =
         Mx.sduSize        = sduSize,
         Mx.batchSize      = batchSize,
         Mx.name           = "socket-bearer",
-        Mx.egressInterval
+        Mx.egressInterval,
+        Mx.awaitWritable  = awaitWritableSocket
       }
     where
+      -- Wait for POLLOUT: some room in the send buffer; with TCP_NOTSENT_LOWAT,
+      -- unsent bytes below half the mark, the kernel's hysteresis, where the
+      -- write itself blocks at the mark. Not room for a whole batch, so the
+      -- write can still block. A socket not writable within one sduTimeout,
+      -- whatever the batch, fails the bearer with 'SDUWriteTimeout': a peer
+      -- must drain about half a mark per timeout or lose the connection; the
+      -- write itself has one timeout per SDU. A no-op on Windows.
+      awaitWritableSocket :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> IO ()
+#if defined(mingw32_HOST_OS)
+      awaitWritableSocket _ _ = return ()
+#else
+      awaitWritableSocket tracer timeout = do
+          r <- timeout sduTimeout $ Socket.withFdSocket sd $ \fd -> threadWaitWrite (Fd fd)
+          case r of
+               Nothing -> do
+                 traceWith tracer Mx.TraceSDUWriteTimeoutException
+                 throwIO Mx.SDUWriteTimeout
+               Just () -> return ()
+#endif
+
       readSocket :: Tracer IO BearerTrace -> Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
       readSocket tracer timeout = do
           traceWith tracer Mx.TraceRecvHeaderStart

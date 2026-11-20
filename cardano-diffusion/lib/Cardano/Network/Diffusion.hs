@@ -38,6 +38,7 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.Types
 
 import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.Diffusion.PoolRelays (sockAddrWithoutPort)
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.PeerSelection.PeerStateActions
 import Ouroboros.Network.Protocol.Handshake
@@ -75,7 +76,9 @@ run CardanoNodeArguments {
       churnModeVar,
       churnMetrics,
       ledgerPeersAPI,
-      readUseBootstrapPeers
+      readUseBootstrapPeers,
+      freshBytes,
+      freshMaxBytes
     }
     tracers config apps = do
     let tracer = Diffusion.dtDiffusionTracer tracers
@@ -111,6 +114,7 @@ run CardanoNodeArguments {
                    >> throwIO (Diffusion.DiffusionError e))
          $ withIOManager $ \iocp -> do
              interfaces <- Diffusion.mkInterfaces iocp tracer (Diffusion.dcEgressPollInterval config)
+                             (Diffusion.dcEgressScheduling config >>= Diffusion.esNotSentLowWat)
              Diffusion.runM
                interfaces
                tracers
@@ -159,6 +163,9 @@ run CardanoNodeArguments {
                       Cardano.Churn.consensusMode      = consensusMode,
                       Cardano.Churn.tracerChurnMode    = tracerChurnMode
                     },
-                  daSRVPrefix                         = Cardano.srvPrefix
+                  daSRVPrefix                         = Cardano.srvPrefix,
+                  daEgressPoolKey                     = sockAddrWithoutPort,
+                  daFreshBytes                        = freshBytes,
+                  daFreshMaxBytes                     = freshMaxBytes
                 }
                config apps

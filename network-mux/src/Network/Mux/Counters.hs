@@ -29,6 +29,7 @@ module Network.Mux.Counters
   , readSlots
   , countMuxerFailure
   , countDemuxerFailure
+  , countGateTimeout
   , countMiniProtocolFailure
   , snapshotCountersWith
   ) where
@@ -39,6 +40,7 @@ import Control.Monad (forM_, forever, unless, (<$!>))
 import Control.Monad.Class.MonadAsync (MonadAsync, race)
 import Control.Monad.Class.MonadFork (labelThisThread)
 import Control.Monad.Class.MonadThrow (MonadMask, bracket)
+import Control.Monad.Class.MonadTime.SI (diffTime, getMonotonicTime)
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
@@ -52,9 +54,12 @@ import Data.Word (Word64)
 import Foreign.C.Error (Errno (..), eCONNRESET, ePIPE)
 import GHC.IO.Exception (IOException (..))
 
+import Network.Mux.Egress.Bucket (Bucket, Burst (..), takeBurstsAt)
+import Network.Mux.Egress.Counters (SchedulingCounts, schedulingCounts)
 import Network.Mux.Trace (Error (..))
-import Network.Mux.Types (IngressQueue, IngressQueueState (..), MiniProtocolDir,
-           MiniProtocolNum, RuntimeError)
+import Network.Mux.Types (EgressState (..), EgressVar, IngressQueue,
+           IngressQueueState (..), MiniProtocolDir, MiniProtocolNum,
+           RuntimeError)
 
 -- | How the muxes have failed, each failure counted once, as the mux died
 -- of it.
@@ -62,6 +67,11 @@ data Failures = Failures {
     -- The muxer.
     mfWriteTimeouts  :: !Word64,
     -- ^ the peer took nothing within the SDU timeout
+    mfGateTimeouts   :: !Word64,
+    -- ^ at the writability gate of scheduled egress, before the write:
+    -- counted by the lane that timed out as it dies, so with two lanes
+    -- timing out on one stalled peer, or a gate firing during the stop,
+    -- it may exceed 'mfWriteTimeouts', which counts the mux's death once
     mfWriteErrors    :: !Word64,
     -- ^ the bearer's write failed otherwise: a timed-out connection, a
     -- host unreachable
@@ -97,7 +107,7 @@ data Failures = Failures {
 
 -- | No failure counted.
 noFailures :: Failures
-noFailures = Failures 0 0 0 0 0 0 0 0 Map.empty
+noFailures = Failures 0 0 0 0 0 0 0 0 0 Map.empty
 
 -- | One side's counters at an instant.
 data Counts = Counts {
@@ -117,27 +127,30 @@ noCounts = Counts noFailures Map.empty Map.empty
 -- the mux, are not among them.
 type ByteCounts = Map (MiniProtocolNum, MiniProtocolDir) Word64
 
--- | One mux's byte counters, one per mini-protocol and direction it runs,
--- written only by its own muxer or demuxer, so no two connections share a
--- variable on the data path; made by 'newByteSlots'.
-type ByteSlots m = Map (MiniProtocolNum, MiniProtocolDir) (StrictTVar m Word64)
+-- | One mux's egress variables, one per mini-protocol and direction it runs,
+-- each carrying what the muxers wrote for it, counted in the write that
+-- releases a batch, so the count costs no write of its own; written only
+-- by the mux's own muxers, so no two connections share a variable on the
+-- data path. A mux's are its mini-protocols' own; 'newByteSlots' makes a
+-- set for a test.
+type ByteSlots m = Map (MiniProtocolNum, MiniProtocolDir) (EgressVar m)
 
--- | What one mux sent and read: a slot per mini-protocol and direction the
--- muxer writes into, and the mini-protocols' ingress queues themselves,
--- each carrying what the demuxer read for its mini-protocol, counted in
--- the write that queued it so that a read costs nothing beyond that write.
--- The queues are only ever read here, for that count, never written.
+-- | What one mux sent and read: the mini-protocols' egress variables, read
+-- for their 'esSent', and their ingress queues, each carrying what the
+-- demuxer read for its mini-protocol, counted in the write that queued it
+-- so that a read costs nothing beyond that write. Both are only ever read
+-- here, for the counts, never written.
 data ByteCells m = ByteCells {
     mbcSent :: !(ByteSlots m),
-    -- ^ the muxer's slots
+    -- ^ the egress variables, read for their 'esSent'
     mbcRecv :: !(Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m))
     -- ^ the ingress queues, read for their 'iqReceived'
   }
 
--- | The counts in the slots, leaving out the ones still at zero: a protocol
--- appears once it has carried something.
+-- | The bytes written for each variable's mini-protocol, leaving out the
+-- ones still at zero: a protocol appears once it has carried something.
 readSlots :: MonadSTM m => ByteSlots m -> STM m ByteCounts
-readSlots = fmap nonZero . traverse readTVar
+readSlots = fmap nonZero . traverse (fmap esSent . readTVar)
 
 -- | The counts that are not zero.
 nonZero :: ByteCounts -> ByteCounts
@@ -215,27 +228,27 @@ readByteCellsWith :: (MonadSTM m, Monad n)
                  -> ByteCells m
                  -> n (ByteCounts, ByteCounts)
 readByteCellsWith runTx ByteCells { mbcSent, mbcRecv } =
-  (,) <$> (nonZero <$> traverse (runTx . readTVar) mbcSent)
+  (,) <$> (nonZero <$> traverse (\v -> runTx (esSent <$!> readTVar v)) mbcSent)
       <*> (nonZero <$> traverse (\q -> runTx (iqReceived <$!> readTVar q)) mbcRecv)
 
--- | Byte cells for a mux for the duration of @k@, which is given the muxer's
--- slots: one per mini-protocol and direction, beside the ingress queues
--- given, which count what the demuxer reads whether or not anyone looks.
--- With counters the slots are made and the cells registered as the mux
--- starts, and on the way out their counts move into the retired totals in
--- the same transaction that unregisters them; without, there are no slots,
--- so the muxer counts nothing.
+-- | A mux's cells for the duration of @k@: its mini-protocols' egress
+-- variables and ingress queues, which count what the muxers write and the
+-- demuxer reads whether or not anyone looks. With counters the cells are
+-- registered as the mux starts, and on the way out their counts move into
+-- the retired totals in the same transaction that unregisters them;
+-- without, nothing is registered and the mux counts into its variables
+-- unread.
 withByteCells :: forall m a. (MonadSTM m, MonadMask m)
               => Maybe (Counters m)
+              -> ByteSlots m
               -> Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m)
-              -> (ByteSlots m -> m a)
               -> m a
-withByteCells counters queues k = case counters of
-    Nothing -> k Map.empty
+              -> m a
+withByteCells counters slots queues k = case counters of
+    Nothing -> k
     Just c  -> do
-      slots <- atomically $ newByteSlots (Map.keys queues)
       let cells = ByteCells { mbcSent = slots, mbcRecv = queues }
-      bracket (register c cells) (retire c cells) (const (k slots))
+      bracket (register c cells) (retire c cells) (const k)
   where
     -- The cells among the live muxes' under the next key, which is returned.
     register :: Counters m -> ByteCells m -> m Int
@@ -256,11 +269,11 @@ withByteCells counters queues k = case counters of
         Retired (Map.unionWith (+) s sent) (Map.unionWith (+) r received)
       modifyTVar countersLive (IntMap.delete i)
 
--- | A slot per mini-protocol and direction given, at zero. A mux makes its
--- muxer's for every mini-protocol it runs; an SDU for a key not among them
--- is not counted.
+-- | An egress variable per mini-protocol and direction given, at zero, for
+-- a test's muxer; a mux's are its mini-protocols' own.
 newByteSlots :: MonadSTM m => [(MiniProtocolNum, MiniProtocolDir)] -> STM m (ByteSlots m)
-newByteSlots keys = Map.fromList <$> sequence [ (,) key <$> newTVar 0 | key <- keys ]
+newByteSlots keys =
+  Map.fromList <$> sequence [ (,) key <$> newTVar (EgressState 0 0) | key <- keys ]
 
 -- | What a muxer's death counts as, if anything: the peer closing, which a
 -- write meets as a reset or a broken pipe; an asynchronous exception is the
@@ -354,6 +367,12 @@ countMuxerFailure counters = countFailure counters . muxerFailure
 countDemuxerFailure :: MonadSTM m => Maybe (Counters m) -> SomeException -> STM m ()
 countDemuxerFailure counters = countFailure counters . demuxerFailure
 
+-- | Count a writability gate that timed out; the write timeout itself is
+-- counted by 'countMuxerFailure' when the mux dies of it.
+countGateTimeout :: MonadSTM m => Maybe (Counters m) -> STM m ()
+countGateTimeout counters =
+  countFailure counters (Just (\f -> f { mfGateTimeouts = mfGateTimeouts f + 1 }))
+
 -- | Count a failure, if there is one to count and a set to count it in.
 countFailure :: MonadSTM m
              => Maybe (Counters m)
@@ -377,10 +396,16 @@ countMiniProtocolFailure counters num dir e =
     unless (muxOwn e || isAsync e) $ modifyTVar countersFailures $ \f ->
       f { mfMiniProtocols = Map.insertWith (+) (num, dir) 1 (mfMiniProtocols f) }
 
--- | A snapshot of one set's counters.
+-- | A snapshot of one set's counters, of scheduled egress, or one burst of
+-- credited demand on the budget, closed by the time of the snapshot that
+-- carries it.
 data CountersTrace =
     TraceRemoteCounters Counts  -- ^ the remote muxes
   | TraceLocalCounters  Counts  -- ^ the local muxes
+  | TraceEgressCounters SchedulingCounts
+    -- ^ scheduled egress: the budget's bucket and the slice's
+  | TraceEgressBurst    DiffTime Burst
+    -- ^ a burst, and how long before the snapshot that carries it it ended
   deriving (Eq, Show)
 
 -- | A prime, so that snapshots do not keep step with other periodic work such
@@ -389,21 +414,30 @@ countersInterval :: DiffTime
 countersInterval = 7
 
 -- | Every @interval@, a second at least, snapshot the remote and the local
--- set, each if there is one, and trace each. 'withCounters' runs it for
--- the sets it makes.
+-- set, each if there is one, and trace each; with scheduled egress, the
+-- budget's bucket and the slice's, if any, are snapshotted and traced too,
+-- and the bursts the budget closed since the last snapshot follow, one
+-- trace each. 'withCounters' runs it for the sets it makes.
 countersLoop :: (MonadDelay m, MonadSTM m)
              => Maybe (Counters m)    -- ^ the remote set, if any
              -> Maybe (Counters m)    -- ^ the local set, if any
+             -> Maybe (Bucket m, Maybe (Bucket m))
+             -- ^ the buckets behind scheduled egress, if it is scheduled
              -> DiffTime
              -> Tracer m CountersTrace
              -> m void
-countersLoop remote local interval tracer = forever $ do
+countersLoop remote local buckets interval tracer = forever $ do
   threadDelay delay
   -- Small transactions, one for the totals and one per counter: the counters
   -- need no consistency across them, and one over everything the muxes write
   -- would be restarted by every batch.
   forM_ remote $ \c ->
     snapshotCountersWith atomically c >>= traceWith tracer . TraceRemoteCounters
+  forM_ buckets $ \bs@(budget, _) -> do
+    now <- getMonotonicTime
+    atomically (schedulingCounts now bs) >>= traceWith tracer . TraceEgressCounters
+    bursts <- atomically (takeBurstsAt budget now)
+    mapM_ (\b -> traceWith tracer (TraceEgressBurst (now `diffTime` bEnd b) b)) bursts
   forM_ local  $ \c ->
     snapshotCountersWith atomically c >>= traceWith tracer . TraceLocalCounters
   where
@@ -422,14 +456,16 @@ countersLoop remote local interval tracer = forever $ do
 withCounters :: (MonadAsync m, MonadDelay m)
                 => DiffTime
                 -> Bool                 -- ^ a local set too
+                -> Maybe (Bucket m, Maybe (Bucket m))
+                -- ^ the buckets behind scheduled egress, if it is scheduled
                 -> Tracer m CountersTrace
                 -> (Maybe (Counters m) -> Maybe (Counters m) -> m a)
                 -> m a
-withCounters interval localToo tracer k
+withCounters interval localToo buckets tracer k
   | interval <= 0 = k Nothing Nothing
   | otherwise = do
       remote <- newCounters
       local  <- if localToo then Just <$> newCounters else return Nothing
       either absurd id <$>
-        race (labelThisThread "mux-counters" >> countersLoop (Just remote) local interval tracer)
+        race (labelThisThread "mux-counters" >> countersLoop (Just remote) local buckets interval tracer)
              (k (Just remote) local)
