@@ -532,8 +532,8 @@ simpleMuxCallback connectionId _ _ app mux aid = do
     let initCtx = MinimalInitiatorContext connectionId
         respCtx = ResponderContext connectionId
 
-    resOps <- sequence
-      [ Mx.runMiniProtocol
+    resOps <- atomically $ sequence
+      [ Mx.runMiniProtocolSTM
           mux
           miniProtocolNum
           miniProtocolDir
