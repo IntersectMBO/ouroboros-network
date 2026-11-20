@@ -19,6 +19,7 @@ module Test.Ouroboros.Network.TxSubmission.Impaired
   , oversizedTxIds
   , splitAcknowledgements
   , Impairment (..)
+  , DuplicateBody (..)
   , noImpairment
   , impairmentSplitAcknowledgements
   , validImpairment
@@ -44,7 +45,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (max_TX_SIZE)
 
-import Test.QuickCheck (Gen, arbitrary, choose, oneof, shrink)
+import Test.QuickCheck (Arbitrary (..), Gen, choose, elements, oneof)
 
 
 -- | Add a fixed delay before every 'MsgReplyTxs' (body reply); txid
@@ -180,7 +181,8 @@ extraTxIds n (TxSubmissionClient mIdle) =
 
 -- | Append a fabricated body to each non-empty 'MsgReplyTxs' whose txid
 -- is not in the corresponding request list. Models a peer that replies
--- with bodies that were never asked for.
+-- with a body that was not asked for: one whose txid is not in the
+-- request, or a second copy of one that is.
 --
 -- Triggers 'ProtocolErrorTxNotRequested' on the inbound side. The
 -- fabricated body is produced by @mkBad reqs orig@ where @orig@ is the
@@ -297,6 +299,57 @@ splitAcknowledgements (TxSubmissionClient mIdle) =
       }
 
 
+-- | How a peer answers a requested txid with two copies of its body: the
+-- first body of the reply sent again at its end, one body more than
+-- asked for; or in place of the last body asked for, as many bodies as
+-- asked for, the second copy standing where the omitted one would.
+data DuplicateBody = DuplicateAppended | DuplicateForLast
+  deriving (Eq, Show, Bounded, Enum)
+
+instance Arbitrary DuplicateBody where
+  arbitrary = elements [minBound .. maxBound]
+  shrink DuplicateForLast  = [DuplicateAppended]
+  shrink DuplicateAppended = []
+
+-- | Send the first body of each non-empty 'MsgReplyTxs' twice, appended
+-- or in place of the last body, appended when the reply has one body.
+-- Models a peer answering a requested txid with two copies of its body:
+-- the second answers no pending key, and would pass for a late body that
+-- cancels an omission.  Triggers 'ProtocolErrorTxNotRequested' on the
+-- inbound side.
+duplicateBody
+  :: forall txid tx m a.
+     Monad m
+  => DuplicateBody
+  -> TxSubmissionClient txid tx m a
+  -> TxSubmissionClient txid tx m a
+duplicateBody DuplicateAppended client = unrequestedTx (\_ x -> x) client
+duplicateBody DuplicateForLast (TxSubmissionClient mIdle) =
+    TxSubmissionClient (wrapIdle <$> mIdle)
+  where
+    wrapIdle :: ClientStIdle txid tx m a -> ClientStIdle txid tx m a
+    wrapIdle ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs } = ClientStIdle
+      { recvMsgRequestTxIds = \blocking ack req -> do
+          reply <- recvMsgRequestTxIds blocking ack req
+          pure (wrapTxIds reply)
+      , recvMsgRequestTxs   = \txids -> do
+          reply <- recvMsgRequestTxs txids
+          pure (wrapTxs reply)
+      }
+
+    wrapTxIds :: ClientStTxIds blocking txid tx m a
+              -> ClientStTxIds blocking txid tx m a
+    wrapTxIds (SendMsgReplyTxIds reply k) = SendMsgReplyTxIds reply (wrapIdle k)
+    wrapTxIds (SendMsgDone a)             = SendMsgDone a
+
+    wrapTxs :: ClientStTxs txid tx m a -> ClientStTxs txid tx m a
+    wrapTxs (SendMsgReplyTxs []          k) = SendMsgReplyTxs [] (wrapIdle k)
+    wrapTxs (SendMsgReplyTxs txs@(x : _) k) = SendMsgReplyTxs (forLast txs) (wrapIdle k)
+      where
+        forLast ys | length ys >= 2 = init ys ++ [x]
+                   | otherwise      = ys ++ [x]
+
+
 -- | Behavioural fault injection on a peer's outbound 'TxSubmissionClient'.
 -- Peers configured with 'noImpairment' run unwrapped.
 data Impairment = Impairment
@@ -314,6 +367,8 @@ data Impairment = Impairment
     -- ^ exercise acknowledgement-only txid requests at the outbound peer
   , impairOversizedTxIds        :: Bool
     -- ^ advertise a txid with a size above 'max_TX_SIZE'
+  , impairDuplicateBody         :: Maybe DuplicateBody
+    -- ^ send the first body of each non-empty reply twice, this way
   } deriving (Eq, Show)
 
 -- | The neutral impairment: no delay, no omission. Equivalent to running the
@@ -326,6 +381,7 @@ noImpairment = Impairment { impairBodyDelay     = Nothing
                           , impairUnrequestedTx = False
                           , impairSplitAcknowledgements = False
                           , impairOversizedTxIds = False
+                          , impairDuplicateBody = Nothing
                           }
 
 impairmentSplitAcknowledgements :: Impairment
@@ -354,7 +410,8 @@ applyImpairment :: (MonadDelay m, MonadSTM m)
 applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
                            , impairExtraTxIds, impairUnrequestedTx
                            , impairSplitAcknowledgements
-                           , impairOversizedTxIds } mkBad c0 = do
+                           , impairOversizedTxIds
+                           , impairDuplicateBody } mkBad c0 = do
     c1 <- if impairOmitProb > 0
             then do
               genVar <- newTVarIO (mkStdGen impairSeed)
@@ -369,7 +426,9 @@ applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
            | otherwise           = c3
         c5 | impairOversizedTxIds = oversizedTxIds c4
            | otherwise            = c4
-    pure $ if impairSplitAcknowledgements then splitAcknowledgements c5 else c5
+        c6 | Just shape <- impairDuplicateBody = duplicateBody shape c5
+           | otherwise                         = c5
+    pure $ if impairSplitAcknowledgements then splitAcknowledgements c6 else c6
 
 
 -- | Generate a single 'Impairment': a mix of body delay, per-body
@@ -377,7 +436,7 @@ applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
 -- advertised txid.
 genOneImpairment :: Gen Impairment
 genOneImpairment = oneof [ genOmit, genDelay, genBoth, genExtraTxIds
-                         , genUnrequestedTx, genOversizedTxIds ]
+                         , genUnrequestedTx, genOversizedTxIds, genDuplicateBody ]
   where
     genOmit = do
       p    <- choose (0.1 :: Double, 0.9)
@@ -399,6 +458,7 @@ genOneImpairment = oneof [ genOmit, genDelay, genBoth, genExtraTxIds
       pure noImpairment { impairExtraTxIds = fromIntegral n }
     genUnrequestedTx = pure noImpairment { impairUnrequestedTx = True }
     genOversizedTxIds = pure noImpairment { impairOversizedTxIds = True }
+    genDuplicateBody = (\shape -> noImpairment { impairDuplicateBody = Just shape }) <$> arbitrary
 
 -- | Shrink an 'Impairment' towards 'noImpairment'.
 shrinkImpairment :: Impairment -> [Impairment]
@@ -406,6 +466,9 @@ shrinkImpairment imp = List.nub $
      [ imp { impairSplitAcknowledgements = False } | impairSplitAcknowledgements imp ]
   ++ [ imp { impairUnrequestedTx = False } | impairUnrequestedTx imp ]
   ++ [ imp { impairOversizedTxIds = False } | impairOversizedTxIds imp ]
+  ++ [ imp { impairDuplicateBody = Nothing } | isJust (impairDuplicateBody imp) ]
+  ++ [ imp { impairDuplicateBody = Just shape' }
+     | Just shape <- [impairDuplicateBody imp], shape' <- shrink shape ]
   ++ [ imp { impairExtraTxIds = a }        | a <- shrink (impairExtraTxIds imp) ]
   ++ [ imp { impairBodyDelay = Nothing }   | isJust (impairBodyDelay imp) ]
   ++ [ imp { impairOmitProb = 0 }          | impairOmitProb imp > 0 ]
@@ -426,6 +489,7 @@ kindOf :: Impairment -> String
 kindOf Impairment { impairSplitAcknowledgements = True } = "split-acknowledgements"
 kindOf Impairment { impairUnrequestedTx = True }                    = "unrequested-tx"
 kindOf Impairment { impairOversizedTxIds = True }                   = "oversized-txids"
+kindOf Impairment { impairDuplicateBody = Just _ }                  = "duplicate-body"
 kindOf Impairment { impairExtraTxIds = n }                | n > 0   = "extra-txids"
 kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = 0 } = "delay-only"
 kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = _ } = "delay+omit"

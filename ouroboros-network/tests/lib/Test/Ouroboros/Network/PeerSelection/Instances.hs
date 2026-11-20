@@ -14,6 +14,7 @@ module Test.Ouroboros.Network.PeerSelection.Instances
   ) where
 
 import Data.Hashable
+import NoThunks.Class (NoThunks)
 
 import Ouroboros.Network.PeerSelection.Governor
 
@@ -38,7 +39,7 @@ instance Arbitrary TestSeed where
 -- | Simple address representation for the tests
 --
 newtype PeerAddr = PeerAddr Int
-  deriving (Eq, Ord, Show, Hashable)
+  deriving (Eq, Ord, Show, Hashable, NoThunks)
 
 -- | We mostly avoid using this instance since we need careful control over
 -- the peer addrs, e.g. to make graphs work, and sets overlap etc. But it's

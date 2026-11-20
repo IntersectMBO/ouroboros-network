@@ -50,6 +50,7 @@ import NoThunks.Class (NoThunks (..))
 import Options.Applicative
 import Statistics.Quantile qualified as Stat
 import System.IO (hPutStrLn, stderr)
+import System.Random (mkStdGen)
 import System.Random.SplitMix qualified as SM
 
 import Network.Mux qualified as Mx
@@ -81,17 +82,23 @@ import Test.QuickCheck.Gen qualified as QC
 import Test.QuickCheck.Instances.ByteString ()
 import Test.QuickCheck.Random (QCGen (..), newQCGen)
 
+-- | The policy of the default config, for the option defaults.
+defaultTxDecisionPolicy :: V2.TxDecisionPolicy
+defaultTxDecisionPolicy =
+    either (error . show) id (V2.mkTxDecisionPolicy V2.defaultTxSubmissionConfigV2)
+
 main :: IO ()
 main =
   execParser (info (optionParser <**> helper) fullDesc)
     >>= \case
-      InboundOptions addr maxNumTxIdsToRequest maxNumUnacknowledgedTxIds version txDelay -> do
+      InboundOptions addr maxNumTxIdsToRequest maxNumUnacknowledgedTxIds txFastPeers version
+                     txDelay -> do
         let txSubmissionConfig = V2.defaultTxSubmissionConfigV2
               { V2.maxNumTxIdsToRequest,
                 V2.maxNumUnacknowledgedTxIds
               }
         -- report an insane configuration and halt
-        txDecisionPolicy <-
+        txDecisionPolicy <- (\p -> p { V2.txFastPeers }) <$>
           either throwIO pure (V2.mkTxDecisionPolicy txSubmissionConfig)
         runTxInbound addr txDecisionPolicy txSubmissionConfig version (microsecondsAsIntToDiffTime txDelay)
       OutboundOptions addr bindAddr maxNumUnacknowledgedTxIds version filePath num -> do
@@ -117,6 +124,7 @@ data Options =
       Addr -- ^ address of the inbound side
       Tx.NumTxIdsToReq -- ^ maximum number txids to request
       Tx.NumTxIdsToAck -- ^ unacked txids
+      Int -- ^ peers polled for txids at full speed by the coin
       TxSubmissionLogicVersion
       Int -- ^ tx validation time in microseconds
 
@@ -177,8 +185,8 @@ optionParser =
       analyseParser :: Parser Options
 
     inboundParser =
-      (\addr port maxTxIdsToReq maxUnacked version txDelay ->
-        InboundOptions Addr { addr, port } maxTxIdsToReq maxUnacked version txDelay
+      (\addr port maxTxIdsToReq maxUnacked fastPeers version txDelay ->
+        InboundOptions Addr { addr, port } maxTxIdsToReq maxUnacked fastPeers version txDelay
       ) <$> option auto
               (  long "addr"
               <> metavar "ADDR"
@@ -204,6 +212,13 @@ optionParser =
               <> help "size of unacknowledged txid buffer"
               <> value (V2.maxNumUnacknowledgedTxIds V2.defaultTxSubmissionConfigV2)
               <> showDefaultWith (show . Tx.getNumTxIdsToAck)
+            )
+        <*> option auto
+            (    long "fast-peers"
+              <> help ("number of inbound peers polled for txids at full speed by the coin; "
+                       ++ "the rest wait the slow tier's cadence between requests")
+              <> value (V2.txFastPeers defaultTxDecisionPolicy)
+              <> showDefault
             )
         <*> flag TxSubmissionLogicV2
                  TxSubmissionLogicV1
@@ -475,12 +490,14 @@ runTxInbound Addr { addr, port } txDecisionPolicy txSubmissionConfig version txD
         -- V2 only
         txSharedState <- V2.newSharedTxStateVar V2.emptySharedTxState
         txCountersVar <- V2.newTxSubmissionCountersVar mempty
-        txRegistry <- V2.newPeerTxRegistry
+        -- no local roots in the demo
+        txRegistry <- V2.newPeerTxRegistry (mkStdGen 42) (pure (const False))
         case version of
           TxSubmissionLogicV1 -> return ()
           TxSubmissionLogicV2 -> do
             thrd <- async $ V2.txCountersThreadV2
                        txDecisionPolicy
+                       txSubmissionConfig
                        Tracer.nullTracer
                        Tracer.nullTracer
                        txCountersVar
