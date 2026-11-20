@@ -1203,13 +1203,12 @@ dropLookupEntries keys s
   | IntSet.null keys = s
   | otherwise =
       s {
-        sharedTxIdToKey = IntSet.foldl' (deleteTxId (sharedKeyToTxId s))
-                                        (sharedTxIdToKey s) keys,
+        sharedTxIdToKey = IntSet.foldl' deleteTxId (sharedTxIdToKey s) keys,
         sharedKeyToTxId = IntMap.withoutKeys (sharedKeyToTxId s) keys
       }
   where
-    deleteTxId keyToTxId txIdToKey k =
-      case IntMap.lookup k keyToTxId of
+    deleteTxId txIdToKey k =
+      case IntMap.lookup k (sharedKeyToTxId s) of
         Just txid -> Map.delete (getRawTxId txid) txIdToKey
         Nothing   -> txIdToKey
 {-# INLINABLE dropLookupEntries #-}
