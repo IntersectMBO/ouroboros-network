@@ -16,6 +16,30 @@ import Ouroboros.Network.Util (PrettyShow (..), Proxy (..), ShowProxy (..))
 
 -- | Connection is identified by local and remote address.
 --
+-- #exclusivity#
+-- __Exclusivity.__ Successive connections may have the same 'ConnectionId',
+-- but mini-protocols that run at the same time with the same 'ConnectionId'
+-- always run on the same connection. So a connection's mini-protocols can use
+-- its 'ConnectionId' as the key for the state they share. That covers only
+-- the mini-protocols' own threads: a thread one of them forks may outlive it,
+-- and so use that key after a later connection has started using it.
+--
+-- Exclusivity holds because a connection's socket stays open until all its
+-- mini-protocols have ended, and while it is open no other connection can
+-- have the same pair of addresses:
+--
+-- * Each mini-protocol runs as a job of its connection's mux, and the mux's
+--   @run@ (see "Network.Mux") returns only once it has cancelled every job and
+--   waited for it to end, finalisers included.
+-- * The socket is closed only after @run@ has returned. The connection manager
+--   (see "Ouroboros.Network.ConnectionManager.Core") closes it once the
+--   connection handler, which runs the mux, has returned, and @connectToNode@
+--   (see "Ouroboros.Network.Socket") once the mux's thread has ended.
+-- * While a socket is open, no other socket has the same pair of addresses.
+--   TCP ensures that, as does the simulated snocket (see
+--   "Simulation.Network.Snocket"). Over any other snocket, exclusivity holds
+--   only if it ensures that too.
+--
 -- TODO: the type variable which this data type fills in is called `peerid`.  We
 -- should renamed to `connectionId`.
 --

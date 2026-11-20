@@ -21,6 +21,8 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 --
 data ExpandedInitiatorContext addr extraFlags m = ExpandedInitiatorContext {
     eicConnectionId    :: !(ConnectionId addr),
+    -- ^ No other connection with this 'ConnectionId' runs mini-protocols while
+    -- this one's run; see 'ConnectionId'.
     eicControlMessage  :: !(ControlMessageSTM m),
     eicIsBigLedgerPeer :: !IsBigLedgerPeer,
     eicExtraFlags      :: !extraFlags
@@ -32,6 +34,8 @@ data ExpandedInitiatorContext addr extraFlags m = ExpandedInitiatorContext {
 --
 newtype MinimalInitiatorContext addr = MinimalInitiatorContext {
     micConnectionId   :: ConnectionId addr
+    -- ^ No other connection with this 'ConnectionId' runs mini-protocols while
+    -- this one's run; see 'ConnectionId'.
   }
   deriving Functor
 
@@ -39,5 +43,7 @@ newtype MinimalInitiatorContext addr = MinimalInitiatorContext {
 --
 newtype ResponderContext addr = ResponderContext {
     rcConnectionId    :: ConnectionId addr
+    -- ^ No other connection with this 'ConnectionId' runs mini-protocols while
+    -- this one's run; see 'ConnectionId'.
   }
   deriving Functor
