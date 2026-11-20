@@ -906,19 +906,26 @@ retainedKeysSet = retainedSet
 -- one transaction that grows with it; the queue is unwound once, for the
 -- keys and the remainder together.
 retainedExpireUpTo :: Int -> RetainTime -> RetainedTxs -> (IntSet, RetainedTxs)
-retainedExpireUpTo limit currentTime retained@(RetainedTxs queue keys)
-  | limit > 0, retainedDueBy currentTime retained = go limit IntSet.empty queue
-  | otherwise                                     = (IntSet.empty, retained)
+retainedExpireUpTo limit currentTime retained
+     | limit > 0
+     , retainedDueBy currentTime retained
+     = go limit IntSet.empty (retainedQueue retained)
+
+     | otherwise
+     = (IntSet.empty, retained)
   where
-    go !n !expired r
-      | n <= 0 = done expired r
+    go !n !expired queue
+      | n <= 0 = done expired queue
       | otherwise =
-          case IntPSQ.minView r of
-            Just (k, retainUntil, (), r')
-              | retainUntil <= currentTime ->
-                  go (n - 1) (IntSet.insert k expired) r'
-            _ -> done expired r
-    done expired r = (expired, RetainedTxs r (keys `IntSet.difference` expired))
+          case IntPSQ.minView queue of
+            Just (k, retainUntil, (), queue')
+              | retainUntil <= currentTime
+              -> go (n - 1) (IntSet.insert k expired) queue'
+            _ -> done expired queue
+    done expired r =
+      ( expired
+      , RetainedTxs r (retainedSet retained `IntSet.difference` expired)
+      )
 {-# INLINE retainedExpireUpTo #-}
 
 -- | Where a bounded sweep goes on from: the next key to examine in
