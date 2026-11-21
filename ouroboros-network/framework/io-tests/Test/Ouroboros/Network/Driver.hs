@@ -60,6 +60,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer
 
+import Test.Ouroboros.Network.Driver.Progress qualified as Progress
 import Test.Ouroboros.Network.Orphans ()
 import Test.Ouroboros.Network.Utils (sayTracer)
 
@@ -76,7 +77,8 @@ import Text.Show.Functions ()
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Driver"
-  [ testGroup "Simple"
+  [ Progress.tests
+  , testGroup "Simple"
     [ testProperty "channel ReqResp ST"              prop_channel_simple_reqresp_ST
     , testProperty "channel ReqResp IO"              (BaseQC.withNumTests 33 prop_channel_simple_reqresp_IO)
     , testProperty "channel PingPong ST"             prop_channel_ping_pong_ST

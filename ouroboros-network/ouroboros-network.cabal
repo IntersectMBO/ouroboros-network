@@ -102,6 +102,7 @@ library api
     Ouroboros.Network.PeerSelection.RelayAccessPoint
     Ouroboros.Network.PerasSupport
     Ouroboros.Network.Point
+    Ouroboros.Network.Protocol.Codec.Utils
     Ouroboros.Network.Protocol.Limits
     Ouroboros.Network.SizeInBytes
     Ouroboros.Network.Tx
@@ -352,6 +353,7 @@ library framework
     Ouroboros.Network.Context
     Ouroboros.Network.Driver
     Ouroboros.Network.Driver.Limits
+    Ouroboros.Network.Driver.Progress
     Ouroboros.Network.Driver.Simple
     Ouroboros.Network.Driver.Stateful
     Ouroboros.Network.Hashable
@@ -586,6 +588,7 @@ test-suite framework-io-tests
   hs-source-dirs: framework/io-tests
   other-modules:
     Test.Ouroboros.Network.Driver
+    Test.Ouroboros.Network.Driver.Progress
     Test.Ouroboros.Network.RawBearer
     Test.Ouroboros.Network.Server.IO
     Test.Ouroboros.Network.Socket
@@ -594,6 +597,8 @@ test-suite framework-io-tests
     QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
+    cborg,
+    deepseq,
     cardano-base:testlib >=0.1.5.0,
     contra-tracer,
     directory,
@@ -608,7 +613,7 @@ test-suite framework-io-tests
     tasty,
     tasty-quickcheck,
     time,
-    typed-protocols:{typed-protocols, examples, stateful},
+    typed-protocols:{typed-protocols, cborg, examples, stateful},
     with-utf8,
 
   if os(windows)
@@ -792,7 +797,6 @@ library protocols
     Ouroboros.Network.Protocol.ChainSync.PipelineDecision
     Ouroboros.Network.Protocol.ChainSync.Server
     Ouroboros.Network.Protocol.ChainSync.Type
-    Ouroboros.Network.Protocol.Codec.Utils
     Ouroboros.Network.Protocol.KeepAlive.Client
     Ouroboros.Network.Protocol.KeepAlive.Codec
     Ouroboros.Network.Protocol.KeepAlive.Server
@@ -862,6 +866,10 @@ library protocols
     singletons,
     text,
     typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.2,
+
+  -- Preserve the existing protocol-component import for downstream users.
+  reexported-modules:
+    Ouroboros.Network.Protocol.Codec.Utils
 
 library protocols-tests-lib
   import: ghc-options-tests
