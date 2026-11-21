@@ -30,6 +30,7 @@ packages: ./monoidal-synchronisation
           ./cardano-diffusion
           ./ntp-client
           ./acts-generic
+          ./smol-world
 
 tests: True
 benchmarks: True
