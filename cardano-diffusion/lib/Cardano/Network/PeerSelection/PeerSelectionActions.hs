@@ -28,13 +28,8 @@ import Network.DNS qualified as DNS
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Cardano.Network.PeerSelection.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
-import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection as PeerSelection
 import Ouroboros.Network.PeerSelection.PeerSelectionActions qualified as Ouroboros
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..),
-           TTL (..))
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import System.Random
 
 -- We start by reading the current ledger state judgement, if it is

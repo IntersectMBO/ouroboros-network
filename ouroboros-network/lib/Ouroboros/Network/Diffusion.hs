@@ -1,13 +1,14 @@
-{-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
 
 -- | This module is expected to be imported qualified.
 --
@@ -280,7 +281,7 @@ runM Interfaces
     (fuzzRng,        rng3) = splitGen rng2
     (cmLocalStdGen,  rng4) = splitGen rng3
     (cmStdGen1,      rng5) = splitGen rng4
-    (cmStdGen2, peerSelectionActionsRng) = splitGen rng5
+    (cmStdGen2, localRootPeersRng) = splitGen rng5
 
     mkInboundPeersMap :: IG.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing
@@ -620,8 +621,7 @@ runM Interfaces
                  (PeerConnectionHandle
                     muxMode responderCtx ntnAddr extraFlags ntnVersionData bytes m a b)
                  m
-            -> ((Async m Void, Async m Void)
-                -> PeerSelectionActions
+            -> ( PeerSelectionActions
                      extraState
                      extraFlags
                      extraPeers
@@ -630,52 +630,57 @@ runM Interfaces
                      (PeerConnectionHandle
                         muxMode responderCtx ntnAddr extraFlags ntnVersionData bytes m a b)
                      m
+                -> Async m Void
+                -> Async m Void
                 -> m c)
             -> m c
-          withPeerSelectionActions' readInboundPeers peerStateActions =
-              withPeerSelectionActions dtTraceLocalRootPeersTracer
-                                       localRootsVar
-                                       dnsActions
-                                       (\getLedgerPeers -> PeerSelectionActions {
-                                         peerSelectionTargets       = dcPeerSelectionTargets,
-                                         readPeerSelectionTargets   = readTVar peerSelectionTargetsVar,
-                                         getLedgerStateCtx          = daLedgerPeersCtx,
-                                         readLocalRootPeersFromFile = dcReadLocalRootPeers,
-                                         readLocalRootPeers         = readTVar localRootsVar,
-                                         peerSharing                = dcPeerSharing,
-                                         peerConnToPeerSharing      = pchPeerSharing daNtnPeerSharing,
-                                         requestPeerShare           =
-                                           requestPeerSharingResult (readTVar (getPeerSharingRegistry daPeerSharingRegistry)),
-                                         requestPublicRootPeers     =
-                                           case daRequestPublicRootPeers of
-                                             Nothing ->
-                                               PeerSelection.requestPublicRootPeersImpl
-                                                 dtTracePublicRootPeersTracer
-                                                 dcReadPublicRootPeers
-                                                 dnsActions
-                                                 dnsSemaphore
-                                                 daToExtraPeers
-                                                 getLedgerPeers
-                                             Just requestPublicRootPeers' ->
-                                               requestPublicRootPeers' dnsActions dnsSemaphore daToExtraPeers getLedgerPeers,
-                                         readInboundPeers =
-                                           case dcPeerSharing of
-                                             PeerSharingDisabled -> pure Map.empty
-                                             PeerSharingEnabled  -> readInboundPeers,
-                                         readLedgerPeerSnapshot = dcReadLedgerPeerSnapshot,
-                                         extraPeersAPI             = daExtraPeersAPI,
-                                         peerStateActions
-                                       })
-                                       WithLedgerPeersArgs {
-                                         wlpRng                   = ledgerPeersRng,
-                                         wlpConsensusInterface    = daLedgerPeersCtx,
-                                         wlpTracer                = dtTraceLedgerPeersTracer,
-                                         wlpGetUseLedgerPeers     = dcReadUseLedgerPeers,
-                                         wlpGetLedgerPeerSnapshot = dcReadLedgerPeerSnapshot,
-                                         wlpSemaphore             = dnsSemaphore,
-                                         wlpSRVPrefix             = daSRVPrefix
-                                       }
-                                       peerSelectionActionsRng
+          withPeerSelectionActions' readInboundPeers peerStateActions k =
+            withLedgerPeers
+              dnsActions
+              WithLedgerPeersArgs {
+                wlpRng                   = ledgerPeersRng,
+                wlpConsensusInterface    = daLedgerPeersCtx,
+                wlpTracer                = dtTraceLedgerPeersTracer,
+                wlpGetUseLedgerPeers     = dcReadUseLedgerPeers,
+                wlpGetLedgerPeerSnapshot = dcReadLedgerPeerSnapshot,
+                wlpSemaphore             = dnsSemaphore,
+                wlpSRVPrefix             = daSRVPrefix
+              }
+              $ \getLedgerPeers ledgerPeersThread ->
+                let args = WithPeerSelectionActionsArgs {
+                      localRootPeersTracer       = dtTraceLocalRootPeersTracer,
+                      peerSelectionTargets       = dcPeerSelectionTargets,
+                      readPeerSelectionTargets   = readTVar peerSelectionTargetsVar,
+                      getLedgerStateCtx          = daLedgerPeersCtx,
+                      localRootPeersRng,
+                      readLocalRootPeersFromFile = dcReadLocalRootPeers,
+                      localRootsVar,
+                      peerSharing                = dcPeerSharing,
+                      peerConnToPeerSharing      = pchPeerSharing daNtnPeerSharing,
+                      requestPeerShare           = requestPeerSharingResult (readTVar (getPeerSharingRegistry daPeerSharingRegistry)),
+                      requestPublicRootPeers     = case daRequestPublicRootPeers of
+                                                     Nothing ->
+                                                       PeerSelection.requestPublicRootPeersImpl
+                                                         dtTracePublicRootPeersTracer
+                                                         dcReadPublicRootPeers
+                                                         dnsActions
+                                                         dnsSemaphore
+                                                         daToExtraPeers
+                                                         getLedgerPeers
+                                                     Just requestPublicRootPeers' ->
+                                                       requestPublicRootPeers' dnsActions dnsSemaphore daToExtraPeers getLedgerPeers,
+                      readInboundPeers           = case dcPeerSharing of
+                                                     PeerSharingDisabled -> pure Map.empty
+                                                     PeerSharingEnabled  -> readInboundPeers,
+                      readLedgerPeerSnapshot     = dcReadLedgerPeerSnapshot,
+                      extraPeersAPI              = daExtraPeersAPI,
+                      peerStateActions,
+                      peerActionsDNS             = dnsActions
+                    }
+              in
+              withPeerSelectionActions args
+                $ \peerSelectionActions localRootPeersProviderThread ->
+                 k peerSelectionActions ledgerPeersThread localRootPeersProviderThread
 
           peerSelectionGovernor'
             :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
@@ -783,7 +788,7 @@ runM Interfaces
             withPeerSelectionActions'
               (return Map.empty)
               peerStateActions $
-              \(ledgerPeersThread, localRootPeersProviderThread) peerSelectionActions->
+              \peerSelectionActions ledgerPeersThread localRootPeersProviderThread ->
                 Async.withAsync
                   (peerSelectionGovernor'
                     dtDebugPeerSelectionTracer
@@ -817,7 +822,7 @@ runM Interfaces
                     withPeerSelectionActions'
                       (mkInboundPeersMap <$> readInboundState)
                       peerStateActions $
-                        \(ledgerPeersThread, localRootPeersProviderThread) peerSelectionActions ->
+                        \peerSelectionActions ledgerPeersThread localRootPeersProviderThread ->
                           Async.withAsync
                             (do
                               labelThisThread "Peer selection governor"

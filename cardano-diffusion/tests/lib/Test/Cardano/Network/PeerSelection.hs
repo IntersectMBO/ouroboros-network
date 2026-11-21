@@ -4589,7 +4589,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0))
           Cardano.ExtraPeers.empty
           actions
-            { requestPublicRootPeers = \_ _ ->
+            { Governor.requestPublicRootPeers = \_ _ ->
                 transformPeerSelectionAction requestPublicRootPeers }
           policy
           interfaces
