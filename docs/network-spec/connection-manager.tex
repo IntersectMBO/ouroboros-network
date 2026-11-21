@@ -381,7 +381,7 @@ two multiplexer threads (muxer \& demuxer threads).  However, all these threads
 are spawned and managed by the multiplexer, which has the property that if any
 of the threads throws an exception, all of the threads will be killed.  This
 property allows us to have a single error handling policy (called
-\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-RethrowPolicy.html\#t:RethrowPolicy}{\texttt{RethrowPolicy}})
+\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/framework/Ouroboros-Network-RethrowPolicy.html\#t:RethrowPolicy}{\texttt{RethrowPolicy}})
 per connection handler thread. A \texttt{RethrowPolicy} classifies exceptions
 into two categories, depending on whether an exception should terminate the
 connection or be propagated to terminate the whole process.
@@ -1441,9 +1441,13 @@ We also provide application-level \texttt{TIME\_WAIT} state:
 \TerminatingState{}, in which we keep a connection, which should also protect us
 from late packets from a previous connection. However, the connection manager
 does allow to accept new connections during \TerminatingState{} - it is
-the client's responsibility not to reconnect too early. For example,
-\ptopgov{} enforces a 60s idle period before it can reconnect to the same peer, after
-either a protocol error or a connection failure.
+the client's responsibility not to reconnect too early. For example, after
+a failed connection attempt \ptopgov{} delays reconnecting to that peer using
+an exponential back-off: \texttt{5}s, \texttt{10}s, \texttt{20}s, \texttt{40}s,
+\texttt{80}s and \texttt{160}s, each fuzzed by up to \texttt{2}s in either
+direction.  A peer which was demoted because one of its mini-protocols errored
+is not re-promoted for a configured delay, for which
+\texttt{ouroboros-network} provides \texttt{10}s as the default.
 
 From an operational point of view, it's essential that connections are not held in
 \texttt{TIME\_WAIT} state for too long. This would be problematic when
