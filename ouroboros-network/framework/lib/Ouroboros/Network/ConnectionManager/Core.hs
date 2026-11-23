@@ -1965,10 +1965,14 @@ with args@Arguments {
                           (acceptedConnectionsHardLimit connectionsLimits)
                 if numberToPrune > 0
                 then do
-                  (_, prune)
+                  (pruneSelf, prune)
                     <- mkPruneAction connId numberToPrune state connState' connVar stdGenVar connThread
+
+                  unless pruneSelf $
+                    writeTVar connVar connState'
+
                   return
-                    ( PruneConnections prune (Left connState)
+                    ( PruneConnections prune (if pruneSelf then Left connState else Right tr)
                     , Nothing
                     )
 

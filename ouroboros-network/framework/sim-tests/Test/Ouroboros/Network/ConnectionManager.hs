@@ -45,6 +45,7 @@ import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid (All (..))
 import Data.Proxy (Proxy (..))
+import Data.Set qualified as Set
 import Data.Text.Lazy qualified as Text
 import Data.Void (Void)
 import Quiet
@@ -99,6 +100,12 @@ tests =
       (unit_handshakeCompletion Inbound True)
   , testProperty "outbound caller observes a published query"
       (unit_handshakeCompletion Outbound True)
+  , testProperty "outbound release after pruning another connection reaches inbound idle"
+      (unit_outboundRelease PruneOther)
+  , testProperty "outbound release prunes the released connection when selected"
+      (unit_outboundRelease PruneSelf)
+  , testProperty "outbound release within the inbound limit reaches inbound idle"
+      (unit_outboundRelease SpareCapacity)
   ]
 
 
@@ -1249,6 +1256,106 @@ unit_handshakeCompletion provenance publishQuery =
                   | actual == connId -> Just "query"
                 _ -> Nothing
           pure (outcome, Map.null (CM.getConnMap states), closeCount)
+
+
+data OutboundReleaseCase = PruneOther | PruneSelf | SpareCapacity
+
+-- Use the public operations to fill the inbound slots before releasing a
+-- ticking outbound connection that would otherwise take one more slot.
+unit_outboundRelease :: OutboundReleaseCase -> Property
+unit_outboundRelease releaseCase = once $ runSimOrThrow experiment
+  where
+    experiment :: forall s. IOSim s Property
+    experiment = do
+      baseSnocket <- mkSnocket mempty
+      pruneEvents <- newTVarIO []
+      releaseTraces <- newTVarIO (0 :: Int)
+      connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
+      info <- newInformationChannel
+      let local = TestAddress 0
+          outbound = TestAddress 1
+          inbound = TestAddress 2
+          outboundId = ConnectionId local outbound
+          inboundId = ConnectionId local inbound
+          (limit, victim) = case releaseCase of
+            PruneOther    -> (1, Just inboundId)
+            PruneSelf     -> (1, Just outboundId)
+            SpareCapacity -> (2, Nothing)
+          snocket = baseSnocket { connect = \_ _ -> pure () }
+          handler :: ConnectionHandlerFn () (FD (IOSim s)) Addr
+                         () Void Version VersionData (IOSim s)
+          handler _ _ writer _ _ _ _ =
+            MaskedAction $ \unmask -> do
+              atomically $ writePromise writer
+                (Right (HandshakeConnectionResult () ((), Duplex)))
+              unmask (atomically retry)
+          ticking = OutboundDupSt Ticking
+          idle = InboundIdleSt Duplex
+          entry = Map.singleton (CM.LocalAddr local)
+          initialMap = Map.fromList [(outbound, entry ticking), (inbound, entry idle)]
+          bothIdle = Map.fromList [(outbound, entry idle), (inbound, entry idle)]
+          expectedMap = maybe bothIdle (\key -> Map.delete (remoteAddress key) bothIdle) victim
+          expectedPrunes = case victim of
+            Nothing  -> []
+            Just key -> [(Set.singleton key, 1, Set.fromList [outboundId, inboundId])]
+          expectedReleaseTraces = case releaseCase of
+            PruneSelf -> 0
+            _         -> 1
+          tracer = mkTracer $ \event -> case event of
+            CM.TrPruneConnections selected count candidates ->
+              atomically $ modifyTVar pruneEvents ((selected, count, candidates) :)
+            _ -> pure ()
+          trTracer = mkTracer $ \event ->
+            when (fmap CM.abstractState (ttTransition event) == mkAbsTransition ticking idle) $
+              atomically $ modifyTVar releaseTraces (+1)
+      CM.with
+        CM.Arguments {
+          tracer,
+          trTracer,
+          ipv4Address = Nothing,
+          ipv6Address = Nothing,
+          addressType = const (Just IPv4Address),
+          snocket,
+          makeBearer = makeFDBearer,
+          withBuffer = \f -> f Nothing,
+          configureSocket = \_ _ -> pure (),
+          connectionDataFlow = id,
+          prunePolicy = \_ _ _ -> maybe Set.empty Set.singleton victim,
+          stdGen = Random.mkStdGen 0,
+          connectionsLimits = AcceptedConnectionsLimit limit limit 0,
+          timeWaitTimeout = testTimeWaitTimeout,
+          outboundIdleTimeout = testOutboundIdleTimeout,
+          updateVersionData = const,
+          connStateIdSupply,
+          classifyHandlerError = const HandshakeFailure
+        }
+        (InResponderMode info)
+        (ConnectionHandler (WithInitiatorResponderMode handler handler))
+        $ \cm -> do
+          Connected actualOutbound _ _ <- acquireOutboundConnection cm
+            InitiatorAndResponderDiffusionMode outbound Outbound
+          fd <- open snocket TestFamily
+          Connected actualInbound _ _ <- includeInboundConnection cm limit fd inboundId
+          before <- atomically $ CM.getConnMap <$> readState cm
+          result <- releaseOutboundConnection cm outboundId
+          -- Wait for victim cleanup independently of the survivor's state.
+          after <- timeout 10 $ atomically $ do
+            states <- CM.getConnMap <$> readState cm
+            check (maybe True (\key -> Map.notMember (remoteAddress key) states) victim)
+            pure states
+          prunes <- atomically $ readTVar pruneEvents
+          traces <- atomically $ readTVar releaseTraces
+          pure $ conjoin
+            [ actualOutbound === outboundId
+            , actualInbound === inboundId
+            , counterexample "state before release" (before === initialMap)
+            , counterexample (show result) $ case result of
+                OperationSuccess st -> st === ticking
+                _                   -> property False
+            , counterexample "state after release" (after === Just expectedMap)
+            , counterexample "pruning events" (prunes === expectedPrunes)
+            , counterexample "release transition traces" (traces === expectedReleaseTraces)
+            ]
 
 
 --
