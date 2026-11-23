@@ -259,6 +259,8 @@ data NodeTxSubmissionConfig =
 -- | The default `MiniProtocolParameters` with the node's tx-submission
 -- settings, e.g. from its configuration.
 --
+-- Ouroboros-Consensus is using `mkDefaultMiniProtocolParameters` in
+-- `Ouroboros.Consensus.Node.mkNodeKernelArgs`
 mkDefaultMiniProtocolParameters :: TxSubmissionLogicVersion
                                 -> NodeTxSubmissionConfig
                                 -> MiniProtocolParameters
