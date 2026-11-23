@@ -93,6 +93,7 @@ import Data.Text (Text)
 import Data.Text.Lazy qualified as TL
 import Data.Text.Lazy.IO qualified as TL
 import Data.Time.Format.ISO8601 (iso8601Show)
+import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32)
 import Formatting (formatToString, (%), (%+))
 import Formatting qualified as F
@@ -450,7 +451,7 @@ instance ToText PingWarning where
       severity = \case
           AddressResolutionError{} -> warning
           DNSResolution{}          -> mempty
-          Error{}                  -> warning
+          Error{}                  -> "ERROR: "
           ConnectError{}           -> warning
         where
           warning = TL.pack "WARNING: "
@@ -764,6 +765,7 @@ data SomeProtocolFlavour where
                            , NFData versionNumber
                            , ToJSON versionNumber
                            , ToText versionNumber
+                           , Typeable versionNumber
                            )
                         => ProtocolFlavour versionNumber versionData
                         -> SomeProtocolFlavour
@@ -1049,9 +1051,8 @@ pingClients'
   -- never return file path related errors in `AddressResolutionError`.
   -> [Address (Unresolved SRVOrFilePathUnresolved)]
   -> IO [PingException]
-  -- ^ returns two list:
-  -- * list of resolve errors (printed with `PingWarning` tracer)
-  -- * list of `pingClient` errors
+  -- ^ Returns address resolution and client errors. Client failures are also
+  -- reported to the warning tracer as they occur.
 pingClients' stdout infoTracer headerTracer stderr opts acceptFilePath addresses = do
     -- split addresses into IPs and ones that require DNS resolver, which avoids
     -- reading `/etc/resolv.conf` is not needed.
@@ -1125,10 +1126,14 @@ pingClient
   -- ^ stderr
   -> PingOpts
   -> AddrInfo
-  -> IO (Either PingClientException ())
+  -> IO ()
 pingClient stdout infoTracer headerTracer stderr opts addrInfo = do
   signalVar <- newSignalVar [Socket.addrAddress addrInfo]
-  pingClient' stdout infoTracer headerTracer stderr opts signalVar addrInfo
+  res <- pingClient' stdout infoTracer headerTracer stderr opts signalVar addrInfo
+  case res of
+    Left err -> traceWith stderr (Error (toException err))
+             >> throwIO err
+    Right () -> return ()
 
 
 -- | `MiniProtocolParameters` used by ping.  Ping only uses the chain-sync and
@@ -1183,14 +1188,19 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
       :: IO ()
       -> IO (Either PingClientException ())
     handlePingClientExceptions io =
-      (Right <$> io)
-      `catch` \case
-        err | Just e <- fromException err -> pure (Left (IOException e addr))
-            | Just e <- fromException err -> pure (Left (DecodingException e addr))
-            | Just e <- fromException err -> pure (Left (MuxException e addr))
-            | Just e <- fromException err -> pure (Left e)
-            | otherwise
-            -> throwIO err
+      (Right <$> io) `catches`
+        [ Handler $ \e -> handleClientError (IOException e addr)
+        , Handler $ \e -> handleClientError (DecodingException e addr)
+        , Handler $ \e -> handleClientError (MuxException e addr)
+        , Handler $ \e -> handleClientError (ProtocolLimitException e addr)
+        , Handler $ \e -> handleClientError (HandshakeException @NodeToNodeVersion e addr)
+        , Handler $ \e -> handleClientError (HandshakeException @NodeToClientVersion e addr)
+        ]
+
+    handleClientError :: PingClientException -> IO (Either PingClientException ())
+    handleClientError err = do
+      traceWith stderr (Error (toException err))
+      return $ Left err
 
     runPingClient :: forall versionNumber versionData.
                      ( Acceptable versionData
@@ -1201,6 +1211,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                      , NFData versionNumber
                      , ToJSON versionNumber
                      , ToText versionNumber
+                     , Typeable versionNumber
                      )
                   => ProtocolFlavour versionNumber versionData
                   -> Signal
@@ -1286,11 +1297,10 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                [minBound..maxBound]
         )
       case r of
-        Left err -> do
-          throwIO (ProtocolLimitException err addr)
+        Left err -> throwIO err
         Right (Left err', rtt) -> do
           traceWith infoTracer' (LogHandshakeRTT $ HandshakeRTT rtt)
-          throwIO (HandshakeException err' addr)
+          throwIO err'
         Right (Right r', rtt) -> do
           traceWith infoTracer' (LogHandshakeRTT $ HandshakeRTT rtt)
           case r' of
@@ -1356,7 +1366,8 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                           (ChainSync.timeLimitsChainSync defaultChainSyncIdleTimeout IsNotTrustable)
                           channel
                           (ChainSync.chainSyncClientPeer $ chainSyncClient pingOptsHashType sig stdout' headerTracer))
-                        >>= void . atomically
+                        >>= atomically
+                        >>= either throwIO pure
                     )
                     `finally` Mx.stop mx
                   threadDelay idleTimeout
@@ -1393,7 +1404,8 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                                 stdout'
                                 headerTracer
                                 (TDigest.tdigest [])))
-                        >>= void . atomically
+                        >>= atomically
+                        >>= either throwIO pure
                     )
                     `finally` Mx.stop mx
                   threadDelay idleTimeout
