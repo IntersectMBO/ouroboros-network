@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap)
+import Control.Tracer (Tracer (..), contramap, mkTracer, nullTracer)
 
 import GHC.Generics
 import GHC.IO.Exception
@@ -85,6 +85,12 @@ tests =
     -- TODO: replace these tests with 'Test.Ouroboros.Network.Server' simulation.
     testProperty "overwritten"                    unit_overwritten
   , testProperty "timeoutExpired"                 unit_timeoutExpired
+  , testProperty "reservation trace failure clears the slot"
+      (unit_outboundReservationRollback ReservationTrace)
+  , testProperty "socket open failure clears the slot"
+      (unit_outboundReservationRollback SocketOpen)
+  , testProperty "socket configuration failure closes the socket and clears the slot"
+      (unit_outboundReservationRollback SocketConfiguration)
   ]
 
 
@@ -1091,6 +1097,76 @@ unit_timeoutExpired =
           )
         ])
 
+
+
+data OutboundFailure = ReservationTrace | SocketOpen | SocketConfiguration
+  deriving (Eq)
+
+unit_outboundReservationRollback :: OutboundFailure -> Property
+unit_outboundReservationRollback failure =
+    runSimOrThrow experiment ===
+      ((True, True), (True, True), expectedOpens, expectedCloses)
+  where
+    expectedOpens = if failure == ReservationTrace then 0 else 2
+    expectedCloses = if failure == SocketConfiguration then 2 else 0
+
+    experiment :: forall s. IOSim s ((Bool, Bool), (Bool, Bool), Int, Int)
+    experiment = do
+      baseSnocket <- mkSnocket mempty
+      opens <- newTVarIO (0 :: Int)
+      closes <- newTVarIO (0 :: Int)
+      let injected = IOError Nothing ResourceExhausted
+                       "outbound acquisition" "injected failure" Nothing Nothing
+          faultSnocket = baseSnocket {
+              openToConnect = \addr -> do
+                atomically $ modifyTVar opens (+1)
+                when (failure == SocketOpen) (throwIO injected)
+                openToConnect baseSnocket addr,
+              close = \fd -> do
+                atomically $ modifyTVar closes (+1)
+                close baseSnocket fd
+            }
+          reservationTracer = mkTracer $ \event -> case event of
+            CM.TrMutableConnStateId {} | failure == ReservationTrace -> throwIO injected
+            _ -> pure ()
+      connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
+      info <- newInformationChannel
+      CM.with
+        CM.Arguments {
+          tracer = reservationTracer,
+          trTracer = nullTracer,
+          ipv4Address = Nothing,
+          ipv6Address = Nothing,
+          addressType = \_ -> Just IPv4Address,
+          snocket = faultSnocket,
+          makeBearer = makeFDBearer,
+          withBuffer = \f -> f Nothing,
+          configureSocket = \_ _ -> throwIO injected,
+          connectionDataFlow = id,
+          prunePolicy = simplePrunePolicy,
+          stdGen = Random.mkStdGen 0,
+          connectionsLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+          timeWaitTimeout = testTimeWaitTimeout,
+          outboundIdleTimeout = testOutboundIdleTimeout,
+          updateVersionData = \a _ -> a,
+          connStateIdSupply,
+          classifyHandlerError = \_ -> HandshakeFailure
+        }
+        (InResponderMode info)
+        (mkConnectionHandler faultSnocket)
+        $ \cm -> do
+          let peer = TestAddress 1
+              attempt = do
+                outcome <- try (acquireOutboundConnection cm
+                  InitiatorAndResponderDiffusionMode peer Outbound)
+                states <- atomically $ readState cm
+                pure (either (== injected) (const False) outcome,
+                      Map.null (CM.getConnMap states))
+          first <- attempt
+          second <- attempt
+          openCount <- atomically $ readTVar opens
+          closeCount <- atomically $ readTVar closes
+          pure (first, second, openCount, closeCount)
 
 
 --

@@ -1271,9 +1271,14 @@ with args@Arguments {
         -> Provenance
         -> m (Connected peerAddr handle handleError)
     acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connProv = do
-        let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
-        (trace, trTrace, eHandleWedge) <- atomically $ do
+        -- A fresh connection owns its reservation as soon as selection
+        -- commits. Install rollback before running any further effects.
+        bracketOnError selectOutbound releaseReservation acquireSelected
+      where
+      provenance = Outbound
+
+      selectOutbound = atomically $ do
           state <- readTMVar stateVar
           stdGen <- stateTVar stdGenVar Random.splitGen
           case State.lookupByRemoteAddr stdGen peerAddr state of
@@ -1418,6 +1423,30 @@ with args@Arguments {
                          , Right (mutableConnState, Nowhere)
                          )
 
+      -- The socket bracket handles errors after socket acquisition. Here we
+      -- only roll back the exact reservation still in the unknown-local slot.
+      releaseReservation (_, _, Right (entry@MutableConnState { connVar, connStateId }, Nowhere)) = do
+        released <- uninterruptibleMask_ $ atomically $ do
+          connState <- readTVar connVar
+          case connState of
+            ReservedOutboundState ->
+              modifyTMVarSTM stateVar $ \state -> do
+                let reservation = Map.lookup peerAddr (State.getConnMap state)
+                                  >>= Map.lookup State.UnknownLocalAddr
+                if reservation == Just entry
+                  then do
+                    writeTVar connVar (TerminatedState Nothing)
+                    return (State.deleteAtRemoteAddr peerAddr entry state, True)
+                  else return (state, False)
+            _ -> return False
+        when released $ do
+          let closed = TerminatedState Nothing
+          traceWith trTracer (TransitionTrace connStateId (mkTransition ReservedOutboundState closed))
+          traceWith trTracer (TransitionTrace connStateId (Transition (Known closed) Unknown))
+          traceCounters stateVar
+      releaseReservation _ = pure ()
+
+      acquireSelected (trace, trTrace, eHandleWedge) = do
         traverse_ (traceWith tracer) trace
         traverse_ (traceWith trTracer) trTrace
         traceCounters stateVar
