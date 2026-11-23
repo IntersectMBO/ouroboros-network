@@ -91,6 +91,14 @@ tests =
       (unit_outboundReservationRollback SocketOpen)
   , testProperty "socket configuration failure closes the socket and clears the slot"
       (unit_outboundReservationRollback SocketConfiguration)
+  , testProperty "inbound caller disconnects if the handler exits without a result"
+      (unit_handshakeCompletion Inbound False)
+  , testProperty "outbound caller disconnects if the handler exits without a result"
+      (unit_handshakeCompletion Outbound False)
+  , testProperty "inbound caller observes a published query"
+      (unit_handshakeCompletion Inbound True)
+  , testProperty "outbound caller observes a published query"
+      (unit_handshakeCompletion Outbound True)
   ]
 
 
@@ -1167,6 +1175,80 @@ unit_outboundReservationRollback failure =
           openCount <- atomically $ readTVar opens
           closeCount <- atomically $ readTVar closes
           pure (first, second, openCount, closeCount)
+
+
+-- Exercise the actual caller path with a handler that either fails before
+-- publication or publishes a query and returns.
+unit_handshakeCompletion :: Provenance -> Bool -> Property
+unit_handshakeCompletion provenance publishQuery =
+    runSimOrThrow experiment ===
+      (Just (if publishQuery then "query" else "terminated"), True, Just 1)
+  where
+    experiment :: forall s. IOSim s (Maybe String, Bool, Maybe Int)
+    experiment = do
+      baseSnocket <- mkSnocket mempty
+      closes <- newTVarIO (0 :: Int)
+      let snocket = baseSnocket {
+              connect = \_ _ -> pure (),
+              close = \fd -> do
+                close baseSnocket fd
+                atomically $ modifyTVar closes (+1)
+            }
+          handler :: ConnectionHandlerFn () (FD (IOSim s)) Addr
+                         (Handle (IOSim s)) Void Version VersionData (IOSim s)
+          handler _ _ writer _ _ _ _ =
+            MaskedAction $ \_ ->
+              if publishQuery
+                then atomically $ writePromise writer (Right HandshakeConnectionQuery)
+                else throwIO (userError "handler failed before publishing")
+      connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
+      info <- newInformationChannel
+      let connId = ConnectionId (TestAddress 0) (TestAddress 1)
+          tracer = nullTracer
+      CM.with
+        CM.Arguments {
+          tracer,
+          trTracer = nullTracer,
+          ipv4Address = Nothing,
+          ipv6Address = Nothing,
+          addressType = const (Just IPv4Address),
+          snocket,
+          makeBearer = makeFDBearer,
+          withBuffer = \f -> f Nothing,
+          configureSocket = \_ _ -> pure (),
+          connectionDataFlow = id,
+          prunePolicy = simplePrunePolicy,
+          stdGen = Random.mkStdGen 0,
+          connectionsLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+          timeWaitTimeout = testTimeWaitTimeout,
+          outboundIdleTimeout = testOutboundIdleTimeout,
+          updateVersionData = const,
+          connStateIdSupply,
+          classifyHandlerError = \_ -> HandshakeFailure
+        }
+        (InResponderMode info)
+        (ConnectionHandler (WithInitiatorResponderMode handler handler))
+        $ \cm -> do
+          result <- timeout 1 $ case provenance of
+            Inbound -> do
+              fd <- open snocket TestFamily
+              includeInboundConnection cm maxBound fd connId
+            Outbound ->
+              acquireOutboundConnection cm InitiatorAndResponderDiffusionMode
+                (remoteAddress connId) Outbound
+          -- A query result can arrive before the handler finishes cleanup.
+          closeCount <- timeout 1 $ atomically $ do
+            count <- readTVar closes
+            check (count > 0)
+            pure count
+          states <- atomically $ readState cm
+          let outcome = case result of
+                Just (Disconnected actual ConnectionInTerminatedState)
+                  | actual == connId -> Just "terminated"
+                Just (Disconnected actual ConnectionDisconnectedByHandshakeQuery)
+                  | actual == connId -> Just "query"
+                _ -> Nothing
+          pure (outcome, Map.null (CM.getConnMap states), closeCount)
 
 
 --

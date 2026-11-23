@@ -563,6 +563,19 @@ with args@Arguments {
       <$> State.readConnectionStates st
 
 
+    -- A handler can exit before reporting a handshake result. Prefer the
+    -- promise when both it and the handler's result are ready.
+    awaitHandshakeResult
+      :: forall result.
+         PromiseReader m result
+      -> Async m ()
+      -> m (Maybe result)
+    awaitHandshakeResult reader connThread =
+      atomically $
+        (Just <$> readPromise reader)
+          `orElse` (waitCatchSTM connThread $> Nothing)
+
+
     -- Fork connection thread.
     --
     -- TODO: We could probably elegantly eliminate 'PromiseWriter', now that we use
@@ -894,17 +907,20 @@ with args@Arguments {
                 , connThread, reader) -> do
             traceCounters stateVar
 
-            res <- atomically $ readPromise reader
+            res <- awaitHandshakeResult reader connThread
             case res of
-              Left handleError -> do
+              Nothing ->
+                return (Disconnected connId ConnectionInTerminatedState)
+
+              Just (Left handleError) -> do
                 terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
                                                  (ConnectionHandlerError handleError)
 
-              Right HandshakeConnectionQuery -> do
+              Just (Right HandshakeConnectionQuery) -> do
                 terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
                                                  ConnectionDisconnectedByHandshakeQuery
 
-              Right (HandshakeConnectionResult handle (_version, versionData)) -> do
+              Just (Right (HandshakeConnectionResult handle (_version, versionData))) -> do
                 let dataFlow = connectionDataFlow versionData
                 (connected, mbTransition, provenance) <- atomically $ do
                   connState <- readTVar connVar
@@ -1610,17 +1626,20 @@ with args@Arguments {
                       mbAssertion
             traceCounters stateVar
 
-            res <- atomically (readPromise reader)
+            res <- awaitHandshakeResult reader connThread
             case res of
-              Left handleError -> do
+              Nothing ->
+                return (Disconnected connId ConnectionInTerminatedState)
+
+              Just (Left handleError) -> do
                 terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
                                                   (ConnectionHandlerError handleError)
 
-              Right HandshakeConnectionQuery -> do
+              Just (Right HandshakeConnectionQuery) -> do
                 terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
                                                   ConnectionDisconnectedByHandshakeQuery
 
-              Right (HandshakeConnectionResult handle (_version, versionData)) -> do
+              Just (Right (HandshakeConnectionResult handle (_version, versionData))) -> do
                 let dataFlow = connectionDataFlow versionData
                 -- We can safely overwrite the state: after successful
                 -- `connect` it's not possible to have a race condition
