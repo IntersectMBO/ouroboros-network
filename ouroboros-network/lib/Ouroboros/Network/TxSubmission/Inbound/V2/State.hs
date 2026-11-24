@@ -1219,7 +1219,8 @@ dropLookupEntries keys s
 -- already retained or already in the mempool are counted as late and dropped.
 -- Any requested tx omitted from the reply releases this peer's ownership.
 -- Late TXs contributes to the returned penalty count.
-handleReceivedTxs :: HasCallStack
+handleReceivedTxs :: forall peeraddr txid tx.
+                     HasCallStack
                   => (Eq peeraddr, Show peeraddr, HasRawTxId txid)
                   => (txid -> Bool)
                   -> Time
@@ -1345,6 +1346,9 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
     -- this peer attempts is buffered; one for a tx retained or in the
     -- mempool already, for a key answered already or re-interned since
     -- the request, or for no key at all, is dropped, late.
+    handleOne :: (IntSet, IntSet, SharedTxState peeraddr txid, IntMap.IntMap tx, Bool)
+              -> (txid, tx)
+              -> (IntSet, IntSet, SharedTxState peeraddr txid, IntMap.IntMap tx, Bool)
     handleOne
       ( !pendingKeysAcc
       , !bufferedAcc
