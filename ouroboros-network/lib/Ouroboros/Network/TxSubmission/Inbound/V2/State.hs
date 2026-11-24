@@ -1140,8 +1140,8 @@ walkFrom limit cursor@SweepCursor { sweepFrom, sweepUpTo } m
   where
     -- what is left of the pass: the entries from the key on, up to the
     -- pass's last key
-    inPass = IntMap.toAscList (fst (IntMap.spanAntitone (<= sweepUpTo) onward))
-    (_, onward) = IntMap.spanAntitone (< sweepFrom) m
+    inPass = IntMap.toAscList (IntMap.takeWhileAntitone (<= sweepUpTo) onward)
+    onward = IntMap.dropWhileAntitone (< sweepFrom) m
 
     -- The first @n@ entries in order, and the cursor after them: the key
     -- after the last taken, in the pass ending at @upTo@.
