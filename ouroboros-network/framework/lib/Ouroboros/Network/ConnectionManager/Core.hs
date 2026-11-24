@@ -31,7 +31,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException, assert)
-import Control.Monad (forM_, guard, unless, when, (>=>))
+import Control.Monad (filterM, forM_, guard, unless, when, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (throwTo)
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -43,6 +43,7 @@ import Data.Bifunctor
 import Data.Foldable (foldMap', traverse_)
 import Data.Function (on)
 import Data.Functor (void, ($>))
+import Data.Maybe (isNothing)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.Stack (CallStack, HasCallStack, callStack)
@@ -431,6 +432,9 @@ with args@Arguments {
           stdGenVar <- newTVar (stdGen args)
           return (v, stdGenVar)
 
+    -- History is independent of map membership and survives map rollback.
+    handlers <- newTVarIO ([] :: [Async m ()])
+
     let readState
           :: STM m (State.ConnMap peerAddr AbstractState)
         readState = readTMVar stateVar >>= State.readAbstractStateMap
@@ -466,7 +470,7 @@ with args@Arguments {
                   WithInitiatorMode
                     OutboundConnectionManager {
                         ocmAcquireConnection =
-                          acquireOutboundConnectionImpl stateVar stdGenVar outboundHandler,
+                          acquireOutboundConnectionImpl handlers stateVar stdGenVar outboundHandler,
                         ocmReleaseConnection =
                           releaseOutboundConnectionImpl stateVar stdGenVar
                       },
@@ -480,7 +484,7 @@ with args@Arguments {
                   WithResponderMode
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl stateVar inboundHandler,
+                          includeInboundConnectionImpl handlers stateVar inboundHandler,
                         icmReleaseConnection =
                           releaseInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
@@ -500,13 +504,13 @@ with args@Arguments {
                   WithInitiatorResponderMode
                     OutboundConnectionManager {
                         ocmAcquireConnection =
-                          acquireOutboundConnectionImpl stateVar stdGenVar outboundHandler,
+                          acquireOutboundConnectionImpl handlers stateVar stdGenVar outboundHandler,
                         ocmReleaseConnection =
                           releaseOutboundConnectionImpl stateVar stdGenVar
                       }
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl stateVar inboundHandler,
+                          includeInboundConnectionImpl handlers stateVar inboundHandler,
                         icmReleaseConnection =
                           releaseInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
@@ -520,11 +524,20 @@ with args@Arguments {
                 waitForOutboundDemotion
               }
 
+    -- Owning scopes stop callers before this final snapshot. The live
+    -- connection map can omit handlers whose results are still pending.
+    let sweep = do
+          pending <- atomically $
+            readTVar handlers >>= filterM (fmap isNothing . pollSTM)
+          forConcurrently_ pending $ \thread -> do
+            throwTo (asyncThreadId thread) AsyncCancelled
+            void $ waitCatch thread
+
     k connectionManager
       -- Since this exception handler is blocking it might receive exceptions
       -- during its execution, which we want to avoid, so we wrap it around
       -- uninterruptibleMask_.
-      `finally` uninterruptibleMask_ (do
+      `finally` uninterruptibleMask_ ((do
         traceWith tracer TrShutdown
 
         state <- atomically $ readTMVar stateVar
@@ -547,7 +560,7 @@ with args@Arguments {
 
         atomically $ runLastToFinishM
                    $ foldMap (LastToFinishM . void <$> waitCatchSTM) asyncs
-      )
+      ) `finally` sweep)
   where
     traceCounters :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m) -> m ()
     traceCounters stateVar = do
@@ -581,7 +594,8 @@ with args@Arguments {
     -- TODO: We could probably elegantly eliminate 'PromiseWriter', now that we use
     -- MonadFix.
     forkConnectionHandler
-      :: (versionData -> versionData)
+      :: StrictTVar m [Async m ()]
+      -> (versionData -> versionData)
       -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
       -> MutableConnState peerAddr handle handleError version m
       -> socket
@@ -589,20 +603,27 @@ with args@Arguments {
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
-    forkConnectionHandler updateVersionDataFn stateVar
+    forkConnectionHandler handlers updateVersionDataFn stateVar
                           mutableConnState@MutableConnState { connStateId, connVar }
                           socket
                           connId
                           writer
                           handler =
-        mask_ $ asyncWithUnmask \unmask -> flip finally (cleanup unmask) do
-          runWithUnmask
-            (handler updateVersionDataFn socket writer
-                     (TrConnectionHandler connId `contramap` tracer)
-                     connId
-                     (\bearerTimeout -> getBearer makeBearer bearerTimeout)
-                     withBuffer)
-            unmask
+        mask_ $ do
+          thread <- asyncWithUnmask \unmask -> flip finally (cleanup unmask) do
+            runWithUnmask
+              (handler updateVersionDataFn socket writer
+                       (TrConnectionHandler connId `contramap` tracer)
+                       connId
+                       (\bearerTimeout -> getBearer makeBearer bearerTimeout)
+                       withBuffer)
+              unmask
+          -- Keep unfinished handlers even after their map entries disappear.
+          -- Poll for completion here to avoid retaining an unbounded history.
+          atomically $ do
+            pending <- readTVar handlers >>= filterM (fmap isNothing . pollSTM)
+            writeTVar handlers (thread : pending)
+          pure thread
       where
         cleanup :: (forall c. m c -> m c) -> m ()
         cleanup unmask =
@@ -792,7 +813,8 @@ with args@Arguments {
 
     includeInboundConnectionImpl
         :: HasCallStack
-        => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        => StrictTVar m [Async m ()]
+        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> Word32
         -- ^ inbound connections hard limit
@@ -806,7 +828,7 @@ with args@Arguments {
         -> ConnectionId peerAddr
         -- ^ connection id used as an identifier of the resource
         -> m (Connected peerAddr handle handleError)
-    includeInboundConnectionImpl stateVar
+    includeInboundConnectionImpl handlers stateVar
                                  handler
                                  hardLimit
                                  socket
@@ -882,7 +904,7 @@ with args@Arguments {
 
                 connThread' <-
                   forkConnectionHandler
-                     id stateVar mutableConnVar' socket connId writer handler
+                     handlers id stateVar mutableConnVar' socket connId writer handler
                 return (connThread', mutableConnVar', connState0', connState')
 
             traceWith trTracer (TransitionTrace (connStateId connVar)
@@ -1279,14 +1301,15 @@ with args@Arguments {
 
     acquireOutboundConnectionImpl
         :: HasCallStack
-        => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        => StrictTVar m [Async m ()]
+        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> DiffusionMode
         -> peerAddr
         -> Provenance
         -> m (Connected peerAddr handle handleError)
-    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connProv = do
+    acquireOutboundConnectionImpl handlers stateVar stdGenVar handler diffusionMode peerAddr connProv = do
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         -- A fresh connection owns its reservation as soon as selection
         -- commits. Install rollback before running any further effects.
@@ -1575,7 +1598,7 @@ with args@Arguments {
 
                   connThread <-
                     forkConnectionHandler
-                      (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer handler
+                      handlers (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer handler
 
                   return (connId, connThread)
 

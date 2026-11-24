@@ -540,6 +540,8 @@ test-suite framework-sim-tests
   hs-source-dirs: framework/sim-tests
   other-modules:
     Test.Ouroboros.Network.ConnectionManager
+    Test.Ouroboros.Network.QuiescentAdmission
+    Test.Ouroboros.Network.QuiescentShutdown
     Test.Ouroboros.Network.RateLimiting
     Test.Ouroboros.Network.RawBearer
     Test.Ouroboros.Network.Server.Sim
