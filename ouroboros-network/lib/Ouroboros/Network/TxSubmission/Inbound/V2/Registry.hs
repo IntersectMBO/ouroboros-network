@@ -374,8 +374,7 @@ txCountersThreadV2 policy config countersTracer sharedStateTracer retiredCounter
       | IntSet.size doomed <= sweepBatch = (doomed, IntSet.empty)
       | otherwise =
           let k = IntSet.toAscList doomed !! (sweepBatch - 1)
-              (below, _, above) = IntSet.splitMember k doomed
-          in (IntSet.insert k below, above)
+          in IntSet.spanAntitone (<= k) doomed
 
     -- An emission: the counters when they changed since the last one;
     -- the tier census when it changed (always the first time), as of a
