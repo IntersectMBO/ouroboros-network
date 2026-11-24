@@ -499,7 +499,7 @@ connectToNodeWithMux'
                                              Outbound
                                              (negotiatedDataFlow agreedOptions)
                                              app
-           mux <- Mx.new muxTracers mpInfos
+           mux <- Mx.new muxTracers Nothing mpInfos
            withAsync (Mx.run mux bearer) $ \aid ->
              k connectionId versionNumber agreedOptions app mux aid
 
@@ -510,6 +510,10 @@ connectToNodeWithMux'
 -- | An internal mux callback which starts all mini-protocols and blocks
 -- until the first one terminates.  It returns the result (or error) of the
 -- first terminated mini-protocol.
+--
+-- Mini-protocols are started according to their 'MiniProtocolInfo' (see
+-- 'toMiniProtocolInfos'): initiators eagerly, responders according to
+-- 'miniProtocolStart'.
 --
 simpleMuxCallback
   :: forall muxMode addr vNumber vData m a b.
@@ -532,12 +536,11 @@ simpleMuxCallback connectionId _ _ app mux aid = do
     let initCtx = MinimalInitiatorContext connectionId
         respCtx = ResponderContext connectionId
 
-    resOps <- sequence
-      [ Mx.runMiniProtocol
+    resOps <- atomically $ sequence
+      [ Mx.runMiniProtocolSTM
           mux
           miniProtocolNum
           miniProtocolDir
-          Mx.StartEagerly
           action
       | MiniProtocol{miniProtocolNum, miniProtocolRun}
           <- getOuroborosApplication app

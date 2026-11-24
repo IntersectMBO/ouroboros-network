@@ -818,14 +818,12 @@ runResponder mux
           void $ Mux.runMiniProtocolSTM
             mux (miniProtocolNum miniProtocol)
             Mux.ResponderDirectionOnly
-            (miniProtocolStart miniProtocol)
             (runMiniProtocolCb responder responderContext)
 
         InitiatorAndResponderProtocol _ responder ->
           void $ Mux.runMiniProtocolSTM
             mux (miniProtocolNum miniProtocol)
             Mux.ResponderDirection
-            (miniProtocolStart miniProtocol)
             (runMiniProtocolCb responder responderContext)
 
 

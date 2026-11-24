@@ -218,7 +218,7 @@ demoProtocol2 chainSync =
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = symmetricLimits maximumMiniProtocolLimits,
         miniProtocolRun    = chainSync
       }
     ]
@@ -330,13 +330,13 @@ demoProtocol3 chainSync blockFetch =
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = symmetricLimits maximumMiniProtocolLimits,
         miniProtocolRun    = chainSync
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = symmetricLimits maximumMiniProtocolLimits,
         miniProtocolRun    = blockFetch
       }
     ]

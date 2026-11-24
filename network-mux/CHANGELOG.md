@@ -2,6 +2,75 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.1.0.0'></a>
+## 1.1.0.0 -- 2026-11-24
+
+### Breaking
+
+- `Control.Concurrent.JobPool.readGroupSize` is removed; the mux no longer
+  uses it.
+- `Network.Mux.new` takes the node-wide `Counters` the mux counts in, or
+  `Nothing`.
+- `Network.Mux.Egress.muxer` takes the mux's byte counters, a slot per
+  mini-protocol and direction. A mini-protocol's `IngressQueue` holds an
+  `IngressQueueState`: what is queued, and the bytes read for the protocol.
+
+- `TraceMiniProtocolKilled` is traced when a mini-protocol is killed by an async exception.
+- `Error` has a new constructor `MiniProtocolAsyncException`, which is thrown
+   by mux thread when an asynchronous exception interrupts mini-protocol job.
+- `Control.Concurrent.JobPool.cancelGroup` returns the results of all
+  completed jobs which were not yet waited for.
+- `MiniProtocolInfo` has a new field, `miniProtocolStartMode`: how the
+  mini-protocol is started (`StartEagerly`, `StartOnDemand` or
+  `StartOnDemandAny`).  It's a static property of a mini-protocol, so
+  `runMiniProtocol` and `runMiniProtocolSTM` no longer take a
+  `StartOnDemandOrEagerly` argument.
+- Added `UnexpectedIngress` to `Network.Mux.Trace.Error`.
+
+### Non-Breaking
+
+- Added `Network.Mux.Counters`: node-wide `Counters` in which every mux
+  made with them counts how it failed, once, as it dies:
+  SDU write timeouts and write errors on the write side; SDU read timeouts,
+  ingress overruns, protocol errors and read errors on the read side; the
+  peer closing, read as its end while a mini-protocol ran, or met as a
+  reset or a broken pipe by a read or a write; the muxer or the demuxer
+  dying of an exception of any other kind; and mini-protocols that died
+  with an exception, by protocol and direction. `withCounters` makes a
+  remote set and, if asked, a local one, and traces each every interval it
+  is given, a second at least, as a `CountersTrace`, for as long as its
+  body runs; an interval of zero, or less, makes none.
+- A close the demuxer reads ends `run` as `Stopped` when no mini-protocol's
+  status is running and as `Failed` otherwise; the job count no longer
+  decides. A mini-protocol started eagerly whose job is not yet forked now
+  counts as running, and one past its last transaction but not yet
+  deregistered as finished; one whose thread was killed from outside by an
+  asynchronous exception, which the job pool does not report, sets its
+  status to the new `StatusKilled` on the way out, so it counts as finished
+  too, and `runMiniProtocol` refuses to start it again on that mux, as it
+  refuses one running.
+- The counters also carry the bytes written and read, SDU headers included,
+  by mini-protocol number and our side's direction (`ByteCounts`). A mux's
+  counts move into a retired total when it ends, so totals never go down.
+  The demuxer counts in the write that queues the SDU, so a node that keeps
+  no counters pays nothing for it. An SDU that overruns its queue is not
+  counted, the mux ending on it; nor is one for an unknown protocol, or for
+  a direction the mux does not run. The bearer's read and write run
+  unmasked and the count after each masked, so a mux cancelled in the
+  bearer's tail, after the kernel's hand-off, may leave its last SDU or
+  batch uncounted.
+
+- The demuxer throws `UnexpectedIngress` when it receives data for
+  a mini-protocol started eagerly (`StartEagerly`) which is not running.
+  Such a mini-protocol sends the opening message, so it cannot
+  legitimately receive data while it is not running.  Before, the data was
+  queued, up to the mini-protocol's `maximumIngressQueue`, e.g. on
+  a duplex connection for an initiator which was never started.
+- A mini-protocol started eagerly which terminates leaving trailing bytes
+  fails with `UnexpectedIngress`; trailing bytes are kept for the next run
+  only for mini-protocols started on demand.
+- `UnexpectedIngress` is counted as a protocol error (`mfProtocolErrors`).
+
 <a id='changelog-1.0.0.0'></a>
 ## 1.0.0.0 -- 2026-10-21
 

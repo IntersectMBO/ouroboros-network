@@ -25,6 +25,7 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
   , prop_diffusionScript_commandScript_valid
   , fixupCommands
   , diffusionSimulation
+  , diffusionSimulationWithCounters
   , diffusionSimulation'
   , DiffSimResult
   , Command (..)
@@ -983,6 +984,7 @@ data DiffusionTestTrace =
     | DiffusionDebugTrace String
     | DiffusionDNSTrace DNSTrace
     | DiffusionMuxTrace (Mux.WithBearer (ConnectionId NtNAddr) Mux.Trace)
+    | DiffusionMuxCountersTrace Mux.CountersTrace
     deriving Show
 
 
@@ -1006,18 +1008,30 @@ ppDiffusionTestTrace (DiffusionTxLogic tr)                          = show tr
 ppDiffusionTestTrace (DiffusionDebugTrace tr)                       =      tr
 ppDiffusionTestTrace (DiffusionDNSTrace tr)                         = show tr
 ppDiffusionTestTrace (DiffusionMuxTrace tr)                         = show tr
+ppDiffusionTestTrace (DiffusionMuxCountersTrace tr)                 = show tr
 
 
 type DiffSimResult = Void
 
 -- | Run an arbitrary topology in `IOSim`.
--- This runs the simulator with the Cardano churn mechanism.
+-- This runs the simulator with the Cardano churn mechanism and no mux
+-- counters; `diffusionSimulationWithCounters` keeps and traces them.
 diffusionSimulation
   :: BearerInfo
   -> DiffusionScript
   -> IOSim s DiffSimResult
 diffusionSimulation bearerInfo diffusionScript =
-  diffusionSimulationM bearerInfo diffusionScript dynamicTracer CardanoChurn
+  diffusionSimulationM bearerInfo diffusionScript dynamicTracer CardanoChurn 0
+
+-- | As 'diffusionSimulation', with every node tracing its node-to-node mux
+-- counters at the interval given, or keeping none at zero.
+diffusionSimulationWithCounters
+  :: DiffTime
+  -> BearerInfo
+  -> DiffusionScript
+  -> IOSim s DiffSimResult
+diffusionSimulationWithCounters interval bearerInfo diffusionScript =
+  diffusionSimulationM bearerInfo diffusionScript dynamicTracer CardanoChurn interval
 
 -- | Run an arbitrary topology in `IOSim`.
 -- This runs the simulator with the Ouroboros churn mechanism.
@@ -1026,7 +1040,7 @@ diffusionSimulation'
   -> DiffusionScript
   -> IOSim s Void
 diffusionSimulation' bearerInfo diffusionScript =
-    diffusionSimulationM bearerInfo diffusionScript' dynamicTracer OuroborosChurn
+    diffusionSimulationM bearerInfo diffusionScript' dynamicTracer OuroborosChurn 0
   where
     diffusionScript' = case diffusionScript of
       DiffusionScript sa dm nodes ->
@@ -1062,11 +1076,14 @@ diffusionSimulationM
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
   -- ^ timed trace of nodes in the system
   -> Churn
+  -> DiffTime
+  -- ^ how often the nodes trace their node-to-node mux counters; zero, and
+  -- they keep none
   -> m DiffSimResult
 diffusionSimulationM
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
-  nodeTracer churn = do
+  nodeTracer churn muxCountersInterval = do
     connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
     -- TODO: we should use `snocket` per node, this will allow us to set up
     -- bearer info per node
@@ -1343,6 +1360,7 @@ diffusionSimulationM
               , Node.aExtraChurnArgs       = cardanoChurnArgs
               , Node.aTxDecisionPolicy     = txDecisionPolicy
               , Node.aTxs                  = txs
+              , Node.aMuxCountersInterval  = muxCountersInterval
               }
 
           tracers = mkTracers addr nodeId
@@ -1573,6 +1591,11 @@ diffusionSimulationM
                                                    . tracerWithName ntnAddr
                                                    . tracerWithTime
                                                    $ nodeTracer' -- <> sayTracer'
+        , Diffusion.dtMuxCountersTracer            = contramap
+                                                     DiffusionMuxCountersTrace
+                                                 . tracerWithName ntnAddr
+                                                 . tracerWithTime
+                                                 $ nodeTracer' -- <> sayTracer'
       }
 
 

@@ -365,7 +365,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
           [ MiniProtocol
               { miniProtocolNum    = chainSyncMiniProtocolNum
               , miniProtocolStart  = StartOnDemand
-              , miniProtocolLimits = chainSyncLimits limits
+              , miniProtocolLimits = symmetricLimits (chainSyncLimits limits)
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     chainSyncInitiator
@@ -374,7 +374,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
           , MiniProtocol
               { miniProtocolNum    = blockFetchMiniProtocolNum
               , miniProtocolStart  = StartOnDemand
-              , miniProtocolLimits = blockFetchLimits limits
+              , miniProtocolLimits = symmetricLimits (blockFetchLimits limits)
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     blockFetchInitiator
@@ -384,7 +384,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
           , MiniProtocol {
               miniProtocolNum    = txSubmissionMiniProtocolNum,
               miniProtocolStart  = StartOnDemand,
-              miniProtocolLimits = txSubmissionLimits limits,
+              miniProtocolLimits = symmetricLimits (txSubmissionLimits limits),
               miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     (txSubmissionInitiator aaTxDecisionPolicy (nkMempool nodeKernel))
@@ -398,7 +398,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
           [ MiniProtocol
               { miniProtocolNum    = MiniProtocolNum 9
               , miniProtocolStart  = StartOnDemand
-              , miniProtocolLimits = pingPongLimits limits
+              , miniProtocolLimits = symmetricLimits (pingPongLimits limits)
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     pingPongInitiator
@@ -409,7 +409,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
             MiniProtocol
               { miniProtocolNum    = keepAliveMiniProtocolNum
               , miniProtocolStart  = StartOnDemandAny
-              , miniProtocolLimits = keepAliveLimits limits
+              , miniProtocolLimits = symmetricLimits (keepAliveLimits limits)
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     keepAliveInitiator
@@ -420,7 +420,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                 [ MiniProtocol
                     { miniProtocolNum    = peerSharingMiniProtocolNum
                     , miniProtocolStart  = StartOnDemand
-                    , miniProtocolLimits = peerSharingLimits limits
+                    , miniProtocolLimits = symmetricLimits (peerSharingLimits limits)
                     , miniProtocolRun    =
                         InitiatorAndResponderProtocol
                           peerSharingInitiator

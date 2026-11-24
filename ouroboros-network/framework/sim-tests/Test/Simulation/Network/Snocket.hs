@@ -281,12 +281,13 @@ clientServerSimulation payloads =
                    `contramap`
                    traceTime sayTracer)
           bracket
-            (Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
+            (Mx.new (Mx.Tracers mxTracer mxTracer mxTracer) Nothing
                     [ MiniProtocolInfo {
                         miniProtocolNum        = reqRespProtocolNum,
                         miniProtocolDir        = Mx.ResponderDirectionOnly,
                         miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
-                        miniProtocolCapability = Nothing
+                        miniProtocolCapability = Nothing,
+                        miniProtocolStartMode  = Mx.StartOnDemand
                       }
                     ])
             Mx.stop
@@ -300,7 +301,6 @@ clientServerSimulation payloads =
               resSTM <- runMiniProtocol
                           mux reqRespProtocolNum
                           Mx.ResponderDirectionOnly
-                          Mx.StartOnDemand
                           (\channel -> runPeer prtclTracer
                                                codecReqResp
                                                channel
@@ -335,12 +335,13 @@ clientServerSimulation payloads =
                            `contramap`
                            traceTime sayTracer)
 
-                  mux <- Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
+                  mux <- Mx.new (Mx.Tracers mxTracer mxTracer mxTracer) Nothing
                                 [ MiniProtocolInfo {
                                     miniProtocolNum        = reqRespProtocolNum,
                                     miniProtocolDir        = Mx.InitiatorDirectionOnly,
                                     miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
-                                    miniProtocolCapability = Nothing
+                                    miniProtocolCapability = Nothing,
+                                    miniProtocolStartMode  = Mx.StartEagerly
                                   }
                                 ]
 
@@ -351,7 +352,6 @@ clientServerSimulation payloads =
                   resSTM <- runMiniProtocol
                               mux reqRespProtocolNum
                               InitiatorDirectionOnly
-                              StartEagerly
                               (\channel -> runPeer prtclTracer
                                                    codecReqResp
                                                    channel

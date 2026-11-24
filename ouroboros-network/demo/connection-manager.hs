@@ -238,6 +238,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
         mkConnectionHandler = makeConnectionHandler
           muxTracers
           noBindForkPolicy
+          Nothing                  -- no mux counters
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = ("handshake",) `contramap` debugTracer,
@@ -321,7 +322,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
             in MiniProtocol {
                 miniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                miniProtocolLimits = symmetricLimits (Mux.MiniProtocolLimits maxBound),
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     miniProtocolNum
@@ -333,7 +334,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
             in MiniProtocol {
                 miniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                miniProtocolLimits = symmetricLimits (Mux.MiniProtocolLimits maxBound),
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     miniProtocolNum
@@ -345,7 +346,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
             in MiniProtocol {
                 miniProtocolNum,
                 miniProtocolStart  = StartOnDemandAny,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                miniProtocolLimits = symmetricLimits (Mux.MiniProtocolLimits maxBound),
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     (Mux.MiniProtocolNum 3)
@@ -450,7 +451,6 @@ runInitiatorProtocols
           (case singMuxMode of
             SingInitiatorMode          -> Mux.InitiatorDirectionOnly
             SingInitiatorResponderMode -> Mux.InitiatorDirection)
-          Mux.StartEagerly
           (runMiniProtocolCb
             (case miniProtocolRun ptcl of
               InitiatorProtocolOnly initiator           -> initiator

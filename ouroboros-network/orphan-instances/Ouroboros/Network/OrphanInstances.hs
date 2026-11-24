@@ -562,13 +562,15 @@ instance ToJSON (Mux.MiniProtocolInfo mode) where
             Mux.miniProtocolNum = Mux.MiniProtocolNum miniProtocolNum,
             Mux.miniProtocolDir,
             Mux.miniProtocolLimits = Mux.MiniProtocolLimits { Mux.maximumIngressQueue },
-            Mux.miniProtocolCapability
+            Mux.miniProtocolCapability,
+            Mux.miniProtocolStartMode
          }
     = object
       [ "miniProtocolNum"        .= miniProtocolNum
       , "miniProtocolDir"        .= show miniProtocolDir
       , "maximumIngressQueue"    .= maximumIngressQueue
       , "miniProtocolCapability" .= miniProtocolCapability
+      , "miniProtocolStartMode"  .= show miniProtocolStartMode
       ]
 
 instance ToJSON Mux.Trace where
@@ -625,6 +627,12 @@ instance ToJSON Mux.Trace where
              ]
     Mux.TraceStopped ->
       object [ "type" .= String "Stopped"
+             ]
+    Mux.TraceMiniProtocolKilled miniProtocolNum miniProtocolDir err ->
+      object [ "type" .= String "MiniProtocolKilled"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             , "error"           .= String (pack . displayException $ err)
              ]
 
 

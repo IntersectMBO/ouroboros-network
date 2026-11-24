@@ -36,6 +36,8 @@ module Ouroboros.Network.Mux
   , MiniProtocolWithMinimalCtx
   , MiniProtocolNum (..)
   , MiniProtocolLimits (..)
+  , DirectionalLimits (..)
+  , symmetricLimits
   , ForkPolicy (..)
   , ForkPolicyCb
   , noBindForkPolicy
@@ -234,10 +236,35 @@ type OuroborosBundleWithMinimalCtx (mode :: Mux.Mode) peerAddr bytes m a b =
                      bytes m a b
 
 
+-- | Ingress limits of a mini-protocol, for each of its directions.
+--
+-- The two directions of a mini-protocol usually receive messages of very
+-- different sizes (e.g. a block-fetch initiator receives blocks, while
+-- a responder receives only requests), so each direction has its own
+-- ingress queue limit.
+--
+data DirectionalLimits = DirectionalLimits {
+    initiatorLimits :: !MiniProtocolLimits,
+    -- ^ limits of the initiator side, i.e. of the messages sent by the
+    -- remote responder
+    responderLimits :: !MiniProtocolLimits
+    -- ^ limits of the responder side, i.e. of the messages sent by the
+    -- remote initiator
+  }
+  deriving Show
+
+-- | The same limits for both directions.
+--
+symmetricLimits :: MiniProtocolLimits -> DirectionalLimits
+symmetricLimits limits = DirectionalLimits {
+    initiatorLimits = limits,
+    responderLimits = limits
+  }
+
 -- | Each mini-protocol is represented by its
 --
 -- * mini-protocol number,
--- * ingress size limit, and
+-- * ingress size limits, and
 -- * callbacks.
 --
 data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
@@ -246,13 +273,18 @@ data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
        -- ^ mini-protocol number
        miniProtocolStart  :: !Mux.StartOnDemandOrEagerly,
        -- ^ strategy for starting responder side; initiator side is always
-       -- started using `StartEagerly`.
-       miniProtocolLimits :: !MiniProtocolLimits,
-       -- ^ mini-protocol limits
+       -- started using `StartEagerly` (see 'mkMiniProtocolInfo').
+       miniProtocolLimits :: !DirectionalLimits,
+       -- ^ ingress limits of the initiator and responder sides
        miniProtocolRun    :: !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b)
        -- ^ mini-protocol callback(s)
      }
 
+-- | Make the 'MiniProtocolInfo's of a 'MiniProtocol': one for each direction
+-- in which it runs.  Initiators are started eagerly, since they send the
+-- opening message of every mini-protocol, responders according to
+-- 'miniProtocolStart'.
+--
 mkMiniProtocolInfo :: ForkPolicyCb
                    -> Provenance
                    -> DataFlow
@@ -260,17 +292,29 @@ mkMiniProtocolInfo :: ForkPolicyCb
                    -> [MiniProtocolInfo mode]
 mkMiniProtocolInfo forkPolicy provenance dataFlow MiniProtocol {
      miniProtocolNum,
-     miniProtocolLimits,
+     miniProtocolStart,
+     miniProtocolLimits =
+       DirectionalLimits {
+         initiatorLimits,
+         responderLimits
+       },
      miniProtocolRun
    }
   =
   [ Mux.MiniProtocolInfo {
       Mux.miniProtocolNum,
       Mux.miniProtocolDir = dir,
-      Mux.miniProtocolLimits,
+      Mux.miniProtocolLimits =
+        case Mux.protocolDirEnum dir of
+          Mux.InitiatorDir -> initiatorLimits
+          Mux.ResponderDir -> responderLimits,
       Mux.miniProtocolCapability =
         forkPolicy miniProtocolNum
-                  (Mux.protocolDirEnum dir)
+                  (Mux.protocolDirEnum dir),
+      Mux.miniProtocolStartMode =
+        case Mux.protocolDirEnum dir of
+          Mux.InitiatorDir -> Mux.StartEagerly
+          Mux.ResponderDir -> miniProtocolStart
     }
   | dir <- case miniProtocolRun of
              InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]

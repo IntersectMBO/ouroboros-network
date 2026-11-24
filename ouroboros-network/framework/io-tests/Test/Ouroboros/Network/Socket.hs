@@ -116,9 +116,9 @@ testProtocols2 reqResp =
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = MiniProtocolLimits {
-                               maximumIngressQueue = defaultMiniProtocolLimit
-                             },
+        miniProtocolLimits = symmetricLimits MiniProtocolLimits {
+                                               maximumIngressQueue = defaultMiniProtocolLimit
+                                             },
         miniProtocolRun    = reqResp
       }
     ]
@@ -318,7 +318,13 @@ prop_socket_recv_error f rerr =
 
     let app :: OuroborosApplicationWithMinimalCtx
                  Mx.ResponderMode Socket.SockAddr BL.ByteString IO Void ()
-        app = testProtocols2 reqRespResponder
+        -- The responder must be running when the receive error happens: a
+        -- mux whose only mini-protocol waits to be started on demand treats
+        -- a closed socket as a clean end.
+        app = OuroborosApplication
+                [ ptcl { miniProtocolStart = StartEagerly }
+                | ptcl <- getOuroborosApplication (testProtocols2 reqRespResponder)
+                ]
 
         reqRespResponder =
           ResponderProtocolOnly $
@@ -365,14 +371,14 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    mux <- Mx.new Mx.nullTracers (toMiniProtocolInfos (\_ _ -> Nothing) Inbound Duplex app)
+                    mux <- Mx.new Mx.nullTracers Nothing
+                             (toMiniProtocolInfos (\_ _ -> Nothing) Inbound Duplex app)
                     let respCtx = ResponderContext connectionId
                     resOps <- sequence
                       [ Mx.runMiniProtocol
                           mux
                           miniProtocolNum
                           miniProtocolDir
-                          Mx.StartEagerly
                           (\a -> do
                             r <- action a
                             return (r, Nothing)

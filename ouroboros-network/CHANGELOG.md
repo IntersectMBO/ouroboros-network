@@ -2,6 +2,44 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-2.1.0.0'></a>
+## 2.1.0.0 -- 2026-11-24
+
+### Breaking
+
+- `makeConnectionHandler` takes the node-wide `Mx.Counters` every mux it
+  creates is counted in, or `Nothing`.
+- `Diffusion.Configuration` has `dcMuxCountersInterval`: every interval, a
+  second at least, diffusion traces the mux counters it keeps, a node-to-node
+  set and, with a local address, a node-to-client set, on the new
+  `dtMuxCountersTracer` of `Diffusion.Tracers`; zero keeps none. The default
+  is `Ouroboros.Network.Diffusion.Configuration.defaultMuxCountersInterval`.
+- `Test.Ouroboros.Network.Diffusion.Node`'s `Arguments` gain
+  `aMuxCountersInterval`, the interval the test node's diffusion traces its
+  mux counters at; zero keeps none.
+
+### Non-Breaking
+
+- `Network.Mux.Tracing` renders `Mx.CountersTrace`, with metrics `mux.egress.*`,
+  `mux.ingress.*`, `mux.peerClosed`, `mux.otherErrors` and
+  `mux.miniProtocols.*`, and the same under `localMux.*`; the bytes as `.bytes` and
+  `.bytes.<num>.<initiator|responder>` under egress and ingress.
+
+- `txSubmissionOutbound`: each entry of the unacknowledged txids can be
+  requested only once.  A request for a `txid` is served from its first
+  entry which was not requested yet, so a `txid` announced again (its tx left
+  the mempool and was added again) can be requested again.  Requesting
+  a `txid` all of whose entries were already requested is a protocol error
+  (`ProtocolErrorDuplicateTxIds`).
+- `mkMiniProtocolInfos` and `toMiniProtocolInfos` set the start mode of each
+  `MiniProtocolInfo`: initiators are started eagerly, responders according to
+  `miniProtocolStart`.
+- `Ouroboros.Network.Server.Simple` and `connectToNode` start responders
+  according to `miniProtocolStart` (on demand for `NodeToNode` and
+  `NodeToClient` protocols), rather than eagerly.
+- The `ToJSON` instance of `MiniProtocolInfo` includes
+  `miniProtocolStartMode`.
+
 <a id='changelog-2.0.0.0'></a>
 ## 2.0.0.0 -- 2026-10-21
 

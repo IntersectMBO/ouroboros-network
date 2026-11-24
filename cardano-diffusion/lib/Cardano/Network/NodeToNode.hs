@@ -110,6 +110,7 @@ import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import Ouroboros.Network.Protocol.Limits (smallByteLimit)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
            (NumObjectsUnacknowledged)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
@@ -174,9 +175,17 @@ data MiniProtocolParameters = MiniProtocolParameters {
 
       blockFetchPipeliningMax                    :: !Word16,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
+      --
+      -- Keep this below 800 for a typical request size to a peer with the
+      -- default 72088 bytes responder ingress mux queue limit (see
+      -- `blockFetchProtocolLimits`).
 
       txDecisionPolicy                           :: !TxDecisionPolicy,
-      -- ^ tx submission protocol decision logic parameters
+      -- ^ Tx submission protocol decision logic parameters.
+      -- When pipelining separate messages to request each body, acknowledge
+      -- its txid and request a new txid, keep 'maxUnacknowledgedTxIds' at or
+      -- below 1,242 to fit a full window in the peer's default 72,088-byte
+      -- initiator queue (see 'txSubmissionProtocolLimits').
 
       perasCertDiffusionMaxObjectsUnacknowledged :: !NumObjectsUnacknowledged,
       -- ^ Maximum number of PerasCerts in the outbound peer's outstanding FIFO.
@@ -333,141 +342,172 @@ chainSyncProtocolLimits
   , keepAliveProtocolLimits
   , peerSharingProtocolLimits
   , perasCertDiffusionProtocolLimits
-  , perasVoteDiffusionProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
+  , perasVoteDiffusionProtocolLimits
+  :: MiniProtocolParameters -> DirectionalLimits
 
 chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
-  MiniProtocolLimits {
-      -- The largest message over ChainSync is @MsgRollForward@ which mainly
-      -- consists of a BlockHeader.
-      -- TODO: 1400 comes from maxBlockHeaderSize in genesis, but should come
-      -- from consensus rather than being hard coded.
-      maximumIngressQueue = addSafetyMargin $
-        fromIntegral chainSyncPipeliningHighMark * 1400
-    }
+  DirectionalLimits {
+    initiatorLimits = MiniProtocolLimits {
+        -- The largest message over ChainSync is @MsgRollForward@ which mainly
+        -- consists of a BlockHeader.
+        -- TODO: 1400 comes from maxBlockHeaderSize in genesis, but should come
+        -- from consensus rather than being hard coded.
+        maximumIngressQueue = addSafetyMargin $
+          fromIntegral chainSyncPipeliningHighMark * 1400
+      },
+    responderLimits = MiniProtocolLimits {
+        -- The largest `chain-sync` message is `MsgFindIntersect`, other messages
+        -- are much smaller, although they can be pipelined, it's hard to reach
+        -- `smallByteLimit`, e.g. one needs to pipeline over 36k
+        -- `MsgRequestNext` messages to reach `smallByteLimit`.
+        maximumIngressQueue = addSafetyMargin $ fromIntegral smallByteLimit
+      }
+  }
 
-blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = MiniProtocolLimits {
-    -- block-fetch client can pipeline at most 'blockFetchPipeliningMax'
-    -- blocks (currently '10').  This is currently hard coded in
-    -- 'Ouroboros.Network.BlockFetch.blockFetchLogic' (where
-    -- @maxInFlightReqsPerPeer = 100@ is specified).  In the future the
-    -- block fetch client will count bytes rather than blocks.  By far
-    -- the largest (and the only pipelined message) in 'block-fetch'
-    -- protocol is 'MsgBlock'.  Current block size limit is 88kiB and
-    -- `blockFetchPipeliningMax` below is set to `100`.  This means that
-    -- overall queue limit must be:
-    --
-    --   ```
-        -- 100 * 88kiB = 8.8MiB
-    --   ```
-    --
-    -- In the byron era this limit was set to `10 * 2MiB`, we keep the more
-    -- relaxed limit here.
-    --
-    maximumIngressQueue = addSafetyMargin $
-      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112)
+blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } =
+  DirectionalLimits {
+    initiatorLimits = MiniProtocolLimits {
+        -- block-fetch client can pipeline at most 'blockFetchPipeliningMax'
+        -- blocks.  This is currently hard coded in
+        -- 'Ouroboros.Network.BlockFetch.blockFetchLogic' (where
+        -- @maxInFlightReqsPerPeer = 100@ is specified).  In the future the
+        -- block fetch client will count bytes rather than blocks.  By far the
+        -- largest (and the only pipelined message) in 'block-fetch' protocol
+        -- is 'MsgBlock'.  Current block size limit is 88kiB and
+        -- `blockFetchPipeliningMax` below is set to `100`.  This means that
+        -- overall queue limit must be:
+        --
+        --   ```
+        --   100 * 88kiB = 8.8MiB
+        --   ```
+        --
+        -- In the byron era this limit was set to `10 * 2MiB`, we keep the more
+        -- relaxed limit here.
+        --
+        maximumIngressQueue = addSafetyMargin $
+          (10 * 2_097_154 :: Int)
+          `max`
+          (fromIntegral blockFetchPipeliningMax * 90_112)
+      },
+    responderLimits = MiniProtocolLimits {
+        maximumIngressQueue =
+          addSafetyMargin $
+            -- 65_535B + safety margin = 72_088B
+            fromIntegral smallByteLimit
+            `max`
+            -- pipelined MsgRequestRange: `100 * 90B = 9kB < 64kB`
+            (fromIntegral blockFetchPipeliningMax * 90)
+      }
   }
 
 txSubmissionProtocolLimits MiniProtocolParameters
                              { txDecisionPolicy = TxDecisionPolicy { maxUnacknowledgedTxIds }
-                             } = MiniProtocolLimits {
-      -- tx-submission server can pipeline both 'MsgRequestTxIds' and
-      -- 'MsgRequestTx'. This means that there can be many
-      -- 'MsgReplyTxIds', 'MsgReplyTxs' messages in an inbound queue (their
-      -- sizes are strictly greater than the corresponding request
-      -- messages).
-      --
-      -- Each 'MsgRequestTx' can contain at max @maxTxIdsToRequest = 3@
-      -- (defined in -- 'Ouroboros.Network.TxSubmission.Inbound.txSubmissionInbound')
-      --
-      -- Each 'MsgRequestTx' can request at max @maxTxToRequest = 2@
-      -- (defined in -- 'Ouroboros.Network.TxSubmission.Inbound.txSubmissionInbound')
-      --
-      -- The 'txSubmissionInBound' server can at most put `100`
-      -- unacknowledged transactions.  It also pipelines both 'MsgRequestTx`
-      -- and `MsgRequestTx` in turn. This means that the inbound queue can
-      -- have at most `100` `MsgRequestTxIds` and `MsgRequestTx` which will
-      -- contain a single `TxId` / `Tx`.
-      --
-      -- TODO: the unacknowledged transactions are configured in `NodeArgs`,
-      -- and we should take this parameter as an input for this computation.
-      --
-      -- The upper bound of size of a single transaction is 64k, while the
-      -- size of `TxId` is `34` bytes (`type TxId = Hash Tx`).
-      --
-      -- Ingress side of `txSubmissinInbound`
-      --
-      -- - 'MsgReplyTxs' carrying a single `TxId`:
-      -- ```
-      --    1  -- encodeListLen 2
-      --  + 1  -- encodeWord 1
-      --  + 1  -- encodeListLenIndef
-      --  + 1  -- encodeListLen 2
-      --  + 34 -- encode 'TxId'
-      --  + 5  -- encodeWord32 (size of tx)
-      --  + 1  -- encodeBreak
-      --  = 44
-      -- ```
-      -- - 'MsgReplyTx' carrying a single 'Tx':
-      -- ```
-      --    1      -- encodeListLen 2
-      --  + 1      -- encodeWord 3
-      --  + 1      -- encodeListLenIndef
-      --  + 65_536 -- 64kiB transaction
-      --  + 1      -- encodeBreak
-      --  = 65_540
-      -- ```
-      --
-      -- On the ingress side of 'txSubmissionOutbound' we can have at most
-      -- `MaxUnacked' 'MsgRequestTxsIds' and the same amount of
-      -- 'MsgRequsetTx' containing a single 'TxId'.  The size of
-      -- 'MsgRequestTxsIds' is much smaller that 'MsgReplyTx', and the size
-      -- of `MsgReqeustTx` with a single 'TxId' is smaller than
-      -- 'MsgReplyTxIds' which contains a single 'TxId' (it just contains
-      -- the 'TxId' without the size of 'Tx' in bytes).  So the ingress
-      -- queue of 'txSubmissionOutbound' is bounded by the ingress side of
-      -- the 'txSubmissionInbound'
-      --
-      -- Currently the value of 'txSubmissionMaxUnacked' is '10', for
-      -- which the upper bound is `10 * (44 + 65_540) = 655_840`, we add
-      -- 10% as a safety margin.
-      --
-      maximumIngressQueue = addSafetyMargin $
-          fromIntegral maxUnacknowledgedTxIds * (44 + fromIntegral @SizeInBytes @Int max_TX_SIZE)
-    }
+                             } =
+  DirectionalLimits {
+    -- tx-submission outbound limits
+    initiatorLimits = MiniProtocolLimits {
+        -- A singleton 'MsgRequestTxs' adds 4 bytes to the encoded txid.
+        -- Separate 'MsgRequestTxIds' messages to acknowledge one txid and
+        -- request one new txid take 5 bytes each. The three messages use
+        -- 58 bytes with a 44-byte bound per txid (1,242 fit).
+        maximumIngressQueue = addSafetyMargin $ fromIntegral smallByteLimit
+      },
+    -- tx-submission inbound limits
+    responderLimits = MiniProtocolLimits {
+        -- tx-submission server can pipeline both 'MsgRequestTxIds' and
+        -- 'MsgRequestTx'. This means that there can be many
+        -- 'MsgReplyTxIds', 'MsgReplyTxs' messages in an inbound queue (their
+        -- sizes are strictly greater than the corresponding request
+        -- messages).
+        --
+        -- The V1 inbound requests at most three txids or two bodies per
+        -- request. The peer may also request each txid and body separately,
+        -- so allow for both replies for every unacknowledged txid.
+        --
+        -- The upper bound of size of a single transaction is 64k, while the
+        -- size of `TxId` is `34` bytes (`type TxId = Hash Tx`).
+        --
+        -- Ingress side of `txSubmissinInbound`
+        --
+        -- - 'MsgReplyTxs' carrying a single `TxId`:
+        -- ```
+        --    1  -- encodeListLen 2
+        --  + 1  -- encodeWord 1
+        --  + 1  -- encodeListLenIndef
+        --  + 1  -- encodeListLen 2
+        --  + 34 -- encode 'TxId'
+        --  + 5  -- encodeWord32 (size of tx)
+        --  + 1  -- encodeBreak
+        --  = 44
+        -- ```
+        -- - 'MsgReplyTx' carrying a single 'Tx':
+        -- ```
+        --    1      -- encodeListLen 2
+        --  + 1      -- encodeWord 3
+        --  + 1      -- encodeListLenIndef
+        --  + 65_536 -- 64kiB transaction
+        --  + 1      -- encodeBreak
+        --  = 65_540
+        -- ```
+        --
+        -- For the default 'maxUnacknowledgedTxIds' of 10 the
+        -- upper bound is
+        -- `10 * (44 + 65_540) = 655_840`, we add 10% as a safety margin.
+        --
+        maximumIngressQueue = addSafetyMargin $
+            fromIntegral maxUnacknowledgedTxIds * (44 + fromIntegral @SizeInBytes @Int max_TX_SIZE)
+      }
+  }
 
 keepAliveProtocolLimits _ =
-  MiniProtocolLimits {
+  symmetricLimits MiniProtocolLimits {
       -- One small outstanding message.
       maximumIngressQueue = addSafetyMargin 1280
     }
 
 peerSharingProtocolLimits _ =
-  MiniProtocolLimits {
-  -- This protocol does not need to be pipelined and a peer can only ask
-  -- for a maximum of 255 peers each time. Hence a reply can have up to
-  -- 255 IP (IPv4 or IPv6) addresses so 255 * 16 = 4080. TCP has an initial
-  -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
-  -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
-  -- queue to be a single RTT should be enough to cover for CBOR overhead.
-  maximumIngressQueue = 4 * 1440
+  DirectionalLimits {
+    initiatorLimits = MiniProtocolLimits {
+        -- This protocol does not need to be pipelined and a peer can only ask
+        -- for a maximum of 255 peers each time. Hence a reply can have up to
+        -- 255 IP (IPv4 or IPv6) addresses so 255 * 16 = 4080. TCP has an initial
+        -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
+        -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
+        -- queue to be a single RTT should be enough to cover for CBOR overhead.
+        maximumIngressQueue = 4 * 1440
+      },
+    responderLimits = MiniProtocolLimits {
+        -- The server receives `MsgShareRequest` (at most 4 bytes) or `MsgDone`,
+        -- one TCP segment is enough.
+        maximumIngressQueue = addSafetyMargin 1440
+      }
   }
 
 perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxObjectsUnacknowledged } =
-  MiniProtocolLimits {
-      -- The reasoning here is very similar to the 'txSubmissionProtocolLimits'.
+  symmetricLimits MiniProtocolLimits {
+      -- The reasoning here is very similar to the responder side of
+      -- 'txSubmissionProtocolLimits'.
       --
-      -- Peras certificates will definitely be smaller than 20 kB; potentially
-      -- even much smaller.
-      -- See https://github.com/tweag/cardano-peras/issues/97
+      -- Peras certificates will definitely be smaller than 20 KB;
+      -- potentially even much smaller. See
+      -- https://github.com/tweag/cardano-peras/issues/97
+      --
+      -- The same limit is enough for the responder, which receives only
+      -- pipelined requests: per cert id ≤ 9 B (`MsgRequestObjectIds`)
+      -- + 4 B (`MsgRequestObjects`) + 9 B (`PerasRoundNo`), i.e. 22 B < 20 KB.
       maximumIngressQueue = addSafetyMargin $
         fromIntegral perasCertDiffusionMaxObjectsUnacknowledged * 20_000
     }
 
 perasVoteDiffusionProtocolLimits MiniProtocolParameters { perasVoteDiffusionMaxObjectsUnacknowledged } =
-  MiniProtocolLimits {
+  symmetricLimits MiniProtocolLimits {
       -- Peras votes are expected to be much smaller than Peras certificates.
-      -- We assume an upper bound of 1 kB per vote.
+      -- We assume an upper bound of 1 KB per vote.
       -- See https://github.com/tweag/cardano-peras/issues/97
+      --
+      -- The same limit is enough for the responder, which receives only
+      -- pipelined requests: per object id ≤ 9 B (`MsgRequestObjectIds`)
+      -- + 4 B (`MsgRequestObjects`) + 13 B (`PerasVoteId`), i.e. 26 B < 1 KB.
       maximumIngressQueue = addSafetyMargin $
         fromIntegral perasVoteDiffusionMaxObjectsUnacknowledged * 1_000
     }

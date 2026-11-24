@@ -2,6 +2,23 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.4.0.0'></a>
+## 1.4.0.0 -- 2026-11-24
+
+### Breaking
+
+- `CardanoConfiguration` and `CardanoTracers`, the re-exported `Configuration`
+  and `Tracers` of `Ouroboros.Network.Diffusion`, gain `dcMuxCountersInterval`
+  and `dtMuxCountersTracer`; see ouroboros-network's changelog.
+- `DiffusionTestTrace` gains `DiffusionMuxCountersTrace`, what the testnet
+  simulation's nodes trace of their mux counters every interval
+  `diffusionSimulationWithCounters` gives; the other runners keep no
+  counters. A property checks what diffusion traces of them: a snapshot
+  every interval, a second at least,
+  from the node joining the network, or none at an interval of zero, counts
+  that never go down, no protocol error anywhere, and chain-sync bytes
+  counted as each chain-sync initiator and responder starts.
+
 <a id='changelog-1.3.0.1'></a>
 ## 1.3.0.1 -- 2026-10-21
 

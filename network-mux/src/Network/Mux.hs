@@ -5,7 +5,6 @@
 {-# LANGUAGE GADTSyntax                #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
@@ -44,6 +43,16 @@ module Network.Mux
     -- * Monitoring
   , miniProtocolStateMap
   , stopped
+    -- * Counters
+  , Counters
+  , withCounters
+  , Counts (..)
+  , Failures (..)
+  , noFailures
+  , noCounts
+  , ByteCounts
+  , CountersTrace (..)
+  , countersInterval
     -- * Errors
   , Error (..)
   , RuntimeError (..)
@@ -64,12 +73,12 @@ module Network.Mux
 
 import Data.ByteString.Builder (lazyByteString, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
+import Data.Foldable (traverse_)
 import Data.Int (Int64)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
+import Data.Maybe (isNothing, listToMaybe)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
-import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -84,6 +93,7 @@ import Control.Tracer
 
 import Network.Mux.Bearer
 import Network.Mux.Channel
+import Network.Mux.Counters
 import Network.Mux.Egress as Egress
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
@@ -103,7 +113,10 @@ data Mux (mode :: Mode) m =
                                    (MiniProtocolState mode m)),
        muxControlCmdQueue :: !(StrictTQueue m (ControlCmd mode m)),
        muxStatus          :: StrictTVar m Status,
-       muxTracers         :: Tracers m
+       muxTracers         :: Tracers m,
+       muxCounters        :: !(Maybe (Counters m))
+       -- ^ Node-wide counters this mux's failures and bytes are counted in,
+       -- given to 'new'.
      }
 
 
@@ -132,11 +145,15 @@ stopped Mux { muxStatus } =
 new :: forall (mode :: Mode) m.
        MonadLabelledSTM m
     => Tracers m
+    -> Maybe (Counters m)
+    -- ^ node-wide counters to count the mux's failures and bytes in, shared
+    -- with every other mux made with them, or none; a set is only ever read
+    -- by the loop 'withCounters' runs for it.
     -> [MiniProtocolInfo mode]
     -- ^ description of protocols run by the mux layer.  Only these protocols
     -- one will be able to execute.
     -> m (Mux mode m)
-new muxTracers ptcls = do
+new muxTracers muxCounters ptcls = do
     traceWith (tracer_ muxTracers) (TraceNewMux ptcls)
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
@@ -145,7 +162,8 @@ new muxTracers ptcls = do
       muxMiniProtocols,
       muxControlCmdQueue,
       muxStatus,
-      muxTracers
+      muxTracers,
+      muxCounters
     }
 
 mkMiniProtocolStateMap :: MonadSTM m
@@ -163,7 +181,7 @@ mkMiniProtocolState :: MonadSTM m
                     => MiniProtocolInfo mode
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
-    miniProtocolIngressQueue <- newTVarIO $ 0 :!: mempty
+    miniProtocolIngressQueue <- newIngressQueue
     miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
@@ -221,6 +239,9 @@ data Group = MuxJob
 -- * at any given time each @TranslocationServiceRequest@ contains a non-empty
 -- 'Wanton'
 --
+-- A mux is run once: nothing returns its status to 'Ready' afterwards, so a
+-- second run could start no mini-protocol.
+--
 run :: forall m (mode :: Mode).
        ( MonadAsync m
        , MonadDelay m
@@ -241,7 +262,8 @@ run Mux { muxMiniProtocols,
           muxTracers = tracers@TracersI {
               tracer_,
               bearerTracer_
-            }
+            },
+          muxCounters
         }
     bearer@Bearer{name} = do
 
@@ -253,22 +275,27 @@ run Mux { muxMiniProtocols,
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
-    JobPool.withJobPool
-      (\jobpool -> do
-        JobPool.forkJob jobpool (muxerJob egressQueue)
-        JobPool.forkJob jobpool demuxerJob
-        traceWith tracer_ (TraceState Mature)
+    -- The cells outlive the job pool, so every byte the muxer counted is in
+    -- them when they are retired; the demuxer counts in the ingress queues.
+    withByteCells muxCounters (miniProtocolIngressQueue <$> muxMiniProtocols) $ \sent ->
+      JobPool.withJobPool
+        (\jobpool -> do
+          JobPool.forkJob jobpool (muxerJob egressQueue sent)
+          JobPool.forkJob jobpool demuxerJob
+          traceWith tracer_ (TraceState Mature)
 
-        -- Wait for someone to shut us down by calling muxStop or an error.
-        -- Outstanding jobs are shut down Upon completion of withJobPool.
-        withTimeoutSerial $ \timeout ->
-          monitor tracers
-                  timeout
-                  jobpool
-                  egressQueue
-                  muxControlCmdQueue
-                  muxStatus
-      )
+          -- Wait for someone to shut us down by calling muxStop or an error.
+          -- Outstanding jobs are shut down Upon completion of withJobPool.
+          withTimeoutSerial $ \timeout ->
+            monitor tracers
+                    muxCounters
+                    (Map.elems muxMiniProtocols)
+                    timeout
+                    jobpool
+                    egressQueue
+                    muxControlCmdQueue
+                    muxStatus
+        )
     -- Only handle async exceptions, 'monitor' sets 'muxStatus' before throwing
     -- an exception.  Setting 'muxStatus' is necessary to resolve a possible
     -- deadlock of mini-protocol completion action.
@@ -278,8 +305,8 @@ run Mux { muxMiniProtocols,
       throwIO e
   where
 
-    muxerJob egressQueue =
-      JobPool.Job (muxer egressQueue bearerTracer_ bearer)
+    muxerJob egressQueue sent =
+      JobPool.Job (muxer egressQueue bearerTracer_ sent bearer)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-muxer")
@@ -300,6 +327,7 @@ miniProtocolJob
      , MonadThrow (STM m)
      )
   => Tracers m
+  -> StrictTQueue m (ControlCmd mode m)
   -> EgressQueue m
   -> MiniProtocolState mode m
   -> MiniProtocolAction m
@@ -308,12 +336,14 @@ miniProtocolJob TracersI {
                   tracer_,
                   channelTracer_
                 }
+                cmdQueue
                 egressQueue
                 MiniProtocolState {
                   miniProtocolInfo =
                     MiniProtocolInfo {
                       miniProtocolNum,
-                      miniProtocolDir
+                      miniProtocolDir,
+                      miniProtocolStartMode
                     },
                   miniProtocolIngressQueue,
                   miniProtocolStatusVar
@@ -327,7 +357,7 @@ miniProtocolJob TracersI {
                 MiniProtocolJob
                 ("prtcl-" ++ (case miniProtocolNum of { MiniProtocolNum a -> show a}) ++ "." ++ show miniProtocolDirEnum)
   where
-    jobAction = do
+    jobAction = handle handleAsyncException $ do
       w <- newTVarIO BL.empty
       let chan = muxChannel channelTracer_ egressQueue (Wanton w)
                             miniProtocolNum miniProtocolDirEnum
@@ -335,6 +365,21 @@ miniProtocolJob TracersI {
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
+        -- A mini-protocol started eagerly cannot receive data while it is
+        -- not running (see 'Network.Mux.Ingress.demuxer'), so neither
+        -- trailing bytes nor bytes still in its ingress queue are allowed
+        -- when it terminates.  The latter could have arrived after the
+        -- callback's last read, e.g. while this transaction waits for the
+        -- egress to drain.  The queue is checked in the transaction which
+        -- marks the mini-protocol idle, so any later data is rejected by the
+        -- demuxer.
+        case miniProtocolStartMode of
+          StartEagerly -> do
+            empty <- nullIngressQueue miniProtocolIngressQueue
+            -- guard that ingress queue and remainder are empty
+            unless (empty && nullRemainder remainder) $
+              throwSTM (UnexpectedIngress miniProtocolNum miniProtocolDirEnum)
+          _ -> pure ()
         -- The Wanton w is the SDUs that are queued but not yet sent for this job.
         -- Job threads will be prevented from exiting until all their SDUs have been
         -- transmitted unless an exception/error is encountered. In that case all
@@ -345,16 +390,58 @@ miniProtocolJob TracersI {
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
         case remainder of
           Just trailing ->
-            modifyTVar miniProtocolIngressQueue $ \(l :!: b) ->
-                  BL.length trailing + l
-              :!: lazyByteString trailing <> b
+            modifyTVar miniProtocolIngressQueue $ \q ->
+              q { iqLength  = BL.length trailing + iqLength q,
+                  iqBuilder = lazyByteString trailing <> iqBuilder q }
           Nothing ->
             pure ()
 
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
 
+    nullRemainder :: Maybe BL.ByteString -> Bool
+    nullRemainder Nothing          = True
+    nullRemainder (Just remainder) = BL.null remainder
+
+    -- An asynchronous exception, thrown to the mini-protocol thread from
+    -- outside the mux (or raised by the RTS), is not reported by the job pool
+    -- (see 'jobHandler'), so it is handled here:
+    --
+    -- * the status goes 'StatusKilled' and the monitor is sent
+    --   'CmdMiniProtocolKilled', on which it ends the mux: the remote side of
+    --   the mini-protocol is wherever the kill left it, so the connection
+    --   cannot be used any more;
+    -- * if the kill lands past the job's last transaction, which fills the
+    --   completion var as it writes 'StatusIdle', the mini-protocol has
+    --   already terminated: its status is left alone (it may already be a
+    --   later start's) and the monitor is not told;
+    -- * when the mux itself cancels its jobs (on shutdown or failure) the
+    --   monitor no longer reads its command queue, so the command is
+    --   ignored.
+    --
+    -- The asynchronous exception may land in the action, in the trace, or
+    -- in the wait for the muxer to take the last bytes, which lasts as
+    -- long as the muxer's write. The exception is rethrown, so the thread
+    -- still dies of it.
+    --
+    -- A killed mini-protocol is never run again on this mux, so the data in
+    -- its ingress queue is dropped; the demuxer discards any data which
+    -- arrives later (the remote side might be sending a reply to a request
+    -- sent before the kill).
+    handleAsyncException :: SomeAsyncException -> m a
+    handleAsyncException err = do
+      atomically $ do
+        done <- not <$> isEmptyTMVar completionVar
+        unless done $ do
+          writeTVar miniProtocolStatusVar StatusKilled
+          modifyTVar miniProtocolIngressQueue $ \q ->
+            q { iqLength = 0, iqBuilder = mempty }
+          writeTQueue cmdQueue
+            (CmdMiniProtocolKilled miniProtocolNum miniProtocolDirEnum err)
+      throwIO err
+
     -- NOTE: `jobHandler` is never executed on asynchronous exceptions (see
-    -- `Control.Concurrent.JobPool.forkJob')`.
+    -- `Control.Concurrent.JobPool.forkJob')`.  Asynchronous exceptions are
+    -- handled by `handleAsyncException`.
     jobHandler :: SomeException -> m JobResult
     jobHandler (SomeException err) = do
       -- evaluate error to WHNF; Note that this happens in the mini-protocol
@@ -368,10 +455,12 @@ miniProtocolJob TracersI {
 
 data ControlCmd mode m =
      CmdStartProtocolThread
-       !StartOnDemandOrEagerly
        !(MiniProtocolState mode m)
        !(MiniProtocolAction m)
    | CmdShutdown
+   | CmdMiniProtocolKilled !MiniProtocolNum !MiniProtocolDir !SomeAsyncException
+     -- ^ a mini-protocol thread was killed by an asynchronous exception; sent
+     -- by the mini-protocol job itself, see 'miniProtocolJob'.
 
 data MiniProtocolAction m where
     MiniProtocolAction :: forall m a.
@@ -410,6 +499,8 @@ monitor :: forall mode m.
            , MonadThrow (STM m)
            )
         => Tracers m
+        -> Maybe (Counters m)
+        -> [MiniProtocolState mode m]
         -> TimeoutFn m
         -> JobPool.JobPool JobPool.WithQueue Group m JobResult
         -> EgressQueue m
@@ -420,9 +511,77 @@ monitor tracers@TracersI {
           tracer_       = tracer,
           bearerTracer_ = bearerTracer
         }
-        timeout jobpool egressQueue cmdQueue muxStatus =
+        counters ptcls timeout jobpool egressQueue cmdQueue muxStatus =
     go (MonitorCtx Map.empty Map.empty)
   where
+    -- Whether a mini-protocol is running, by the status each keeps: running
+    -- from its start command, idle from its last transaction, killed from
+    -- its thread's death by an asynchronous exception; a close the demuxer
+    -- reads is a failure only then. So a protocol the application has
+    -- started whose thread is not yet forked counts as running, and the peer
+    -- closing then is a failure, as a close an instant later is; and a
+    -- protocol past its last transaction whose job has not yet deregistered
+    -- does not.
+    anyRunning :: STM m Bool
+    anyRunning = elem StatusRunning <$> mapM (readTVar . miniProtocolStatusVar) ptcls
+
+    -- A mini-protocol killed whose 'CmdMiniProtocolKilled' the monitor has
+    -- not read yet; the command queue is left as it was.
+    pendingKill :: STM m (Maybe (MiniProtocolNum, MiniProtocolDir, SomeAsyncException))
+    pendingKill = do
+      cmds <- flushTQueue cmdQueue
+      traverse_ (writeTQueue cmdQueue) cmds
+      return $ listToMaybe [ (n, d, err) | CmdMiniProtocolKilled n d err <- cmds ]
+
+    -- A mini-protocol thread was killed from outside the mux: the remote
+    -- side of the mini-protocol is in an unknown state, so the mux is
+    -- shut down, as on 'CmdShutdown'.  When the mux itself cancels its
+    -- jobs, the monitor does not read the command queue any more, so this
+    -- command is only handled for a kill from outside.
+    --
+    -- The asynchronous exception might be a cleanup after another
+    -- mini-protocol failed, 'cancelGroup' blocks until all mini-protocol
+    -- jobs terminated, so the failure of such a mini-protocol is in the
+    -- completion queue by then, and the mux fails with it, as it would if
+    -- the monitor had read it first.  This way original failure is
+    -- preserved and the layer above mux can decides based on it what to do
+    -- with the connection or the process.  Mini-protocols cancelled by
+    -- 'cancelGroup' do not report anything (see
+    -- 'Control.Concurrent.JobPool.forkJob').
+    miniProtocolKilled :: MiniProtocolNum -> MiniProtocolDir -> SomeAsyncException -> m ()
+    miniProtocolKilled pnum pdir err = do
+      atomically $ writeTVar muxStatus Stopping
+      traceWith tracer (TraceMiniProtocolKilled pnum pdir err)
+      results <- JobPool.cancelGroup jobpool MiniProtocolJob
+      -- wait for 2 seconds before the egress queue is drained
+      _ <- timeout 2 $
+        atomically $
+              tryPeekTBQueue egressQueue
+          >>= check . isNothing
+
+      case [ (n, d, e) | MiniProtocolException n d e <- results ] of
+        -- preserve the first published synchronous mini-protocol exception
+        (n, d, e) : _ -> do
+          atomically $ do
+            writeTVar muxStatus $ Failed e
+            countMiniProtocolFailure counters n d e
+          traceWith tracer (TraceExceptionExit n d e)
+          traceWith tracer (TraceState Dead)
+          traceWith bearerTracer TraceEmitDeltaQ
+          throwIO e
+
+        -- none of the mini-protocols terminated with a synchronous
+        -- exception
+        [] -> do
+          let e = MiniProtocolAsyncException pnum pdir err
+          atomically $ do
+            writeTVar muxStatus (Failed $ toException e)
+            countMiniProtocolFailure counters pnum pdir (toException e)
+          traceWith tracer (TraceState Dead)
+          -- by exiting the 'monitor' loop we let the job pool kill
+          -- demuxer and muxer threads
+          throwIO e
+
     go :: MonitorCtx m mode -> m ()
     go monitorCtx@MonitorCtx { mcOnDemandProtocols
                              , mcOnDemandAnyProtocols } = do
@@ -457,7 +616,9 @@ monitor tracers@TracersI {
           go monitorCtx
 
         EventJobResult (MiniProtocolException pnum pmode e) -> do
-          atomically $ writeTVar muxStatus $ Failed e
+          atomically $ do
+            writeTVar muxStatus $ Failed e
+            countMiniProtocolFailure counters pnum pmode e
           traceWith tracer (TraceExceptionExit pnum pmode e)
           traceWith tracer (TraceState Dead)
           traceWith bearerTracer TraceEmitDeltaQ
@@ -472,28 +633,44 @@ monitor tracers@TracersI {
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
         EventJobResult (MuxerException e) -> do
-          atomically $ writeTVar muxStatus $ Failed e
+          atomically $ do
+            writeTVar muxStatus $ Failed e
+            countMuxerFailure counters e
           traceWith tracer (TraceState Dead)
           throwIO e
         EventJobResult (DemuxerException e) -> do
+          -- A close read after every mini-protocol has finished is a normal
+          -- end and counts nothing; one read while a protocol runs, and a
+          -- reset at any time, fail the mux and are counted.  A close read
+          -- after the last running mini-protocol was killed, before the
+          -- monitor read the kill, is handled as the kill, as it would be if
+          -- the monitor had read the kill first.
           r <- atomically $ do
-            size <- JobPool.readGroupSize jobpool MiniProtocolJob
-            case size of
-              0  | Just BearerClosed {} <- fromException e
-                -> writeTVar muxStatus Stopped
-                >> return True
-              _ -> writeTVar muxStatus (Failed e)
-                >> return False
-          traceWith tracer (TraceState Dead)
-          unless r (throwIO e)
+            stopped <- case fromException e of
+              Just BearerClosed {} -> not <$> anyRunning
+              _                    -> return False
+            killed <- if stopped then pendingKill else return Nothing
+            case killed of
+              Just kill -> return (Left kill)
+              Nothing   -> do
+                if stopped
+                   then writeTVar muxStatus Stopped
+                   else countDemuxerFailure counters e
+                     >> writeTVar muxStatus (Failed e)
+                return (Right stopped)
+          case r of
+            Left (pnum, pdir, err) -> miniProtocolKilled pnum pdir err
+            Right stopped -> do
+              traceWith tracer (TraceState Dead)
+              unless stopped (throwIO e)
 
         EventControlCmd (CmdStartProtocolThread
-                           StartEagerly
                            ptclState@MiniProtocolState {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
                                miniProtocolDir,
-                               miniProtocolCapability
+                               miniProtocolCapability,
+                               miniProtocolStartMode = StartEagerly
                              }
                            }
                            ptclAction) -> do
@@ -504,6 +681,7 @@ monitor tracers@TracersI {
               JobPool.forkJob jobpool $
                 miniProtocolJob
                   tracers
+                  cmdQueue
                   egressQueue
                   ptclState
                   ptclAction
@@ -511,17 +689,18 @@ monitor tracers@TracersI {
               JobPool.forkJobOn cap jobpool $
                 miniProtocolJob
                   tracers
+                  cmdQueue
                   egressQueue
                   ptclState
                   ptclAction
           go monitorCtx
 
         EventControlCmd (CmdStartProtocolThread
-                           StartOnDemand
                            ptclState@MiniProtocolState {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
-                               miniProtocolDir
+                               miniProtocolDir,
+                               miniProtocolStartMode = StartOnDemand
                              }
                            }
                            ptclAction) -> do
@@ -535,11 +714,11 @@ monitor tracers@TracersI {
           go monitorCtx'
 
         EventControlCmd (CmdStartProtocolThread
-                           StartOnDemandAny
                            ptclState@MiniProtocolState {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
-                               miniProtocolDir
+                               miniProtocolDir,
+                               miniProtocolStartMode = StartOnDemandAny
                              }
                            }
                            ptclAction) -> do
@@ -555,7 +734,7 @@ monitor tracers@TracersI {
         EventControlCmd CmdShutdown -> do
           traceWith tracer TraceStopping
           atomically $ writeTVar muxStatus Stopping
-          JobPool.cancelGroup jobpool MiniProtocolJob
+          _ <- JobPool.cancelGroup jobpool MiniProtocolJob
           -- wait for 2 seconds before the egress queue is drained
           _ <- timeout 2 $
             atomically $
@@ -565,6 +744,9 @@ monitor tracers@TracersI {
           traceWith tracer TraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and
           -- muxer threads
+
+        EventControlCmd (CmdMiniProtocolKilled pnum pdir err) ->
+          miniProtocolKilled pnum pdir err
 
         -- Data has arrived on a channel for a mini-protocol for which we have
         -- an on-demand-start protocol thread. So we start it now along with all
@@ -611,6 +793,7 @@ monitor tracers@TracersI {
           JobPool.forkJob jobpool $
             miniProtocolJob
               tracers
+              cmdQueue
               egressQueue
               ptclState
               ptclAction
@@ -618,13 +801,14 @@ monitor tracers@TracersI {
           JobPool.forkJobOn cap jobpool $
             miniProtocolJob
               tracers
+              cmdQueue
               egressQueue
               ptclState
               ptclAction
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do
-      l :!: _ <- readTVar q
+      l <- iqLength <$> readTVar q
       check (l /= 0)
 
     protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
@@ -725,10 +909,13 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         -- matching ingress queue. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ TraceChannelRecvStart mc
         blob <- atomically $ do
-            l :!: blob <- readTVar q
-            if l == 0
+            queued <- readTVar q
+            if iqLength queued == 0
                 then retry
-                else writeTVar q (0 :!: mempty) >> return (toLazyByteString blob)
+                else do
+                  -- The bytes read for the protocol stay counted.
+                  writeTVar q queued { iqLength = 0, iqBuilder = mempty }
+                  return (toLazyByteString (iqBuilder queued))
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
 
@@ -752,19 +939,17 @@ runMiniProtocolSTM
   => Mux mode m
   -> MiniProtocolNum
   -> MiniProtocolDirection mode
-  -> StartOnDemandOrEagerly
   -> (ByteChannel m -> m (a, Maybe BL.ByteString))
   -> STM m (STM m (Either SomeException a))
 runMiniProtocolSTM Mux { muxMiniProtocols,
-                      muxControlCmdQueue,
-                      muxStatus
-                    }
-                ptclNum ptclDir
-                startMode
-                protocolAction
+                         muxControlCmdQueue,
+                         muxStatus }
+                   ptclNum ptclDir
+                   protocolAction
 
     -- Ensure the mini-protocol is known and get the status var
-  | Just ptclState@MiniProtocolState{miniProtocolStatusVar}
+  | Just ptclState@MiniProtocolState{miniProtocolStatusVar,
+                                     miniProtocolInfo}
       <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
 
   = do
@@ -775,12 +960,13 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
         Failed e -> throwSTM (Shutdown (Just e) st)
         Ready {} -> return ()
 
-      -- Make sure no thread is currently running, and update the status to
-      -- indicate a thread is running (or ready to start on demand)
+      -- Make sure no thread is currently running, or was killed, and update
+      -- the status to indicate a thread is running (or ready to start on
+      -- demand)
       status <- readTVar miniProtocolStatusVar
       unless (status == StatusIdle) $
         throwSTM (ProtocolAlreadyRunning ptclNum ptclDir' status)
-      let !status' = case startMode of
+      let !status' = case miniProtocolStartMode miniProtocolInfo of
                        StartOnDemand    -> StatusStartOnDemand
                        StartOnDemandAny -> StatusStartOnDemandAny
                        StartEagerly     -> StatusRunning
@@ -790,7 +976,6 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
       completionVar <- newEmptyTMVar
       writeTQueue muxControlCmdQueue $
         CmdStartProtocolThread
-          startMode
           ptclState
           (MiniProtocolAction protocolAction completionVar)
 
@@ -824,7 +1009,8 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
 -- | Arrange to run a protocol thread (for a particular 'MiniProtocolNum' and
 -- 'MiniProtocolDirection') to interact on this protocol's 'Channel'.
 --
--- The protocol thread can either be started eagerly or on-demand:
+-- The protocol thread is started according to the 'miniProtocolStartMode'
+-- of the mini-protocol's 'MiniProtocolInfo', either eagerly or on-demand:
 --
 -- * With 'StartEagerly', the thread is started promptly. This is appropriate
 --   for mini-protocols where the opening message may be sent by this thread.
@@ -832,6 +1018,9 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
 -- * With 'StartOnDemand', the thread is not started until the first data is
 --   received for this mini-protocol. This is appropriate for mini-protocols
 --   where the opening message is sent by the remote peer.
+--
+-- Data received for a mini-protocol started eagerly while it is not running
+-- is a protocol error ('UnexpectedIngress'): the mux terminates.
 --
 -- The result is a STM action to block and wait on the protocol completion.
 -- It is safe to call this completion action multiple times: it will always
@@ -848,6 +1037,17 @@ runMiniProtocolSTM Mux { muxMiniProtocols,
 -- the protocol thread will not actually start until 'run' is called,
 -- irrespective of the 'StartOnDemandOrEagerly' value.
 --
+-- If the protocol thread is killed by an asynchronous exception, the mux
+-- fails with 'MiniProtocolAsyncException', unless another mini-protocol
+-- failed with a synchronous exception by then: the mux fails with that
+-- exception instead.  This covers a mini-protocol which kills a sibling while
+-- cleaning up after its own failure, e.g. block-fetch kills chain-sync in
+-- @bracketFetchClient@.  Such a mini-protocol must kill the sibling and
+-- rethrow its exception without blocking interruptibly in between, e.g. under
+-- 'uninterruptibleMask', as @bracketFetchClient@ does; otherwise the mux can
+-- cancel it before it rethrows, and fail with 'MiniProtocolAsyncException'
+-- for the killed sibling.
+--
 runMiniProtocol
   :: forall mode m a.
      ( Alternative (STM m)
@@ -857,8 +1057,7 @@ runMiniProtocol
   => Mux mode m
   -> MiniProtocolNum
   -> MiniProtocolDirection mode
-  -> StartOnDemandOrEagerly
   -> (ByteChannel m -> m (a, Maybe BL.ByteString))
   -> m (STM m (Either SomeException a))
-runMiniProtocol mux ptclNum ptclDir startMode protocolAction =
-    atomically $ runMiniProtocolSTM mux ptclNum ptclDir startMode protocolAction
+runMiniProtocol mux ptclNum ptclDir protocolAction =
+    atomically $ runMiniProtocolSTM mux ptclNum ptclDir protocolAction

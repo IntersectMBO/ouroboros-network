@@ -293,6 +293,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
         makeConnectionHandler
           muxTracers
           noBindForkPolicy
+          Nothing                  -- no mux counters
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
@@ -353,7 +354,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolStart  = StartOnDemand,
-                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                  miniProtocolLimits = symmetricLimits (Mx.MiniProtocolLimits maxBound),
                   miniProtocolRun = reqRespInitiator miniProtocolNum
                                                      nextRequest
                 }]
@@ -493,6 +494,7 @@ withBidirectionalConnectionManager name timeouts
           makeConnectionHandler
             ((Compose . WithName name) `Mx.contramapTracers'` muxTracer)
             noBindForkPolicy
+            Nothing                  -- no mux counters
             HandshakeArguments {
                 -- TraceSendRecv
                 haHandshakeTracer = WithName name `contramap` nullTracer,
@@ -581,7 +583,7 @@ withBidirectionalConnectionManager name timeouts
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolStart  = Mx.StartOnDemand,
-                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                  miniProtocolLimits = symmetricLimits (Mx.MiniProtocolLimits maxBound),
                   miniProtocolRun = reqRespInitiatorAndResponder
                                         miniProtocolNum
                                         accumulatorInit
@@ -702,7 +704,6 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
           (case singMuxMode of
             SingInitiatorMode          -> Mx.InitiatorDirectionOnly
             SingInitiatorResponderMode -> Mx.InitiatorDirection)
-          Mx.StartEagerly
           (runMiniProtocolCb
             (case miniProtocolRun ptcl of
               InitiatorProtocolOnly initiator           -> initiator
@@ -1041,8 +1042,11 @@ labelMuxError e =
     Mx.BearerClosed {}        -> "bearer closed"
     Mx.IngressQueueOverRun {} -> "ingress queue over run"
     Mx.InitiatorOnly {}       -> "initiator only"
+    Mx.UnexpectedIngress {}   -> "unexpected ingress"
     Mx.IOException {}         -> "io exception"
     Mx.SDUDecodeError {}      -> "sdu decode error"
     Mx.SDUReadTimeout {}      -> "sdu read timeout"
     Mx.SDUWriteTimeout {}     -> "sdu write timeout"
     Mx.Shutdown {}            -> "shutdown"
+    Mx.MiniProtocolAsyncException {}
+                              -> "mini-protocol async exception"

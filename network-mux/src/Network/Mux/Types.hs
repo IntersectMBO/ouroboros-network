@@ -24,6 +24,9 @@ module Network.Mux.Types
   , HasResponder
   , Status (..)
   , IngressQueue
+  , IngressQueueState (..)
+  , newIngressQueue
+  , nullIngressQueue
   , MiniProtocolIx
   , MiniProtocolDir (..)
   , protocolDirEnum
@@ -57,7 +60,6 @@ import Data.Functor (void)
 import Data.Int
 import Data.Ix (Ix (..))
 import Data.Scientific qualified as F (FPFormat (..), fromFloatDigits)
-import Data.Strict.Tuple as Strict (Pair)
 import Data.Word
 import Foreign.Ptr (Ptr)
 import Formatting (formatToString, (%+))
@@ -66,7 +68,7 @@ import Quiet
 
 import GHC.Generics (Generic)
 
-import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
 
 import Network.Mux.Channel (ByteChannel, Channel (..))
@@ -149,8 +151,12 @@ data MiniProtocolInfo (mode :: Mode) =
        -- ^ Mini-protocol direction.
        miniProtocolLimits     :: !MiniProtocolLimits,
        -- ^ ingress queue limits for the protocol
-       miniProtocolCapability :: !(Maybe Int)
+       miniProtocolCapability :: !(Maybe Int),
        -- ^ capability on which the mini-protocol should run
+       miniProtocolStartMode  :: !StartOnDemandOrEagerly
+       -- ^ how the mini-protocol is started, see 'StartOnDemandOrEagerly'.
+       -- It's a static property of the mini-protocol: every run of it
+       -- (see 'Network.Mux.runMiniProtocol') uses this mode.
      }
   deriving Show
 
@@ -166,12 +172,25 @@ deriving instance Show (MiniProtocolDirection (mode :: Mode))
 
 -- | Strategy how to start a mini-protocol.
 --
+-- The strategy must match which side sends the opening message of the
+-- mini-protocol, not its direction: a mini-protocol which sends the opening
+-- message must be started eagerly, one which receives it can be started on
+-- demand.  For example, a protocol in which the server greets the client
+-- needs an eager responder.  The two notions are independent in the mux; an
+-- application might tie them together (e.g. in @ouroboros-network@
+-- initiators are always started eagerly and responders on demand).
+--
 data StartOnDemandOrEagerly =
-    -- | Start a mini-protocol promptly.
+    -- | Start a mini-protocol promptly.  Must be used when the initial message
+    -- is sent by this side.  Data received for such a mini-protocol while it
+    -- is not running, and trailing bytes left when it terminates, are
+    -- a protocol error ('Network.Mux.Trace.UnexpectedIngress').
     StartEagerly
     -- | Start a mini-protocol when data is received for the given
     -- mini-protocol.  Must be used only when initial message is sent by the
-    -- remote side.
+    -- remote side.  Data received while the mini-protocol is not running is
+    -- queued (up to its 'maximumIngressQueue'), and trailing bytes left when
+    -- it terminates are kept for its next run.
   | StartOnDemand
     -- | Like `StartOnDemand`, but start a mini-protocol if data is received for
     -- any mini-protocol set to `StartOnDemand`.
@@ -202,7 +221,25 @@ data Status
 -- Mux internal types
 --
 
-type IngressQueue m = StrictTVar m (Strict.Pair Int64 Builder)
+-- | A mini-protocol's ingress queue: what the demuxer has queued for it and
+-- it has not yet taken, as a builder with its length, and the bytes read for
+-- it since the mux started, SDU headers included, which the mux counters
+-- report.
+data IngressQueueState = IngressQueueState {
+    iqLength   :: {-# UNPACK #-} !Int64,
+    iqBuilder  :: !Builder,
+    iqReceived :: {-# UNPACK #-} !Word64
+  }
+
+type IngressQueue m = StrictTVar m IngressQueueState
+
+-- | An empty queue, nothing read.
+newIngressQueue :: MonadSTM m => m (IngressQueue m)
+newIngressQueue = newTVarIO (IngressQueueState 0 mempty 0)
+
+-- | Check that `IngressQueue` is empty
+nullIngressQueue :: MonadSTM m => IngressQueue m -> STM m Bool
+nullIngressQueue iq = ((== 0) . iqLength) <$> readTVar iq
 
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int
@@ -227,6 +264,12 @@ data MiniProtocolStatus = StatusIdle
                         | StatusStartOnDemand
                         | StatusRunning
                         | StatusStartOnDemandAny
+                        | StatusKilled
+                        -- ^ The thread was killed from outside, by an
+                        -- asynchronous exception the job pool does not
+                        -- report: not running, and not to be started again
+                        -- on this mux, the peer's side of the protocol being
+                        -- wherever the kill left it.
   deriving (Eq, Show)
 
 data SDUHeader = SDUHeader {
