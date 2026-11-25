@@ -53,7 +53,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 -- ('peerTier', which the registry writes), or fast as a source.
 effectiveTier :: TxDecisionPolicy -> Time -> PeerTxLocalState tx -> PeerTier
 effectiveTier policy now PeerTxLocalState { peerTier, peerNovelAt }
-  | peerTier == FastTier             = FastTier
+  | FastTier <- peerTier             = FastTier
   | isSource policy now peerNovelAt  = FastTier
   | otherwise                        = SlowTier
 
@@ -73,7 +73,7 @@ isSource policy now novelAt = n >= 1 && inWindow >= n
 sourceUntil :: TxDecisionPolicy -> Time -> StrictSeq (Time, Int) -> Maybe Time
 sourceUntil policy now novelAt
   | isSource policy now novelAt
-  , Just (oldest, _) <- StrictSeq.lookup 0 novelAt
+  , (oldest, _) StrictSeq.:<| _ <- novelAt
   = Just $! addTime (txSourceWindow policy) oldest
   | otherwise = Nothing
 
@@ -91,18 +91,20 @@ recordNovel policy now count novelAt
     n = txSourceCount policy
 
     appended =
-      case StrictSeq.lookup (StrictSeq.length novelAt - 1) novelAt of
-        Just (t, c) | t == now -> StrictSeq.take (StrictSeq.length novelAt - 1) novelAt StrictSeq.|> (now, c + count)
-        _                      -> novelAt StrictSeq.|> (now, count)
+      case novelAt of
+        novelAt' StrictSeq.:|> (t, c) | t == now ->
+          novelAt' StrictSeq.|> (now, c + count)
+        _  ->
+          novelAt StrictSeq.|> (now, count)
 
     stale (t, _) = addTime (txSourceWindow policy) t < now
 
     trim entries = go entries (List.foldl' (\acc (_, c) -> acc + c) 0 entries)
       where
-        go s total =
-          case StrictSeq.lookup 0 s of
-            Just (_, c) | total - c >= n -> go (StrictSeq.drop 1 s) (total - c)
-            _                            -> s
+        go ((_, c) StrictSeq.:<| s) total
+          | total - c >= n
+          = go s (total - c)
+        go s _total = s
 
 -- | The slow tier's wait before its next txid request:
 -- 'txSlowCadence' jittered by 'txSlowJitter', so slow peers do not fire
