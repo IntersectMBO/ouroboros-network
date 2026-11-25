@@ -127,13 +127,16 @@ nextJitter seed = (u, fst (unseedSMGen g'))
 -- and passed through a SplitMix step, so the order is uniform whatever the
 -- address type's hash makes of small salts, then its registration number
 -- for ties.
-tierRank :: Hashable addr => Salt -> (addr, Word64) -> (Word64, Word64)
-tierRank salt (addr, n) =
-    (fst (nextWord64 (mkSMGen (fromIntegral (hashWithSalt salt addr)))), n)
+tierRank :: Hashable addr => Salt -> PeerRegistration addr -> PeerRegistration Word64
+tierRank salt PeerRegistration { registrationAddr, registrationNum } =
+    PeerRegistration {
+      registrationAddr = fst (nextWord64 (mkSMGen (fromIntegral (hashWithSalt salt registrationAddr)))),
+      registrationNum
+    }
 
 -- | The fast tier from the salted order: the first @k@ keys by 'tierRank',
 -- all of them when there are no more than @k@.
-orderFast :: Hashable addr => Int -> Salt -> [(addr, Word64)] -> [(addr, Word64)]
+orderFast :: Hashable addr => Int -> Salt -> [PeerRegistration addr] -> [PeerRegistration addr]
 orderFast k salt
   | k <= 0    = const []
   | otherwise = take k . sortOn (tierRank salt)

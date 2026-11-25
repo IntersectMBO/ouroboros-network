@@ -88,7 +88,7 @@ import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (CounterMirrors (..),
-           PeerCells (..), PeerRegistration, PeerTierEntry (..), PeerTxAPI (..),
+           PeerCells (..), PeerTierEntry (..), PeerTxAPI (..),
            PeerTxRegistry (..), RootAnswer (..), SharedTxStateVar,
            TxIdRequestKind (..), TxSubmissionCountersVar, askRoot,
            awaitMirrorChange, doomGrace, drainPause, joinTier, leaveTier,
@@ -3013,7 +3013,7 @@ prop_snapshotCounters_exactlyOnce (CounterScript peers batches) = runSimOrThrow 
     registrationOf :: PeerTxRegistry (IOSim s) Int -> Int
                    -> STM (IOSim s) (Maybe (PeerRegistration Int, TxSubmissionCountersVar (IOSim s)))
     registrationOf PeerTxRegistry { registeredPeers } p =
-      listToMaybe . map (fmap peerCountersCell) . filter ((== p) . fst . fst) . Map.toList
+      listToMaybe . map (fmap peerCountersCell) . filter (\(PeerRegistration { registrationAddr = addr }, _) -> addr == p) . Map.toList
         <$> readTVar registeredPeers
 
     -- Run the ops due before this transaction, then the transaction.
@@ -6950,10 +6950,10 @@ splitMixStep seed = (u, fst (unseedSMGen g))
 -- of its address hashed with the salt, its registration number for ties,
 -- and the first @k@ by rank are fast.
 saltedFast :: (Ord addr, Hashable addr)
-           => Int -> Salt -> [(addr, Word64)] -> Set.Set (addr, Word64)
+           => Int -> Salt -> [PeerRegistration addr] -> Set.Set (PeerRegistration addr)
 saltedFast k salt = Set.fromList . take (max 0 k) . sortOn rank
   where
-    rank (addr, n) = (fst (nextWord64 (mkSMGen (fromIntegral (hashWithSalt salt addr)))), n)
+    rank (PeerRegistration addr n) = (fst (nextWord64 (mkSMGen (fromIntegral (hashWithSalt salt addr)))), n)
 
 -- | A fast peer is served as if there were no cadence: the same requests
 -- at the same times as under a zero cadence with no gate, a gate still
@@ -7277,7 +7277,7 @@ prop_withPeer_leaveFreesSlot seed = runSimOrThrow $ do
           (,) <$> tierOf apiOuter <*> tierOf apiInner
         -- the inner peer has left: its release took it out of the order
         afterLeave <- tierOf apiOuter
-        inOrder <- map fst . Map.keys <$> readTVarIO (peerTiers registry)
+        inOrder <- map (\(PeerRegistration addr _) -> addr) . Map.keys <$> readTVarIO (peerTiers registry)
         pure (outer, both, afterLeave, inOrder)
     pure $ conjoin
       [ counterexample (show o) $
@@ -7511,7 +7511,7 @@ prop_withPeer_tierWake kind seed write (Positive ms0) =
                  _             -> applyReceivedTxIds api (Time 1) Nothing (peerRequestedTxIds ps1) [(7, 100)] ps1
         (second, _) <- runNextPeerAction api (Time 1.001) Nothing ps2
         tiers <- readTVarIO (peerTiers registry)
-        (cell, sourceCell) <- case [ (pteState e, pteSource e) | ((addr, _), e) <- Map.toList tiers, addr == peer ] of
+        (cell, sourceCell) <- case [ (pteState e, pteSource e) | (PeerRegistration addr _, e) <- Map.toList tiers, addr == peer ] of
                                 [c] -> pure c
                                 cs  -> error ("the peer's cells: " ++ show (length cs))
         s0 <- readTVarIO cell
@@ -7698,16 +7698,16 @@ prop_tier_orderUniform seed0 (NonNegative n0) =
                         ++ " fast " ++ show c ++ " of " ++ show draws)
           (abs (fromIntegral c / fromIntegral draws - expected) < 0.1)
       | k <- [1 .. n - 1]
-      , let counts = foldl (\acc salt -> foldr (\(key, _) -> Map.insertWith (+) key (1 :: Int)) acc
+      , let counts = foldl (\acc salt -> foldr (\(PeerRegistration key _) -> Map.insertWith (+) key (1 :: Int)) acc
                                                (orderFast k salt keys))
                            Map.empty salts
             expected = fromIntegral k / fromIntegral n :: Double
-      , (key, _) <- keys
+      , PeerRegistration key _ <- keys
       , let c = Map.findWithDefault 0 key counts
       ]
   where
     n     = 2 + n0 `mod` 5
-    keys  = [ (key, 0) | key <- [0 .. n - 1] ] :: [(Int, Word64)]
+    keys  = [ PeerRegistration key 0 | key <- [0 .. n - 1] ] :: [PeerRegistration Int]
     draws = 2000 :: Int
     salts = take draws (unfoldr (Just . mkSalt) (mkStdGen seed0))
 

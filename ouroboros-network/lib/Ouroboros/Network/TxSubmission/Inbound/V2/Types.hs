@@ -18,6 +18,7 @@
 module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   ( -- * Shared state
     SharedTxState (..)
+  , PeerRegistration (..)
     -- * RetainedTxs with helper functions
   , RetainedTxs
   , RetainTime
@@ -132,6 +133,14 @@ const_MAX_TX_SIZE_DISCREPANCY = 32
 newtype TxKey = TxKey { unTxKey :: Int }
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (Enum, NFData, NoThunks)
+
+-- | A peer's key in the registry: its address and its registration number.
+data PeerRegistration peeraddr = PeerRegistration {
+    registrationAddr :: !peeraddr,
+    registrationNum  :: !Word64
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (NFData, NoThunks)
 
 -- | The current download lease for a tx body.
 --

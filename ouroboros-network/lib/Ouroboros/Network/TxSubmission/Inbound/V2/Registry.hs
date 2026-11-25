@@ -7,7 +7,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ( SharedTxStateVar
   , PeerTxRegistry (..)
   , CounterMirrors (..)
-  , PeerRegistration
+  , PeerRegistration (..)
   , PeerTxAPI (..)
   , TxSubmissionCountersVar
   , newSharedTxStateVar
@@ -91,9 +91,6 @@ type TxSubmissionCountersVar m = StrictTVar m TxSubmissionCountersAcc
 
 -- | Per-peer in-flight TVar.
 type PeerTxInFlightVar m = StrictTVar m PeerTxInFlight
-
--- | A peer's key in the registry: its address and its registration number.
-type PeerRegistration peeraddr = (peeraddr, Word64)
 
 -- | A live peer's tier bookkeeping, in two cells.
 data PeerTierEntry m = PeerTierEntry {
@@ -532,11 +529,15 @@ registerPeerCells
   -> TxSubmissionCountersVar m
   -> PeerTxInFlightVar m
   -> STM m (PeerRegistration peeraddr)
-registerPeerCells registry peeraddr peerCountersVar peerInFlightVar = do
-    n <- stateTVar (nextRegistration registry) (\i -> (i, i + 1))
+registerPeerCells registry registrationAddr peerCountersVar peerInFlightVar = do
+    registrationNum <- stateTVar (nextRegistration registry) (\i -> (i, i + 1))
+    let peerRegistration = PeerRegistration {
+          registrationAddr,
+          registrationNum
+        }
     modifyTVar (registeredPeers registry)
-               (Map.insert (peeraddr, n) (PeerCells peerCountersVar peerInFlightVar))
-    pure (peeraddr, n)
+               (Map.insert peerRegistration (PeerCells peerCountersVar peerInFlightVar))
+    pure peerRegistration
 
 -- | Move a leaving peer's counts into the retired accumulator and drop its
 -- registration, in one transaction, so 'snapshotCountersWith' counts it
@@ -647,7 +648,7 @@ refreshRoots :: (MonadSTM m, Ord peeraddr, Hashable peeraddr)
              -> STM m ()
 refreshRoots policy registry isRoot epoch = do
     tiers <- readTVar (peerTiers registry)
-    changed <- forM (Map.toList tiers) $ \((addr, _), PeerTierEntry { pteState }) -> do
+    changed <- forM (Map.toList tiers) $ \(PeerRegistration addr _, PeerTierEntry { pteState }) -> do
       s <- readTVar pteState
       let root = isRoot addr
       if ptsRootAsked s >= epoch || root == ptsRoot s
