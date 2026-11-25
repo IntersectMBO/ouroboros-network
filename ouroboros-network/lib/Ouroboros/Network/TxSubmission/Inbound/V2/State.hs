@@ -1159,11 +1159,11 @@ expireSharedStateUpTo :: HasRawTxId txid
                       -> SharedTxState peeraddr txid
                       -> (SharedTxState peeraddr txid, Bool)
 expireSharedStateUpTo limit now st
-    | expired > 0 = (bumped, more)
+    | expired > 0 = (bumpedSt, more)
     | otherwise   = (st, more)
   where
     (expiredSt, more, expired) = expireUpTo limit now st
-    bumped = expiredSt { sharedRevision = sharedRevision st + 1 }
+    bumpedSt = expiredSt { sharedRevision = sharedRevision st + 1 }
 {-# INLINABLE expireSharedStateUpTo #-}
 
 -- | Expire at most @limit@ retained entries, the earliest first, with
