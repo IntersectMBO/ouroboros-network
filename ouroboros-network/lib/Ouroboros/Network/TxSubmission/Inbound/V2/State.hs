@@ -1449,7 +1449,8 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
 -- is why the accepted txids come along.
 -- Txs rejected by the mempool release this peer's lease and clear
 -- 'txInSubmission' so another advertiser may try later.
-handleSubmittedTxs :: (Eq peeraddr, HasRawTxId txid)
+handleSubmittedTxs :: forall peeraddr txid tx.
+                      (Eq peeraddr, HasRawTxId txid)
                    => Time
                    -> TxDecisionPolicy
                    -> peeraddr
@@ -1467,6 +1468,7 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
     rejectedKeys = IntSet.fromList (unTxKey <$> rejectedTxs)
     submittedKeys = acceptedKeys `IntSet.union` rejectedKeys
 
+    peerState' :: PeerTxLocalState tx
     peerState' = peerState {
         peerDownloadedTxs =
           IntMap.withoutKeys (peerDownloadedTxs peerState) submittedKeys,
@@ -1485,6 +1487,7 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
         peerCreditedTxIds =
           peerCreditedTxIds peerState `IntSet.difference` submittedKeys
       }
+    creditedKeys :: IntSet
     creditedKeys = acceptedKeys `IntSet.intersection` peerCreditedTxIds peerState
 
     -- Submission outcomes clear the peer's submission and advertised
@@ -1497,9 +1500,11 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
         pifAdvertised = pifAdvertised peerInFlight `IntSet.difference` submittedKeys
       }
 
+    sharedStateAfterAccepted :: SharedTxState peeraddr txid
     sharedStateAfterAccepted =
       List.foldl' acceptSubmittedTx sharedState acceptedTxs
 
+    sharedStateAfterRejected :: SharedTxState peeraddr txid
     sharedStateAfterRejected =
       IntSet.foldl' updateRejected sharedStateAfterAccepted rejectedKeys
 
@@ -1507,6 +1512,7 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
     -- 'sharedGeneration': accept moves the key into 'sharedRetainedTxs'
     -- (other advertisers can ack via the retained-membership check),
     -- reject releases the lease (other advertisers can claim).
+    sharedState' :: SharedTxState peeraddr txid
     sharedState' =
       sharedStateAfterRejected {
         sharedGeneration = sharedGeneration sharedState + 1,
@@ -1522,11 +1528,16 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
 
     -- whether a rejected key still has an entry, the one 'markRejected'
     -- reopens
+    reopenedAny :: Bool
     reopenedAny =
       any (`IntMap.member` sharedTxTable sharedStateAfterAccepted) (IntSet.toList rejectedKeys)
 
+    retainedUntil :: RetainTime
     retainedUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
+    acceptSubmittedTx :: SharedTxState peeraddr txid
+                      -> (TxKey, txid)
+                      -> SharedTxState peeraddr txid
     acceptSubmittedTx sharedAcc (TxKey k, txid)
       | IntMap.member k (sharedKeyToTxId sharedAcc) = retainUnder k sharedAcc
       -- The key's lookup entries are gone: another peer found the tx in
@@ -1546,17 +1557,24 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
     -- The accepted tx retained under a key: out of the table, where an
     -- active entry held it, and retained until the deadline, or the later
     -- one it already has.
+    retainUnder :: Int
+                -> SharedTxState peeraddr txid
+                -> SharedTxState peeraddr txid
     retainUnder k st =
       st { sharedTxTable     = IntMap.delete k (sharedTxTable st),
            sharedRetainedTxs = retainedInsertMax k retainedUntil (sharedRetainedTxs st) }
 
     -- A rejected key stays active for its other advertisers; this peer is
     -- done with it.
+    updateRejected :: SharedTxState peeraddr txid
+                   -> Int
+                   -> SharedTxState peeraddr txid
     updateRejected sharedAcc k =
       sharedAcc {
         sharedTxTable = IntMap.adjust markRejected k (sharedTxTable sharedAcc)
       }
 
+    markRejected :: TxEntry peeraddr -> TxEntry peeraddr
     markRejected txEntry@TxEntry { txLease } =
       txEntry {
         txLease = case txLease of
