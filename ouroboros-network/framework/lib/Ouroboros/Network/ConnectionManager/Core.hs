@@ -1464,6 +1464,17 @@ with args@Arguments {
 
       -- The socket bracket handles errors after socket acquisition. Here we
       -- only roll back the exact reservation still in the unknown-local slot.
+      releaseReservation
+        :: ( Maybe (Trace peerAddr handlerTrace)
+           , Maybe (TransitionTrace State.ConnStateId
+                       (ConnectionState peerAddr handle handleError version m))
+           , Either (ConnectionManagerError peerAddr)
+                    ( MutableConnState peerAddr handle handleError version m
+                    , Wedge (Connected peerAddr handle handleError)
+                            (ConnectionId peerAddr)
+                    )
+           )
+        -> m ()
       releaseReservation (_, _, Right (entry@MutableConnState { connVar, connStateId }, Nowhere)) = do
         released <- uninterruptibleMask_ $ atomically $ do
           connState <- readTVar connVar
@@ -1485,6 +1496,17 @@ with args@Arguments {
           traceCounters stateVar
       releaseReservation _ = pure ()
 
+      acquireSelected
+        :: ( Maybe (Trace peerAddr handlerTrace)
+           , Maybe (TransitionTrace State.ConnStateId
+                       (ConnectionState peerAddr handle handleError version m))
+           , Either (ConnectionManagerError peerAddr)
+                    ( MutableConnState peerAddr handle handleError version m
+                    , Wedge (Connected peerAddr handle handleError)
+                            (ConnectionId peerAddr)
+                    )
+           )
+        -> m (Connected peerAddr handle handleError)
       acquireSelected (trace, trTrace, eHandleWedge) = do
         traverse_ (traceWith tracer) trace
         traverse_ (traceWith trTracer) trTrace
