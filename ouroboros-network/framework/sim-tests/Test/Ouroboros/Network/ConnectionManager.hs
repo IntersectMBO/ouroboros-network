@@ -1266,25 +1266,73 @@ data OutboundReleaseCase = PruneOther | PruneSelf | SpareCapacity
 -- Use the public operations to fill the inbound slots before releasing a
 -- ticking outbound connection that would otherwise take one more slot.
 unit_outboundRelease :: OutboundReleaseCase -> Property
-unit_outboundRelease releaseCase = once $ runSimOrThrow experiment
+unit_outboundRelease releaseCase = once $
+    case traceResult False trace of
+      Left failure -> counterexample (displayException failure) False
+      Right (actualOutbound, actualInbound, before, result, after) ->
+        conjoin
+          [ actualOutbound === outboundId
+          , actualInbound === inboundId
+          , counterexample "state before release" (CM.getConnMap before === initialMap)
+          , counterexample (show result) $ case result of
+              OperationSuccess st -> st === ticking
+              _                   -> property False
+          , counterexample "state after release" (fmap CM.getConnMap after === Just expectedMap)
+          , counterexample "pruning events" (prunes === expectedPrunes)
+          , counterexample "release transition traces" (length releaseTraces === expectedReleaseTraces)
+          ]
   where
-    experiment :: forall s. IOSim s Property
+    trace = runSimTrace experiment
+
+    local = TestAddress 0
+    outbound = TestAddress 1
+    inbound = TestAddress 2
+    outboundId = ConnectionId local outbound
+    inboundId = ConnectionId local inbound
+    (limit, victim) = case releaseCase of
+      PruneOther    -> (1, Just inboundId)
+      PruneSelf     -> (1, Just outboundId)
+      SpareCapacity -> (2, Nothing)
+
+    ticking = OutboundDupSt Ticking
+    idle = InboundIdleSt Duplex
+    entry = Map.singleton (CM.LocalAddr local)
+    initialMap = Map.fromList [(outbound, entry ticking), (inbound, entry idle)]
+    bothIdle = Map.fromList [(outbound, entry idle), (inbound, entry idle)]
+    expectedMap = maybe bothIdle (\key -> Map.delete (remoteAddress key) bothIdle) victim
+
+    expectedPrunes = case victim of
+      Nothing  -> []
+      Just key -> [(Set.singleton key, 1, Set.fromList [outboundId, inboundId])]
+    prunes =
+      [ (selected, count, candidates)
+      | CM.TrPruneConnections selected count candidates <-
+          selectTraceEventsDynamic trace :: [TestConnectionManagerTrace]
+      ]
+
+    expectedReleaseTraces = case releaseCase of
+      PruneSelf -> 0
+      _         -> 1
+    releaseTraces =
+      [ transition
+      | TransitionTrace _ transition <-
+          selectTraceEventsDynamic trace :: [TestAbstractTransitionTrace]
+      , transition == mkAbsTransition ticking idle
+      ]
+
+    experiment
+      :: forall s.
+         IOSim s ( ConnectionId Addr
+                 , ConnectionId Addr
+                 , CM.ConnMap Addr AbstractState
+                 , OperationResult AbstractState
+                 , Maybe (CM.ConnMap Addr AbstractState)
+                 )
     experiment = do
       baseSnocket <- mkSnocket mempty
-      pruneEvents <- newTVarIO []
-      releaseTraces <- newTVarIO (0 :: Int)
       connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
       info <- newInformationChannel
-      let local = TestAddress 0
-          outbound = TestAddress 1
-          inbound = TestAddress 2
-          outboundId = ConnectionId local outbound
-          inboundId = ConnectionId local inbound
-          (limit, victim) = case releaseCase of
-            PruneOther    -> (1, Just inboundId)
-            PruneSelf     -> (1, Just outboundId)
-            SpareCapacity -> (2, Nothing)
-          snocket = baseSnocket { connect = \_ _ -> pure () }
+      let snocket = baseSnocket { connect = \_ _ -> pure () }
           handler :: ConnectionHandlerFn () (FD (IOSim s)) Addr
                          () Void Version VersionData (IOSim s)
           handler _ _ writer _ _ _ _ =
@@ -1292,29 +1340,10 @@ unit_outboundRelease releaseCase = once $ runSimOrThrow experiment
               atomically $ writePromise writer
                 (Right (HandshakeConnectionResult () ((), Duplex)))
               unmask (atomically retry)
-          ticking = OutboundDupSt Ticking
-          idle = InboundIdleSt Duplex
-          entry = Map.singleton (CM.LocalAddr local)
-          initialMap = Map.fromList [(outbound, entry ticking), (inbound, entry idle)]
-          bothIdle = Map.fromList [(outbound, entry idle), (inbound, entry idle)]
-          expectedMap = maybe bothIdle (\key -> Map.delete (remoteAddress key) bothIdle) victim
-          expectedPrunes = case victim of
-            Nothing  -> []
-            Just key -> [(Set.singleton key, 1, Set.fromList [outboundId, inboundId])]
-          expectedReleaseTraces = case releaseCase of
-            PruneSelf -> 0
-            _         -> 1
-          tracer = mkTracer $ \event -> case event of
-            CM.TrPruneConnections selected count candidates ->
-              atomically $ modifyTVar pruneEvents ((selected, count, candidates) :)
-            _ -> pure ()
-          trTracer = mkTracer $ \event ->
-            when (fmap CM.abstractState (ttTransition event) == mkAbsTransition ticking idle) $
-              atomically $ modifyTVar releaseTraces (+1)
       CM.with
         CM.Arguments {
-          tracer,
-          trTracer,
+          tracer = dynamicTracer,
+          trTracer = fmap CM.abstractState `contramap` dynamicTracer,
           ipv4Address = Nothing,
           ipv6Address = Nothing,
           addressType = const (Just IPv4Address),
@@ -1339,26 +1368,14 @@ unit_outboundRelease releaseCase = once $ runSimOrThrow experiment
             InitiatorAndResponderDiffusionMode outbound Outbound
           fd <- open snocket TestFamily
           Connected actualInbound _ _ <- includeInboundConnection cm limit fd inboundId
-          before <- atomically $ CM.getConnMap <$> readState cm
+          before <- atomically $ readState cm
           result <- releaseOutboundConnection cm outboundId
           -- Wait for victim cleanup independently of the survivor's state.
           after <- timeout 10 $ atomically $ do
-            states <- CM.getConnMap <$> readState cm
-            check (maybe True (\key -> Map.notMember (remoteAddress key) states) victim)
+            states <- readState cm
+            check (maybe True (\key -> Map.notMember (remoteAddress key) (CM.getConnMap states)) victim)
             pure states
-          prunes <- atomically $ readTVar pruneEvents
-          traces <- atomically $ readTVar releaseTraces
-          pure $ conjoin
-            [ actualOutbound === outboundId
-            , actualInbound === inboundId
-            , counterexample "state before release" (before === initialMap)
-            , counterexample (show result) $ case result of
-                OperationSuccess st -> st === ticking
-                _                   -> property False
-            , counterexample "state after release" (after === Just expectedMap)
-            , counterexample "pruning events" (prunes === expectedPrunes)
-            , counterexample "release transition traces" (traces === expectedReleaseTraces)
-            ]
+          pure (actualOutbound, actualInbound, before, result, after)
 
 
 --
