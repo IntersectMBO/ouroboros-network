@@ -1472,11 +1472,11 @@ with args@Arguments {
               modifyTMVarSTM stateVar $ \state -> do
                 let reservation = Map.lookup peerAddr (State.getConnMap state)
                                   >>= Map.lookup State.UnknownLocalAddr
-                if reservation == Just entry
-                  then do
+                case reservation of
+                  Just e | e == entry -> do
                     writeTVar connVar (TerminatedState Nothing)
                     return (State.deleteAtRemoteAddr peerAddr entry state, True)
-                  else return (state, False)
+                  _ -> pure (state, False)
             _ -> return False
         when released $ do
           let closed = TerminatedState Nothing
