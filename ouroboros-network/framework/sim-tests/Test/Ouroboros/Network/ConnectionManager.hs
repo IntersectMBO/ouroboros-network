@@ -73,7 +73,8 @@ import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
            AddressFamily (TestFamily), Snocket (..), TestAddress (..))
 import Ouroboros.Network.Util (PrettyShow (..))
 
-import Test.Ouroboros.Network.ConnectionManager.Utils (verifyAbstractTransition)
+import Test.Ouroboros.Network.ConnectionManager.Utils
+           (abstractStateIsFinalTransition, verifyAbstractTransition)
 import Test.Ouroboros.Network.Utils (dynamicTracer, sayTracer)
 
 
@@ -702,12 +703,11 @@ instance Arbitrary SkewedBool where
 --
 --  The purpose of this simulation is to put the connection manager state
 --  machine in all possible states and check that it will only execute allowed
---  transitions.
+--  transitions and that each connection is removed by shutdown.
 --
 -- Possible extensions:
 --
 -- * test that resources are eventually closed;
--- * we could check that every connection eventually ends in 'TerminatedState';
 -- * we can statically compute which transitions we will observe
 -- * include handshake failures
 --
@@ -744,7 +744,9 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
               cmTrace = selectTraceEventsDynamic tr
 
           in counterexample ("\nTransition Trace\n" ++ (intercalate "\n" . map show $ cmTrace))
-                            (verifyTrace cmTrace)
+               $ conjoin [ verifyTrace cmTrace
+                         , verifyFinalTransitions cmTrace
+                         ]
   where
     myAddress :: Maybe Addr
     myAddress = if bindToLocalAddress
@@ -757,6 +759,19 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
       where
         verifyTransitionProp :: AbstractTransition -> Property
         verifyTransitionProp tr = counterexample ("\nUnexpected transition: " ++ show tr) (verifyAbstractTransition tr)
+
+    verifyFinalTransitions :: [TestAbstractTransitionTrace] -> Property
+    verifyFinalTransitions cmTrace = conjoin
+      [ counterexample "No connection transitions were traced" (not (Map.null lastTransitions))
+      , conjoin
+          [ counterexample ("\nUnexpected final transition for " ++ show connStateId ++ ": " ++ show tr)
+                           (abstractStateIsFinalTransition tr)
+          | (connStateId, tr) <- Map.toList lastTransitions
+          ]
+      ]
+      where
+        lastTransitions = Map.fromList
+          [ (ttPeerAddr event, ttTransition event) | event <- cmTrace ]
 
 
     experiment :: forall s. IOSim s Int
@@ -787,7 +802,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
 
         inbgovInfoChannel <- newInformationChannel
         let connectionHandler = mkConnectionHandler snocket
-        result <- CM.with
+        CM.with
           CM.Arguments {
             tracer,
             trTracer,
@@ -984,11 +999,6 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             -- outstanding threads to terminate
             threadDelay (testTimeWaitTimeout + 1)
             atomically $ numberOfConnections connectionManager
-
-        -- we need to wait at least `testTimeWaitTimeout` to let all the
-        -- outstanding threads to terminate.  This can happen in a rare case
-        threadDelay (10 * testTimeWaitTimeout)
-        return result
 
     checkException :: Either SomeException a -> IOSim s ()
     checkException Right {}   = pure ()
