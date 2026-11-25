@@ -1184,14 +1184,17 @@ unit_outboundReservationRollback failure =
           pure (first, second, openCount, closeCount)
 
 
+data HandshakeOutcome = Terminated | Query
+  deriving (Eq, Show)
+
 -- Exercise the actual caller path with a handler that either fails before
 -- publication or publishes a query and returns.
 unit_handshakeCompletion :: Provenance -> Bool -> Property
 unit_handshakeCompletion provenance publishQuery =
     runSimOrThrow experiment ===
-      (Just (if publishQuery then "query" else "terminated"), True, Just 1)
+      (Just (if publishQuery then Query else Terminated), True, Just 1)
   where
-    experiment :: forall s. IOSim s (Maybe String, Bool, Maybe Int)
+    experiment :: forall s. IOSim s (Maybe HandshakeOutcome, Bool, Maybe Int)
     experiment = do
       baseSnocket <- mkSnocket mempty
       closes <- newTVarIO (0 :: Int)
@@ -1251,9 +1254,9 @@ unit_handshakeCompletion provenance publishQuery =
           states <- atomically $ readState cm
           let outcome = case result of
                 Just (Disconnected actual ConnectionInTerminatedState)
-                  | actual == connId -> Just "terminated"
+                  | actual == connId -> Just Terminated
                 Just (Disconnected actual ConnectionDisconnectedByHandshakeQuery)
-                  | actual == connId -> Just "query"
+                  | actual == connId -> Just Query
                 _ -> Nothing
           pure (outcome, Map.null (CM.getConnMap states), closeCount)
 
