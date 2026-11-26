@@ -150,6 +150,7 @@ tests =
           ]
     , testProperty "nextPeerAction processes all multi-peer triggers" prop_nextPeerAction_processesAllTriggers
     , testProperty "handleReceivedTxIds classifies incoming txids" prop_handleReceivedTxIds
+    , testProperty "handleReceivedTxIds only wakes other peers for existing mempool keys" prop_handleReceivedTxIds_mempoolWake
     , testCaseSteps "handleReceivedTxIds tracks the advertise without mutating an existing entry" unit_handleReceivedTxIds_advertisesExistingEntry
     , testProperty "handleReceivedTxIds writes nothing shared for a peer advertising an existing entry, however often, unless it is under review" prop_handleReceivedTxIds_repeatCountsOnce
     , testProperty "handleReceivedTxIds credits the keys a slow request or a source's brought, and not a fast request's" prop_handleReceivedTxIds_credits
@@ -1462,6 +1463,142 @@ prop_handleReceivedTxIds (ArbTxDecisionPolicy policy) (NonEmpty taggedInput) =
       ]
   where
     peerAddr = 1 :: PeerAddr
+
+-- | A received txid's residence before the reply. Every tx in this test
+-- is already in the mempool; only active entries need a shared wake when
+-- resolved. Retained entries must not be confused with active ones merely
+-- because both already have interned keys.
+data MempoolTxId = FreshTxId | ActiveTxId | RetainedTxId
+  deriving (Eq, Show)
+
+instance Arbitrary MempoolTxId where
+  arbitrary = elements [FreshTxId, ActiveTxId, RetainedTxId]
+  shrink FreshTxId = []
+  shrink _         = [FreshTxId]
+
+-- | Generate both homogeneous and mixed replies, within the default
+-- request limit. Assigning distinct txids by position in the property
+-- keeps the active, retained and fresh groups disjoint after shrinking,
+-- while 'shrinkList' can reduce a failing batch to its essential txids.
+newtype MempoolReply = MempoolReply [MempoolTxId]
+  deriving Show
+
+instance Arbitrary MempoolReply where
+  arbitrary = do
+    n <- frequency [(1, pure 0), (1, pure 1), (4, choose (2, 10))]
+    MempoolReply <$> frequency
+      [ (1, pure (replicate n FreshTxId))
+      , (1, pure (replicate n ActiveTxId))
+      , (1, pure (replicate n RetainedTxId))
+      , (4, vectorOf n arbitrary)
+      ]
+  shrink (MempoolReply kinds) = MempoolReply <$> shrinkList shrink kinds
+
+-- | A mempool reply advances generation iff it resolves an active key,
+-- independent of the other txids in the batch and their order. Revision
+-- advances iff a fresh or active key becomes retained; an empty reply or
+-- a reply of already retained keys changes only the peer's local state.
+-- No case creates claimable download work.
+--
+-- This checks the pure state transition, not an STM waiter. Coverage
+-- requires homogeneous replies and both mixed-batch orders: processing a
+-- fresh key must not erase a wake accumulated for an earlier active key.
+prop_handleReceivedTxIds_mempoolWake
+  :: ArbTxDecisionPolicy
+  -> MempoolReply
+  -> (Word64, Word64, Word64)
+  -> Property
+prop_handleReceivedTxIds_mempoolWake (ArbTxDecisionPolicy policy)
+                                   (MempoolReply kinds) (revision, generation, claimable) =
+    checkCoverage
+  $ cover 10 (null kinds) "empty reply"
+  $ cover 10 (only FreshTxId) "fresh keys only"
+  $ cover 10 (only ActiveTxId) "active keys only"
+  $ cover 10 (only RetainedTxId) "retained keys only"
+  $ cover 5 (precedes ActiveTxId FreshTxId) "active before fresh"
+  $ cover 5 (precedes FreshTxId ActiveTxId) "fresh before active"
+  $ cover 30 (length kinds > 1) "multiple txids"
+  $ conjoin
+      [ counterexample "revision changes once iff the shared state changes"
+          (sharedRevision after === expectedRevision)
+      , counterexample "generation changes once iff an active key is resolved"
+          (sharedGeneration after === expectedGeneration)
+      , counterexample "no new claimable work"
+          (sharedClaimable after === claimable)
+      , counterexample "only the replied active entries are removed"
+          (sharedTxTable after === IntMap.withoutKeys (sharedTxTable before) activeKeys)
+      , counterexample "no live advertisements or available bodies"
+          ( pifAdvertised pif'
+            ===
+            IntSet.empty
+            .&&.
+            peerAvailableTxIds peerState'
+            ===
+            IntMap.empty
+          )
+      , counterexample "reply keys stay unacknowledged in reply order"
+          (toList (peerUnacknowledgedTxIds peerState') === keys)
+      , counterexample "the outstanding request is consumed"
+          (peerRequestedTxIds peerState' === 0)
+      , counterexample "only fresh and active reply keys are newly retained"
+          ( retainedSize (sharedRetainedTxs after)
+            ===
+            retainedSize (sharedRetainedTxs before) + length (filter (/= RetainedTxId) kinds))
+      , counterexample "all reply keys have the expected retention deadline"
+          (conjoin [ retainedLookup k (sharedRetainedTxs after)
+                     ===
+                     Just retainUntil
+                   | TxKey k <- keys
+                   ])
+      , counterexample "unrelated retained entry is preserved"
+          (retainedLookup unrelatedRetainedKey (sharedRetainedTxs after)
+             === retainedLookup unrelatedRetainedKey (sharedRetainedTxs before))
+      -- This peer is already running to handle the reply, so it can
+      -- acknowledge the whole batch without a generation notification.
+      , counterexample ("expected acknowledgements, got " ++ show action)
+          (case action of
+             PeerRequestTxIds acknowledged _ -> acknowledged === fromIntegral (length kinds)
+             _                               -> property False)
+      ]
+  where
+    peerAddr = 0
+    only kind = not (null kinds) && all (== kind) kinds
+    precedes earlier later = later `elem` dropWhile (/= earlier) kinds
+
+    changes = any (/= RetainedTxId) kinds
+    wakes = ActiveTxId `elem` kinds
+
+    expectedRevision    = revision + if changes then 1 else 0
+    expectedGeneration = generation + if wakes then 1 else 0
+
+    reply         = zip [1 ..] kinds
+    txidsAndSizes = [(txid, 64) | (txid, _) <- reply]
+    activeIds     = [(txid, 64) | (txid, ActiveTxId) <- reply]
+    retainedIds   = [(txid, 64) | (txid, RetainedTxId) <- reply]
+
+    -- Keep unrelated active and retained entries as well: a fresh reply
+    -- must not wake merely because some other key is already active,
+    -- and resolving reply keys must preserve the rest of the tables.
+    before =
+      (seedRetainedTxids policy ((-1, 64) : retainedIds)
+        (mkActiveSharedState [peerAddr] peerAddr [] ((peerAddr, 64) : activeIds)))
+      { sharedRevision   = revision
+      , sharedGeneration = generation
+      , sharedClaimable  = claimable
+      }
+    activeKeys = IntSet.fromList [unTxKey (lookupKeyOrFail txid before) | (txid, _) <- activeIds]
+    unrelatedRetainedKey = unTxKey (lookupKeyOrFail (-1) before)
+    retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
+    peerState :: PeerTxLocalState (Tx TxId)
+    -- Even an empty reply answers a request for at least one txid.
+    peerState = emptyPeerTxLocalState { peerRequestedTxIds = fromIntegral (max 1 (length kinds)) }
+    -- 'const True' is mempoolHasTx: no bodies need fetching or submitting.
+    (peerState', pif', after) =
+      handleReceivedTxIds (const True) now policy (peerRequestedTxIds peerState)
+                          txidsAndSizes peerState emptyPeerTxInFlight before
+    keys = [lookupKeyOrFail txid after | (txid, _) <- reply]
+    (action, _, _, _) =
+      nextPeerAction now policy defaultTxSubmissionConfigV2 (1 :: PeerAddr) peerState' pif' after
 
 -- | When a peer advertises a txid whose entry already exists, the entry
 -- gains an advertiser and nothing else: the per-peer 'PeerTxInFlight'

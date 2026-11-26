@@ -1765,8 +1765,9 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
           , revOnlyAcc'
           )
       | mempoolHasTx txid =
-          -- Retained-insert may enable a late ack on another peer that
-          -- already advertised this txid: wake-relevant.
+          -- Existing keys are active here: retained keys were handled
+          -- above. Resolving one may let other advertisers acknowledge
+          -- it. A fresh key is known only to this peer, so needs no wake.
           ( txKey : unacknowledgedAcc
           , IntMap.delete k availableAcc
           , sharedAcc' {
@@ -1775,7 +1776,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
                 retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc')
             }
           , IntSet.delete k peerAdvertisedKeysAcc
-          , True
+          , wakeAcc || not txKeyWasNew
           , True
           )
       | otherwise =
