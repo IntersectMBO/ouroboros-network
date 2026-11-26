@@ -220,7 +220,8 @@ pickPeerActionChoice txIdRequestMode ctx
         Just gateUntil
           | txIdRequestMode == AllowAnyTxIdRequests
           , txIdsToAcknowledge > 0
-          , Just _ <- pickSubmitFrom ctx unacknowledgedTxIds' ->
+            -- lookahead if acknowledging unblocks submitting txs
+          , Just _ <- pickSubmitAction' ctx unacknowledgedTxIds' ->
               ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge 0 unacknowledgedTxIds'
           | otherwise -> waitGate gateUntil
   -- Nothing to do now.  A slow peer whose gate holds waits for the gate
@@ -426,15 +427,15 @@ pickSubmitAction
   :: PeerActionContext peeraddr txid tx
   -> Maybe [TxKey]
 pickSubmitAction ctx@PeerActionContext { pacPeerState } =
-    pickSubmitFrom ctx (peerUnacknowledgedTxIds pacPeerState)
+    pickSubmitAction' ctx (peerUnacknowledgedTxIds pacPeerState)
 
 -- | 'pickSubmitAction' over a given unacknowledged queue: the one an
 -- acknowledgement leaves, for whether it frees a buffered body.
-pickSubmitFrom
+pickSubmitAction'
   :: PeerActionContext peeraddr txid tx
   -> StrictSeq.StrictSeq TxKey
   -> Maybe [TxKey]
-pickSubmitFrom PeerActionContext { pacPeerState, pacSharedState } unacknowledgedTxIds =
+pickSubmitAction' PeerActionContext { pacPeerState, pacSharedState } unacknowledgedTxIds =
   if null pickBufferedTxsToSubmit
      then Nothing
      else Just pickBufferedTxsToSubmit
