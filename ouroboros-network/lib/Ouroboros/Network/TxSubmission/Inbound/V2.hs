@@ -376,7 +376,7 @@ txSubmissionInboundV2
            pure $ SendMsgRequestTxIdsPipelined
                     txIdsToAck
                     txIdsToReq
-                    (continueWithState (handleReplies (Succ Zero)) <$> sentTxIdRequest peerState)
+                    (continueWithState (handleReplies (Succ Zero)) <$> afterTxIdRequestSent peerState)
 
     -- Pipelined request at depth > 0. Sends a pipelined message and continues
     -- to @handleReplies@.
@@ -384,7 +384,7 @@ txSubmissionInboundV2
       pure $ SendMsgRequestTxIdsPipelined
                txIdsToAck
                txIdsToReq
-               (continueWithState (handleReplies (Succ n)) <$> sentTxIdRequest peerState)
+               (continueWithState (handleReplies (Succ n)) <$> afterTxIdRequestSent peerState)
 
     -- The continuation of a pipelined txid request runs once the driver
     -- has sent it: a request off the slow tier sets the gate its wait
@@ -392,8 +392,8 @@ txSubmissionInboundV2
     -- the trace, the transaction and the write took, and a body reply
     -- collected before this request's reply gives the idle loop a
     -- decision meanwhile; the reply moves the gate later again.
-    sentTxIdRequest :: PeerTxLocalState tx -> m (PeerTxLocalState tx)
-    sentTxIdRequest ps = case peerTxIdRequests ps of
+    afterTxIdRequestSent :: PeerTxLocalState tx -> m (PeerTxLocalState tx)
+    afterTxIdRequestSent ps = case peerTxIdRequests ps of
       _ StrictSeq.:|> TxIdsOnSlow wait -> do
         sent <- getMonotonicTime
         pure $! ps { peerSlowGate = Just $! wait `addTime` sent }
