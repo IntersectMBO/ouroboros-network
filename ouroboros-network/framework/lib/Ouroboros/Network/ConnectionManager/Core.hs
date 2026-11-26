@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE BlockArguments           #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
@@ -37,7 +36,6 @@ import Control.Monad.Class.MonadFork (throwTo)
 import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Monad.Fix
 import Control.Tracer (Tracer, contramap, traceWith)
 import Data.Bifunctor
 import Data.Foldable (foldMap', traverse_)
@@ -371,7 +369,6 @@ with
        , MonadAsync         m
        , MonadDelay         m
        , MonadEvaluate      m
-       , MonadFix           m
        , MonadMask          m
        , MonadThrow    (STM m)
        , MonadTimer         m
@@ -589,35 +586,37 @@ with args@Arguments {
           `orElse` (waitCatchSTM connThread $> Nothing)
 
 
-    -- Fork connection thread.
-    --
-    -- TODO: We could probably elegantly eliminate 'PromiseWriter', now that we use
-    -- MonadFix.
+    -- Fork and register the handler. Inbound handlers wait for the parent to
+    -- hand over the entry and socket. Until then the child cannot clean up any
+    -- connection state.
     forkConnectionHandler
       :: StrictTVar m [Async m ()]
       -> (versionData -> versionData)
       -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
-      -> MutableConnState peerAddr handle handleError version m
+      -> m (Maybe (MutableConnState peerAddr handle handleError version m))
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
     forkConnectionHandler handlers updateVersionDataFn stateVar
-                          mutableConnState@MutableConnState { connStateId, connVar }
+                          awaitEntry
                           socket
                           connId
                           writer
                           handler =
         mask_ $ do
-          thread <- asyncWithUnmask \unmask -> flip finally (cleanup unmask) do
-            runWithUnmask
-              (handler updateVersionDataFn socket writer
-                       (TrConnectionHandler connId `contramap` tracer)
-                       connId
-                       (\bearerTimeout -> getBearer makeBearer bearerTimeout)
-                       withBuffer)
-              unmask
+          thread <- asyncWithUnmask \unmask -> do
+            entry <- awaitEntry
+            forM_ entry $ \mutableConnState ->
+              flip finally (cleanup mutableConnState unmask) $
+                runWithUnmask
+                  (handler updateVersionDataFn socket writer
+                           (TrConnectionHandler connId `contramap` tracer)
+                           connId
+                           (\bearerTimeout -> getBearer makeBearer bearerTimeout)
+                           withBuffer)
+                  unmask
           -- Keep unfinished handlers even after their map entries disappear.
           -- Poll for completion here to avoid retaining an unbounded history.
           atomically $ do
@@ -625,8 +624,10 @@ with args@Arguments {
             writeTVar handlers (thread : pending)
           pure thread
       where
-        cleanup :: (forall c. m c -> m c) -> m ()
-        cleanup unmask =
+        cleanup :: MutableConnState peerAddr handle handleError version m
+                -> (forall c. m c -> m c)
+                -> m ()
+        cleanup mutableConnState@MutableConnState { connStateId, connVar } unmask =
           -- We must ensure that we update 'connVar',
           -- `acquireOutboundConnection` might be blocked on it awaiting for:
           -- - handshake negotiation; or
@@ -845,74 +846,53 @@ with args@Arguments {
             let provenance = Inbound
             traceWith tracer (TrIncludeConnection provenance (remoteAddress connId))
             (reader, writer) <- newEmptyPromiseIO
-            (connThread, connVar, connState0, connState) <-
-              mfix $ \ ~(connThread, _mutableConnVar, _connState0, _connState) -> do
-                -- Either
-                -- @
-                --   Accepted    : ● → UnnegotiatedState Inbound
-                --   Overwritten : ● → UnnegotiatedState Inbound
-                --   SelfConn    : UnnegotiatedState Outbound
-                --               → UnnegotiatedState Inbound
-                -- @
-                --
-                -- This is subtle part, which needs to handle a near simultaneous
-                -- open.  We cannot rely on 'ReservedOutboundState' state as
-                -- a lock.  It may happen that the `acquireOutboundConnection`
-                -- will put 'ReservedOutboundState', but before it will call `connect`
-                -- the `accept` call will return.  We overwrite the state and
-                -- replace the connection state 'TVar' with a fresh one.  Nothing
-                -- is blocked on the replaced 'TVar'.
-                --
-                -- The `SelfConn` transition can happen when the node tries to
-                -- connect to itself (and inbound & outbound addresses are the
-                -- same).
-                let connState' = UnnegotiatedState provenance connId connThread
-                (mutableConnVar', connState0') <-
-                  atomically $ do
-                    let v0 = State.lookup connId state
-                    case v0 of
-                      Nothing -> do
-                        -- 'Accepted'
-                        v <- State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
-                        labelTVar (connVar v) ("conn-state-" ++ show connId)
-                        return (v, Nothing)
-                      Just v -> do
-                        -- 'Overwritten', 'SelfConn' or accepting a new
-                        -- connection while the old one is terminating.
-                        connState0' <- readTVar (connVar v)
-                        let fault = withCallStack . ForbiddenOperation (remoteAddress connId)
-                        !v' <- case connState0' of
-                           -- Overwritten
-                           ReservedOutboundState {} -> writeTVar (connVar v) connState'
-                                                    $> v
-                           -- SelfConn
-                           UnnegotiatedState     {} -> writeTVar (connVar v) connState'
-                                                    $> v
-
-                           OutboundUniState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           OutboundDupState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           OutboundIdleState     {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           DuplexState           {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           InboundIdleState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           InboundState          {} -> throwSTM . fault $ State.abstractState (Known connState0')
-
-                           TerminatingState      {} -> State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
-                           TerminatedState       {} -> State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
-
-                        labelTVar (connVar v') ("conn-state-" ++ show connId)
-                        return (v', Just connState0')
-
-                connThread' <-
+            entry <- newEmptyTMVarIO
+            (connThread, mutableEntry, connState0, connState) <- mask_ $
+              (do
+                connThread <-
                   forkConnectionHandler
-                     handlers id stateVar mutableConnVar' socket connId writer handler
-                return (connThread', mutableConnVar', connState0', connState')
+                    handlers id stateVar (atomically (readTMVar entry)) socket connId writer handler
+                let connState = UnnegotiatedState provenance connId connThread
+                atomically $ do
+                  -- Read and update the reused TVar in one transaction after
+                  -- the fork. Other callers may still hold this TVar while
+                  -- we have the map lease.
+                  let freshEntry = State.newMutableConnState
+                        (remoteAddress connId) connStateIdSupply connState
+                  (mutableEntry, connState0) <-
+                    case State.lookup connId state of
+                      Nothing -> (, Nothing) <$> freshEntry
+                      Just existing -> do
+                        previous <- readTVar (connVar existing)
+                        -- Reservations and simultaneous opens share the TVar
+                        -- with the existing caller.
+                        let reuse = writeTVar (connVar existing) connState $> existing
+                            forbidden = throwSTM $
+                              withCallStack (ForbiddenOperation (remoteAddress connId)
+                                (State.abstractState (Known previous)))
+                        chosen <- case previous of
+                          ReservedOutboundState {} -> reuse
+                          UnnegotiatedState     {} -> reuse
+                          OutboundUniState      {} -> forbidden
+                          OutboundDupState      {} -> forbidden
+                          OutboundIdleState     {} -> forbidden
+                          DuplexState           {} -> forbidden
+                          InboundIdleState      {} -> forbidden
+                          InboundState          {} -> forbidden
+                          TerminatingState      {} -> freshEntry
+                          TerminatedState       {} -> freshEntry
+                        return (chosen, Just previous)
+                  labelTVar (connVar mutableEntry) ("conn-state-" ++ show connId)
+                  putTMVar entry (Just mutableEntry)
+                  return (connThread, mutableEntry, connState0, connState))
+              `onException` atomically (void $ tryPutTMVar entry Nothing)
 
-            traceWith trTracer (TransitionTrace (connStateId connVar)
+            traceWith trTracer (TransitionTrace (connStateId mutableEntry)
                                  Transition { fromState = maybe Unknown Known connState0
                                             , toState   = Known connState
                                             })
-            return ( State.insert connId connVar state
-                   , Right (connVar, connThread, reader)
+            return ( State.insert connId mutableEntry state
+                   , Right (mutableEntry, connThread, reader)
                    )
           else
             return ( state
@@ -1620,7 +1600,8 @@ with args@Arguments {
 
                   connThread <-
                     forkConnectionHandler
-                      handlers (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer handler
+                      handlers (`updateVersionData` diffusionMode) stateVar
+                      (pure (Just mutableConnState)) socket connId writer handler
 
                   return (connId, connThread)
 
