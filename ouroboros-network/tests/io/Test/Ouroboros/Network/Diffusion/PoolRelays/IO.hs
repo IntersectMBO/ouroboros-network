@@ -99,6 +99,9 @@ prop_failed_poll_released Down { dPools, dProbe, dAfter } = ioProperty $ do
             prSRVPrefix    = "_cardano._tcp",
             prDNS          = PeerActionsDNS { paToPeerAddr = \_ _ -> (), paDnsActions = down },
             prAddressKey   = id,
+            prMaxRelays    = poolRelaysMaxRelays,
+            prMaxAddresses = poolRelaysMaxAddresses,
+            prMaxEntries   = poolRelaysMaxEntries,
             prPollInterval = 0.001,
             prRetryInterval = 0.001
           }

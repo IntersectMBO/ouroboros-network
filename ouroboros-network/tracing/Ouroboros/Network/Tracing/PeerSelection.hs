@@ -435,13 +435,15 @@ instance MetaTrace TraceLedgerPeers where
 --
 
 instance LogFormatting TracePoolRelays where
-  forMachine _dtal (PoolRelaysPolled pools kept addresses held) =
+  forMachine _dtal (PoolRelaysPolled pools kept addresses held cut unplaced) =
     mconcat
       [ "kind" .= String "PoolRelaysPolled"
       , "pools" .= pools
       , "kept" .= kept
       , "addresses" .= addresses
       , "held" .= held
+      , "cut" .= cut
+      , "unplaced" .= unplaced
       ]
   forMachine _dtal PoolRelaysDisabled =
     mconcat

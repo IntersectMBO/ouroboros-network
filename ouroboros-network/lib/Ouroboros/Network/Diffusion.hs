@@ -706,12 +706,15 @@ runM Interfaces
                              prSRVPrefix    = daSRVPrefix,
                              prDNS          = dnsActions,
                              prAddressKey   = daEgressPoolKey,
-                             -- the ledger peers thread's cadence, a different
-                             -- prime so the two never fall into step; stake
+                             prMaxRelays    = poolRelaysMaxRelays,
+                             prMaxAddresses = poolRelaysMaxAddresses,
+                             prMaxEntries   = poolRelaysMaxEntries,
+                             -- about an hour, a prime so the polls never fall
+                             -- into step with the ledger peers thread's; stake
                              -- changes once an epoch, relays whenever a pool
                              -- re-registers, and a relay that moved sits in
                              -- the stranger class until the next poll
-                             prPollInterval = 1871,
+                             prPollInterval = 4019,
                              -- a boot before DNS answers, or a poll that
                              -- failed, is tried again sooner
                              prRetryInterval = 61
