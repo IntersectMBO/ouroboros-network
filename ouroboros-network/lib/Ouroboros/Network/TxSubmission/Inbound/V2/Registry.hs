@@ -1330,8 +1330,9 @@ resolvePeerAction mirrors sharedState peerState action =
     -- shows would wake at once
     PeerDoNothing delay_m counter ->
       -- a park on no counter has a delay, or nothing would wake it
-      assert (counter /= NoCounter || isJust delay_m) $
-      (\seen -> pure $! ResolvedDoNothing delay_m counter seen) =<< maybe (pure 0) readTVar (counterMirror mirrors counter)
+      assert (counter /= NoCounter || isJust delay_m) $ do
+        seen <- maybe (pure 0) readTVar (counterMirror mirrors counter)
+        pure $! ResolvedDoNothing delay_m counter seen
     PeerRequestTxIds toAck toReq ->
       pure $! ResolvedRequestTxIds toAck toReq
     -- every field evaluated here, in the transaction: a thunk would hold
