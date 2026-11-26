@@ -39,7 +39,7 @@ module Test.Ouroboros.Network.Diffusion.Node
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
+import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync), link)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST)
@@ -111,7 +111,8 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 import Ouroboros.Network.Util (PrettyShow (..))
 
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy,
+           TxSubmissionConfig)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (txCountersThreadV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
@@ -172,6 +173,7 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aDebugTracer          :: Tracer m String
     , aExtraChurnArgs       :: extraChurnArgs
     , aTxDecisionPolicy     :: TxDecisionPolicy
+    , aTxSubmissionConfig   :: TxSubmissionConfig
     , aTxs                  :: [Tx Int]
     , aMuxCountersInterval  :: DiffTime
       -- ^ how often diffusion traces the node-to-node muxes' counters; zero,
@@ -347,16 +349,20 @@ run blockGeneratorArgs ni na
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  withAsync (txCountersThreadV2
                               (aTxDecisionPolicy na)
+                              (aTxSubmissionConfig na)
                               nullTracer
                               tracerTxLogic
                               (nkTxCountersVar nodeKernel)
                               (nkSharedTxStateVar nodeKernel)
                               (nkPeerTxRegistry nodeKernel))
-                   $ \txCountersAid ->
-                          wait diffusionThread
-                       <> wait blockFetchLogicThread
-                       <> wait nodeKernelThread
-                       <> wait txCountersAid
+                   $ \txCountersAid -> do
+                       -- its error at start, on a policy that fails the
+                       -- sanity check, reaches this thread at once
+                       link txCountersAid
+                       wait diffusionThread
+                         <> wait blockFetchLogicThread
+                         <> wait nodeKernelThread
+                         <> wait txCountersAid
   where
     blockFetch :: NodeKernel BlockHeader Block s txid m
                -> m Void
