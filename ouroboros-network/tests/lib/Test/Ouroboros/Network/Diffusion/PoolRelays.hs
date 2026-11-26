@@ -1,0 +1,870 @@
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
+module Test.Ouroboros.Network.Diffusion.PoolRelays (tests) where
+
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (forM, forM_, when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow (MonadCatch, bracket_, throwIO)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim
+import Control.Tracer (nullTracer)
+import Data.ByteString.Char8 qualified as BSC
+import Data.IntMap.Strict qualified as IntMap
+import Data.IP qualified as IP
+import Data.List (mapAccumL, nub, sortOn)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust, isNothing)
+import Data.Ratio ((%))
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Word (Word16)
+import Network.DNS qualified as DNS
+import Network.Socket (PortNumber, SockAddr (..))
+
+import Ouroboros.Network.Block (SlotNo (..))
+import Ouroboros.Network.Diffusion.PoolAllowances
+import Ouroboros.Network.Diffusion.PoolRelays
+import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions (..),
+           DNSLookupType (..), PeerActionsDNS (..))
+import Ouroboros.Network.Point (WithOrigin (..))
+
+import Test.Ouroboros.Network.Data.Script (initScript', singletonScript)
+import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
+           DNSTimeout (..), MockDNSMap, mockDNSActions)
+import Test.QuickCheck
+import Test.Tasty
+import Test.Tasty.QuickCheck (testProperty)
+
+tests :: TestTree
+tests =
+  testGroup "Ouroboros.Network.Diffusion.PoolRelays"
+    [ testProperty "the index follows the ledger and what was last known; a pool keeps its bucket by its relays" prop_follows
+    , testProperty "a slow name delays no other"  prop_slow_name
+    , testProperty "an answer replaces its name's addresses as it comes" prop_answer_replaces
+    , testProperty "a setting change ends the wait; a poll nothing answered, or an empty list, is retried" prop_wakes_and_retries
+    , testProperty "an IPv4-mapped address keys as the IPv4 address" prop_key_unmaps
+    , testProperty "what a poll learns before a lookup throws stays learnt" prop_answers_outlive_a_throw
+    , testProperty "the bounds: a pool's first relays, a name's smallest addresses, the largest pools' entries" prop_caps
+    , testProperty "the index never holds more than the budget" prop_index_bounded
+    ]
+
+-- | A relay as a pool registers it: one of six names, or a literal address,
+-- each on one of two ports, or one of three service names whose SRV answer
+-- the phase gives.
+data Relay = Named Int PortNumber | Literal IP.IPv4 PortNumber | Service Int
+  deriving (Show, Eq)
+
+-- | One SRV target: one of the six names, whose A records the phase has or
+-- not, or the "." marker that is never resolved; at a priority and a weight,
+-- on a port.
+data Target = Target {
+    tName     :: Maybe Int,
+    tPriority :: Word16,
+    tWeight   :: Word16,
+    tPort     :: PortNumber
+  }
+  deriving (Show, Eq)
+
+-- | One stretch of the run: the pools with their weights, or ledger peers
+-- off; the A records DNS has for each name and the SRV records it has for
+-- each service name (absent: a name error); and the names and services
+-- whose lookups fail for the moment, with a timeout.
+data Phase = Phase {
+    phPools        :: Maybe [(Int, NonEmpty Relay)],
+    phDns          :: Map Int [IP.IPv4],
+    phSrv          :: Map Int [Target],
+    phTransient    :: Set Int,
+    phSrvTransient :: Set Int
+  }
+  deriving Show
+
+newtype Schedule = Schedule [Phase]
+  deriving Show
+
+testSRVPrefix :: SRVPrefix
+testSRVPrefix = "_cardano._tcp"
+
+domainName :: Int -> DNS.Domain
+domainName i = BSC.pack ("test" ++ show i)
+
+-- | A service name as the ledger carries it, and as the thread looks it up.
+serviceName, srvDomain :: Int -> DNS.Domain
+serviceName i = BSC.pack ("svc" ++ show i)
+srvDomain i   = testSRVPrefix <> "." <> serviceName i
+
+genIPv4 :: Gen IP.IPv4
+genIPv4 = IP.toIPv4 <$> vectorOf 4 (choose (1, 254))
+
+genRelay :: Gen Relay
+genRelay = frequency
+  [ (3, Named   <$> choose (1, 6) <*> elements [3001, 3002])
+  , (1, Literal <$> genIPv4       <*> elements [3001, 3002])
+  , (2, Service <$> choose (1, 3)) ]
+
+genTarget :: Gen Target
+genTarget = Target <$> frequency [ (8, Just <$> choose (1, 6)), (1, pure Nothing) ]
+                   <*> elements [0, 1]
+                   <*> elements [1, 2]
+                   <*> elements [3001, 3002]
+
+genSubset :: [Int] -> Gen (Set Int)
+genSubset xs = Set.fromList . concat <$> forM xs (\x -> frequency [ (5, pure []), (1, pure [x]) ])
+
+genPhase :: Gen Phase
+genPhase = do
+  disabled <- frequency [ (1, pure True), (6, pure False) ]
+  n        <- choose (0, 8)
+  pools    <- vectorOf n $ (,) <$> choose (1, 100) <*> (do k  <- choose (1, 3)
+                                                           rs <- vectorOf k genRelay
+                                                           return (NonEmpty.fromList rs))
+  dns      <- fmap (Map.fromList . concat) $ forM [1 .. 6] $ \i -> do
+                present <- frequency [ (5, pure True), (1, pure False) ]
+                ips     <- choose (1, 2) >>= \k -> vectorOf k genIPv4
+                return [ (i, ips) | present ]
+  srv      <- fmap (Map.fromList . concat) $ forM [1 .. 3] $ \i -> do
+                present <- frequency [ (5, pure True), (1, pure False) ]
+                targets <- choose (1, 3) >>= \k -> vectorOf k genTarget
+                return [ (i, targets) | present ]
+  transient    <- genSubset [1 .. 6]
+  srvTransient <- genSubset [1 .. 3]
+  return Phase { phPools = if disabled then Nothing else Just pools, phDns = dns, phSrv = srv,
+                 phTransient = transient, phSrvTransient = srvTransient }
+
+-- | Phases in sequence: some keep the previous phase's pools and change only
+-- DNS; some keep the number of pools and change their stake and relays; and
+-- some keep the pools' relays and change their stakes, dropping a pool
+-- maybe, so a bucket moving with its pool is exercised.
+instance Arbitrary Schedule where
+  arbitrary = do
+    n  <- choose (1, 4)
+    p0 <- genPhase
+    Schedule . reverse <$> go (n - 1) [p0]
+    where
+      go :: Int -> [Phase] -> Gen [Phase]
+      go 0 acc = return acc
+      go k acc@(prev : _) = do
+        next <- frequency
+          [ (2, genPhase)
+          , (1, do fresh <- genPhase
+                   return prev { phDns = phDns fresh, phSrv = phSrv fresh,
+                                 phTransient = phTransient fresh, phSrvTransient = phSrvTransient fresh })
+          , (1, case phPools prev of
+                     Just ps@(_ : _) -> do
+                       fresh <- genPhase
+                       ps'   <- forM ps $ \_ -> (,) <$> choose (1, 100)
+                                                     <*> (NonEmpty.fromList <$> (choose (1, 3) >>= \nr -> vectorOf nr genRelay))
+                       return fresh { phPools = Just ps' }
+                     _ -> genPhase)
+          , (1, case phPools prev of
+                     Just ps@(_ : _) -> do
+                       fresh <- genPhase
+                       ps'   <- forM ps $ \(_, rs) -> (,) <$> choose (1, 100) <*> pure rs
+                       kept  <- frequency
+                                  [ (2, pure ps')
+                                  , (1, (\i -> take i ps' ++ drop (i + 1) ps') <$> choose (0, length ps' - 1)) ]
+                       return fresh { phPools = Just kept }
+                     _ -> genPhase) ]
+        go (k - 1) (next : acc)
+      go _ [] = return []
+  shrink (Schedule phases) =
+       [ Schedule ps | ps <- shrinkList shrinkPhase phases, not (null ps) ]
+
+instance Arbitrary Phase where
+  arbitrary = genPhase
+  shrink    = shrinkPhase
+
+shrinkPhase :: Phase -> [Phase]
+shrinkPhase ph@Phase { phPools = Just pools } =
+     [ ph { phPools = Just ps } | ps <- shrinkList (const []) pools ]
+  ++ shrinkRecords ph
+shrinkPhase ph = shrinkRecords ph
+
+shrinkRecords :: Phase -> [Phase]
+shrinkRecords ph@Phase { phDns, phSrv, phTransient, phSrvTransient } =
+     [ ph { phDns = Map.fromList d } | d <- shrinkList (const []) (Map.toList phDns) ]
+  ++ [ ph { phSrv = Map.fromList s } | s <- shrinkList shrinkTargets (Map.toList phSrv) ]
+  ++ [ ph { phTransient = Set.fromList t } | t <- shrinkList (const []) (Set.toList phTransient) ]
+  ++ [ ph { phSrvTransient = Set.fromList t } | t <- shrinkList (const []) (Set.toList phSrvTransient) ]
+  where
+    shrinkTargets (i, ts) = [ (i, ts') | ts' <- shrinkList (const []) ts ]
+
+toLedger :: [(Int, NonEmpty Relay)] -> [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
+toLedger pools =
+    [ (PoolStake (fromIntegral w % weight), fmap relay rs) | (w, rs) <- pools ]
+  where
+    weight = fromIntegral (max 1 (sum (map fst pools))) :: Integer
+    relay (Named i port)    = LedgerRelayAccessDomain (domainName i) port
+    relay (Literal ip port) = LedgerRelayAccessAddress (IP.IPv4 ip) port
+    relay (Service i)       = LedgerRelayAccessSRVDomain (serviceName i)
+
+toDns :: Map Int [IP.IPv4] -> Map Int [Target] -> MockDNSMap
+toDns dns srv = Map.fromList $
+     [ ((domainName i, DNS.A), Left [ (IP.IPv4 ip, 300) | ip <- ips ])
+     | (i, ips) <- Map.toList dns ]
+  ++ [ ((srvDomain i, DNS.SRV), Right [ (maybe "." domainName tName, tPriority, tWeight, tPort)
+                                      | Target { tName, tPriority, tWeight, tPort } <- targets ])
+     | (i, targets) <- Map.toList srv ]
+
+-- | The big-ledger prefix as the thread must see it: positions in
+-- descending stake, every relay resolved, ports stripped.
+expectedBig :: Phase -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+expectedBig Phase { phPools = Nothing }    = Map.empty
+expectedBig Phase { phPools = Just pools } =
+  accBigPoolStakeMap [ (s, fmap (prefixLedgerRelayAccessPoint testSRVPrefix) rs)
+                     | (s, rs) <- toLedger pools ]
+
+-- | The services and the names the phase's big-ledger pools register: the
+-- thread sees the prefix, not every pool; and only the services among a
+-- pool's first 'cRelays' relays, the only ones it looks up.
+services :: Caps -> Phase -> Set Int
+services Caps { cRelays } ph =
+  Set.fromList [ i | (_, rs) <- Map.elems (expectedBig ph)
+                   , RelayAccessSRVDomain d <- take cRelays (NonEmpty.toList rs)
+                   , i <- [1 .. 3], srvDomain i == d ]
+
+names :: Phase -> Set Int
+names ph = Set.fromList [ i | RelayAccessDomain d _ <- bigRelays ph, i <- [1 .. 6], domainName i == d ]
+
+bigRelays :: Phase -> [RelayAccessPoint]
+bigRelays = concatMap (NonEmpty.toList . snd) . Map.elems . expectedBig
+
+-- | What the thread knows: each service's targets and each name's
+-- addresses, as last answered.
+data Memory = Memory {
+    memTargets :: Map Int [Target],
+    memAddrs   :: Map Int [IP.IPv4]
+  }
+  deriving Show
+
+-- | A lookup's outcome applied to what is known under a key: an answer
+-- replaces, a name error forgets, a transient failure keeps.
+learn :: Ord k => Set k -> Map k v -> k -> Map k v -> Map k v
+learn transient answers k m
+  | Set.member k transient = m
+  | otherwise = case Map.lookup k answers of
+                     Just v  -> Map.insert k v m
+                     Nothing -> Map.delete k m
+
+-- | The bounds, as the thread's arguments carry them.
+data Caps = Caps {
+    cRelays    :: Int,   -- ^ a pool's relays that enter the index
+    cAddresses :: Int,   -- ^ addresses kept per name and record type
+    cEntries   :: Int    -- ^ addresses the index holds at most
+  }
+  deriving Show
+
+-- | Bounds the schedules' generators never reach, so the properties over
+-- them read as without bounds.
+wideCaps :: Caps
+wideCaps = Caps 16 8 8192
+
+-- | Bounds small enough to bind on the generators' cases, shrinking
+-- towards the wide ones.
+instance Arbitrary Caps where
+  arbitrary = Caps <$> choose (1, 6) <*> choose (1, 5) <*> choose (1, 12)
+  shrink Caps { cRelays, cAddresses, cEntries } =
+       [ Caps r cAddresses cEntries | r <- [cRelays + 1 .. 6] ]
+    ++ [ Caps cRelays a cEntries | a <- [cAddresses + 1 .. 5] ]
+    ++ [ Caps cRelays cAddresses e | e <- [cEntries + 1 .. 12] ]
+
+-- | One phase's poll, settled: the memory after it, and the index it
+-- publishes. Stage one learns the services' targets, in priority order
+-- and cut to what a pool can hold; stage two learns the names, the
+-- relays' own and the targets', each name's addresses cut to the smallest
+-- 'cAddresses'; both are then pruned to the list. The index is the routes
+-- of every pool's first 'cRelays' entries, a service standing for its
+-- targets, cut to the 'cEntries' addresses the largest pools reach first,
+-- an address ranked by the lowest position it reaches and then by itself.
+-- With ledger peers off nothing is polled, and what was known keeps until
+-- the next poll prunes it.
+pollPhase :: Caps -> Memory -> Phase -> (Memory, Map SockAddr [Int])
+pollPhase _ mem Phase { phPools = Nothing } = (mem, Map.empty)
+pollPhase caps@Caps { cAddresses, cEntries } mem@Memory { memAddrs } ph@Phase { phDns, phTransient } =
+    (mem', index)
+  where
+    (targets, nms) = stages caps mem ph
+    answers  = Map.map (take cAddresses . Set.toAscList . Set.fromList) phDns
+    addrs    = Map.restrictKeys (foldr (learn phTransient answers) memAddrs (Set.toList nms)) nms
+    mem'     = Memory targets addrs
+    routes   = [ (sockAddrWithoutPort a, pos)
+               | (pos, (_, rs)) <- zip [0 ..] (Map.elems (expectedBig ph))
+               , e <- entriesOf caps targets rs
+               , a <- addressesOf e ]
+    byAddr   = Map.fromListWith Set.union [ (a, Set.singleton p) | (a, p) <- routes ]
+    index    = Map.fromList [ (a, Set.toAscList ps)
+                            | (a, ps) <- take cEntries (sortOn (\(a, ps) -> (Set.findMin ps, a)) (Map.toList byAddr)) ]
+    addressesOf (Left (ip, port)) = [IP.toSockAddr (IP.IPv4 ip, port)]
+    addressesOf (Right (n, port)) = [ IP.toSockAddr (IP.IPv4 ip, port) | ip <- Map.findWithDefault [] n addrs ]
+
+-- | A pool's entries as the index takes them: the first 'cRelays' of its
+-- list, a service standing for its targets as learnt, each taking a slot.
+entriesOf :: Caps -> Map Int [Target] -> NonEmpty RelayAccessPoint
+          -> [Either (IP.IPv4, PortNumber) (Int, PortNumber)]
+entriesOf Caps { cRelays } targets = take cRelays . concatMap expand . NonEmpty.toList
+  where
+    expand (RelayAccessAddress (IP.IPv4 ip) port) = [Left (ip, port)]
+    expand (RelayAccessAddress _ _)               = []
+    expand (RelayAccessDomain d port)             = [ Right (n, port) | n <- [1 .. 6], domainName n == d ]
+    expand (RelayAccessSRVDomain d)               =
+      [ Right (n, tPort) | i <- [1 .. 3], srvDomain i == d
+                         , Target { tName = Just n, tPort } <- Map.findWithDefault [] i targets ]
+
+-- | A poll's two stages, from what is known: the services' targets after
+-- stage one, as the resolver gives them, in priority order with the "."
+-- marker left out, cut to what a pool can hold; and the names stage two
+-- looks up, the relays' own and the targets' of what the services
+-- answered or the memory kept, within the bounds.
+stages :: Caps -> Memory -> Phase -> (Map Int [Target], Set Int)
+stages caps@Caps { cRelays } Memory { memTargets } ph@Phase { phSrv, phSrvTransient } = (targets, nms)
+  where
+    svcs    = services caps ph
+    answers = Map.map (take cRelays . filter (isJust . tName) . sortOn tPriority) phSrv
+    targets = Map.restrictKeys (foldr (learn phSrvTransient answers) memTargets (Set.toList svcs)) svcs
+    nms     = Set.fromList [ n | (_, rs) <- Map.elems (expectedBig ph), Right (n, _) <- entriesOf caps targets rs ]
+
+-- | The names a poll asks, services and hosts, and how many of them answer:
+-- a transient failure is no answer, a name error is one. The code counts a
+-- lookup per name and address type; only zero or not is compared. None
+-- with ledger peers off.
+lookupsOf :: Caps -> Memory -> Phase -> (Int, Int)
+lookupsOf _ _ Phase { phPools = Nothing } = (0, 0)
+lookupsOf caps mem ph@Phase { phTransient, phSrvTransient } =
+    ( Set.size svcs + Set.size nms
+    , Set.size (svcs `Set.difference` phSrvTransient) + Set.size (nms `Set.difference` phTransient) )
+  where
+    svcs     = services caps ph
+    (_, nms) = stages caps mem ph
+
+-- | The index after each phase, from nothing known at the start.
+expectedIndices :: Caps -> [Phase] -> [Map SockAddr [Int]]
+expectedIndices caps = snd . mapAccumL (pollPhase caps) (Memory Map.empty Map.empty)
+
+-- | The keys of a phase's pools, in position order: their relay lists as
+-- the thread sees them, with ordinals among equal lists.
+expectedKeys :: Phase -> [PoolKey]
+expectedKeys = poolKeys . map snd . Map.elems . expectedBig
+
+-- | What the harness marks every bucket with after observing a phase: a
+-- charged total the buckets would never reach by themselves.
+mark :: Charged
+mark = Charged (-1234)
+
+-- | Every bucket's credit after each phase, with its key: the mark the
+-- harness left on it in the phase before, when the pool was in that
+-- phase's list too and so kept its bucket; zero otherwise, since a new
+-- bucket starts empty and the reading never moves.
+expectedCredits :: [Phase] -> [[(PoolKey, Int)]]
+expectedCredits phases =
+  [ [ (k, if k `elem` before then credit testAllowance (Fresh 0) mark else 0)
+    | k <- expectedKeys ph ]
+  | (before, ph) <- zip ([] : map expectedKeys phases) phases ]
+
+testAllowance :: Allowance
+testAllowance = Allowance 1000
+
+-- | The thread under test with a mock DNS: the current phase is applied
+-- through @apply@, and @slow@ names each lookup's extra delay. Transient
+-- failures are the harness's own: a timeout returned without the mock, so
+-- the mock's answer for the name stays what the phase says. Also the most
+-- lookups ever in flight at once.
+data Harness m = Harness {
+    hApply      :: Phase -> m (),
+    hAllowances :: PoolAllowances m SockAddr,
+    hThread     :: m (),
+    hInFlight   :: StrictTVar m (Int, Int),
+    hThrow      :: Set Int -> m ()      -- ^ the names whose lookup throws
+  }
+
+newHarness :: forall m. (MonadAsync m, MonadCatch m, MonadDelay m, MonadTimer m)
+           => Caps                -- ^ the bounds
+           -> (Int -> DiffTime)   -- ^ each name's extra lookup delay
+           -> DiffTime            -- ^ the poll interval
+           -> DiffTime            -- ^ the retry interval
+           -> m (Harness m)
+newHarness Caps { cRelays, cAddresses, cEntries } slow pollEvery retryAfter = do
+    ledgerVar  <- newTVarIO []
+    useVar     <- newTVarIO DontUseLedgerPeers
+    dnsMapVar  <- newTVarIO Map.empty
+    transVar   <- newTVarIO (Set.empty, Set.empty)
+    throwVar   <- newTVarIO Set.empty
+    timeouts   <- initScript' (singletonScript (DNSTimeout 10))
+    delays     <- initScript' (singletonScript (DNSLookupDelay 0.01))
+    allowances <- newPoolAllowances (return testAllowance) (return (Fresh 0)) 0
+    inFlight   <- newTVarIO (0 :: Int, 0 :: Int)      -- now, and the most ever
+    let apply Phase { phPools, phDns, phSrv, phTransient, phSrvTransient } = atomically $ do
+          writeTVar ledgerVar (maybe [] toLedger phPools)
+          writeTVar useVar (if isNothing phPools then DontUseLedgerPeers else UseLedgerPeers Always)
+          writeTVar dnsMapVar (toDns phDns phSrv)
+          writeTVar transVar (phTransient, phSrvTransient)
+        interface = LedgerPeersConsensusInterface {
+            lpGetLatestSlot  = pure (At (SlotNo 1000)),
+            lpGetLedgerPeers = readTVar ledgerVar,
+            lpExtraAPI       = ()
+          }
+        mock = mockDNSActions nullTracer LookupReqAOnly (curry IP.toSockAddr)
+                              dnsMapVar timeouts delays
+        -- every lookup counted while it runs
+        counted :: m a -> m a
+        counted = bracket_ (atomically $ modifyTVar inFlight (\(n, most) -> (n + 1, max most (n + 1))))
+                           (atomically $ modifyTVar inFlight (\(n, most) -> (n - 1, most)))
+        nameOf d  = [ i | i <- [1 .. 6], domainName i == d ]
+        serviceOf d = [ i | i <- [1 .. 3], srvDomain i == d ]
+        actions = mock {
+            dnsLookupSRV = \kind d conf resolver -> counted $ do
+              (_, srvTransient) <- readTVarIO transVar
+              if any (`Set.member` srvTransient) (serviceOf d)
+                 then return (Left DNS.TimeoutExpired)
+                 else dnsLookupSRV mock kind d conf resolver,
+            dnsLookupIPs = \kind d conf resolver -> do
+              throwing <- readTVarIO throwVar
+              when (any (`Set.member` throwing) (nameOf d)) $ do
+                mapM_ (threadDelay . slow) (nameOf d)
+                throwIO (userError "lookup failed")
+              counted $ do
+               (transient, _) <- readTVarIO transVar
+               mapM_ (threadDelay . slow) (nameOf d)
+               if any (`Set.member` transient) (nameOf d)
+                  then return [(DNS.A, Left DNS.TimeoutExpired)]
+                  else dnsLookupIPs mock kind d conf resolver
+          }
+        dns = PeerActionsDNS {
+            paToPeerAddr = curry IP.toSockAddr,
+            paDnsActions = actions
+          }
+        args = PoolRelaysArgs {
+            prTracer       = nullTracer,
+            prConsensus    = interface,
+            prUseLedger    = readTVar useVar,
+            prSnapshot     = pure Nothing,
+            prSRVPrefix    = testSRVPrefix,
+            prDNS          = dns,
+            prAddressKey   = sockAddrWithoutPort,
+            prMaxRelays    = cRelays,
+            prMaxAddresses = cAddresses,
+            prMaxEntries   = cEntries,
+            prPollInterval = pollEvery,
+            prRetryInterval = retryAfter
+          }
+    return Harness { hApply = apply, hAllowances = allowances,
+                     hThread = () <$ poolRelaysThread args allowances, hInFlight = inFlight,
+                     hThrow = atomically . writeTVar throwVar }
+
+-- | Run the thread through the schedule, settling 3 s after each phase: a
+-- poll a second with a 10 ms DNS delay per lookup, so both a list change and
+-- a DNS change have taken effect by then. Also the most lookups ever in
+-- flight at once.
+runSchedule :: Schedule -> ([(Map SockAddr [Int], [(PoolKey, Int)])], Int)
+runSchedule (Schedule phases) = runSimOrThrow $ do
+    Harness { hApply, hAllowances = allowances, hThread, hInFlight } <- newHarness wideCaps (const 0) 1 1
+    case phases of
+         []       -> return ([], 0)
+         p0 : _   -> do
+           hApply p0
+           observed <- withAsync hThread $ \_ ->
+             forM phases $ \ph -> do
+               hApply ph
+               threadDelay 3
+               atomically $ do
+                 idx     <- readTVar (paIndex allowances)
+                 buckets <- IntMap.elems <$> readTVar (paBuckets allowances)
+                 credits <- mapM (\(k, tv) -> (,) k . credit testAllowance (Fresh 0) <$> readTVar tv)
+                                 buckets
+                 mapM_ ((`writeTVar` mark) . snd) buckets
+                 return (idx, credits)
+           most <- snd <$> readTVarIO hInFlight
+           return (observed, most)
+
+prop_follows :: Schedule -> Property
+prop_follows sched@(Schedule phases) =
+    counterexample (show observed)
+  . classify (any (isNothing . phPools) phases) "a phase with ledger peers off"
+  . classify dnsOnlyChange "a DNS-only change between phases"
+  . classify (any ((> 1) . Map.size . expectedBig) phases) "more than one pool"
+  . tabulate "addresses indexed" (map (show . Map.size) expected)
+  . classify (mostInFlight == 2) "both DNS slots used at once"
+  . classify sameCountChange "a list change keeping the pool count"
+  . classify keptBucket "a pool kept its bucket through a list change"
+  . classify (anyService distinctTargets) "a service whose targets reach distinct addresses"
+  . classify (anyService backupPriority) "a service with a backup priority"
+  . classify (anyService failingTarget) "a service with a target that fails"
+  . classify (anyService unanswered) "a service without an SRV answer"
+  . classify keptName "a name kept as last known through a transient failure"
+  . classify keptService "a service kept as last known through a transient failure"
+  . classify forgotten "a name forgotten on a name error after being known"
+  $ conjoin [ counterexample ("phase " ++ show i) (idx === expectedIdx)
+            | (i, expectedIdx, (idx, _)) <- zip3 [0 :: Int ..] expected observed ]
+    .&&. counterexample "bucket credits" ([ c | (_, c) <- observed ] === expectedCredits phases)
+    -- the thread looks names up on two workers by design, stated here as
+    -- a number so a change to the constant is a change to the test
+    .&&. counterexample ("lookups in flight at once: " ++ show mostInFlight)
+           (mostInFlight <= 2)
+  where
+    (observed, mostInFlight) = runSchedule sched
+    expected = expectedIndices wideCaps phases
+    -- what was known entering each phase
+    befores  = take (length phases) (scanl (\m ph -> fst (pollPhase wideCaps m ph)) (Memory Map.empty Map.empty) phases)
+    dnsOnlyChange = or [ expectedBig a == expectedBig b && ia /= ib
+                       | ((a, ia), (b, ib)) <- zip (zip phases expected) (drop 1 (zip phases expected)) ]
+    anyService p = or [ p ph i | ph <- phases, i <- Set.toList (services wideCaps ph) ]
+    -- what tells enumeration from a pick: two targets that resolve, to
+    -- different addresses
+    distinctTargets ph i =
+      Set.size (Set.fromList [ hosts | hosts <- map (map sockAddrWithoutPort) (targetAddrs ph i)
+                                     , not (null hosts) ]) >= 2
+    backupPriority ph i =
+      Set.size (Set.fromList (map tPriority (Map.findWithDefault [] i (phSrv ph)))) >= 2
+    failingTarget ph i = or [ Map.notMember n (phDns ph)
+                            | Target { tName = Just n } <- Map.findWithDefault [] i (phSrv ph) ]
+    unanswered ph i = Map.notMember i (phSrv ph)
+    sameCountChange = or [ expectedBig a /= expectedBig b
+                           && Map.size (expectedBig a) == Map.size (expectedBig b)
+                           && Map.size (expectedBig a) > 0
+                         | (a, b) <- zip phases (drop 1 phases) ]
+    keptBucket = or [ expectedBig a /= expectedBig b && any (`elem` expectedKeys a) (expectedKeys b)
+                    | (a, b) <- zip phases (drop 1 phases) ]
+    -- a transient failure with something known under the name, or service
+    keptName    = or [ Set.member n (phTransient ph) && Map.member n (memAddrs before) && Set.member n (names ph)
+                     | (ph, before) <- zip phases befores, n <- [1 .. 6] ]
+    keptService = or [ Set.member i (phSrvTransient ph) && Map.member i (memTargets before) && Set.member i (services wideCaps ph)
+                     | (ph, before) <- zip phases befores, i <- [1 .. 3] ]
+    forgotten   = or [ Map.notMember n (phDns ph) && Set.notMember n (phTransient ph)
+                       && Map.member n (memAddrs before) && Set.member n (names ph)
+                     | (ph, before) <- zip phases befores, n <- [1 .. 6] ]
+    targetAddrs ph i =
+      [ [ IP.toSockAddr (IP.IPv4 ip, tPort) | ip <- Map.findWithDefault [] n (phDns ph) ]
+      | Target { tName = Just n, tPort } <- Map.findWithDefault [] i (phSrv ph) ]
+
+-- | One slow name among fast ones: its lookup takes 20 s, theirs 10 ms,
+-- and the index has the fast names' addresses by the settle point, and the
+-- slow one's only once its lookup is through. Published lookup by lookup,
+-- no name waits for another, not even one of its own batch.
+prop_slow_name :: Property
+prop_slow_name =
+  forAllShrink (choose (1, 5)) (filter (>= 1) . shrink) $ \k ->
+  forAll (vectorOf 6 genIPv4) $ \ips ->
+    let slowName  = 6
+        fastNames = [1 .. k]
+        phase = Phase { phPools = Just [ (1, Named n 3001 :| []) | n <- fastNames ++ [slowName] ],
+                        phDns = Map.fromList (zip [1 .. 6] (map (: []) ips)),
+                        phSrv = Map.empty, phTransient = Set.empty, phSrvTransient = Set.empty }
+        addr n = IP.toSockAddr (IP.IPv4 (ips !! (n - 1)), 0)
+        (early, late) = runSimOrThrow $ do
+          Harness { hApply, hAllowances, hThread } <- newHarness wideCaps (\n -> if n == slowName then 20 else 0) 1 1
+          hApply phase
+          withAsync hThread $ \_ -> do
+            threadDelay 3
+            e <- readTVarIO (paIndex hAllowances)
+            threadDelay 22
+            l <- readTVarIO (paIndex hAllowances)
+            return (e, l)
+    in counterexample (show (early, late)) $
+            counterexample "fast names by 3 s" (all (`Map.member` early) (map addr fastNames))
+       .&&. counterexample "the slow name not yet" (Map.notMember (addr slowName) early)
+       .&&. counterexample "the slow name once resolved" (Map.member (addr slowName) late)
+
+-- | An answer replaces what was known of its name the moment it comes, not
+-- at the end of the poll: a name whose address changed between polls has
+-- its new address in the index and not its old one while a slow name's
+-- lookup of the same poll is still pending, that one's address kept as
+-- last known.
+prop_answer_replaces :: Property
+prop_answer_replaces =
+  forAll (vectorOf 3 genIPv4) $ \ips ->
+    ips == nub ips ==>
+    let (ipA, ipB, ipS) = case ips of { [a, b, s] -> (a, b, s); _ -> error "three addresses" }
+        slowName = 6
+        pools = Just [ (1, Named 1 3001 :| []), (1, Named slowName 3001 :| []) ]
+        phase dns = Phase { phPools = pools, phDns = dns, phSrv = Map.empty,
+                            phTransient = Set.empty, phSrvTransient = Set.empty }
+        addr ip = IP.toSockAddr (IP.IPv4 ip, 0)
+        (atB, later) = runSimOrThrow $ do
+          Harness { hApply, hAllowances, hThread } <- newHarness wideCaps (\n -> if n == slowName then 20 else 0) 1 1
+          hApply (phase (Map.fromList [(1, [ipA]), (slowName, [ipS])]))
+          withAsync hThread $ \_ -> do
+            -- the first poll through: both names known
+            atomically $ readTVar (paIndex hAllowances) >>= check . Map.member (addr ipS)
+            hApply (phase (Map.fromList [(1, [ipB]), (slowName, [ipS])]))
+            -- the next poll answers the fast name in its first instants
+            atomically $ readTVar (paIndex hAllowances) >>= check . Map.member (addr ipB)
+            e <- readTVarIO (paIndex hAllowances)
+            threadDelay 25
+            l <- readTVarIO (paIndex hAllowances)
+            return (e, l)
+    in counterexample (show (atB, later)) $
+            counterexample "the old address stayed" (Map.notMember (addr ipA) atB)
+       .&&. counterexample "the slow name's address was dropped" (Map.member (addr ipS) atB)
+       .&&. counterexample "later" (Map.keysSet later === Set.fromList [addr ipB, addr ipS])
+
+-- | The wait between polls ends when the ledger peers setting changes, so
+-- a phase applied after a toggle is polled at once, not a period later; a
+-- poll whose lookups all failed transiently, DNS not answering as at boot,
+-- is followed by the next after the retry interval, whatever literal
+-- addresses it indexed; and one that got any answer waits the period, a
+-- name kept as last known among others included, so a dead name on one pool
+-- does not shorten the cadence; an empty list, with nothing to look up, is
+-- polled again after the retry interval too. The schedule's phases are
+-- polled in turn,
+-- each but the first on the wake a toggle of the setting gives, 3 s apart;
+-- the last is applied without a toggle, well inside the period, and the
+-- index is read 3 s after it. With @failing@ every name and service of the
+-- first phase fails.
+prop_wakes_and_retries :: Schedule -> Bool -> Property
+prop_wakes_and_retries (Schedule phases) failing =
+    counterexample (show (polled, final, observed))
+  . classify (isNothing (phPools lastPolled) && not (isNothing (phPools final))) "ledger peers turned on"
+  . classify empty "retried: an empty list"
+  . classify (soon && not empty) "retried: nothing answered"
+  . classify (soon && any literal (bigRelays lastPolled)) "retried with a literal relay indexed"
+  . classify (kept && not soon && not woken && snd (pollPhase wideCaps memLast final) /= idxLast) "a name kept as last known, the final phase answering otherwise"
+  $ observed === expected
+  where
+    first = case phases of
+      p : _ | failing   -> p { phTransient = Set.fromList [1 .. 6], phSrvTransient = Set.fromList [1 .. 3] }
+            | otherwise -> p
+      []                -> error "a schedule has a phase"
+    polled     = first : drop 1 (init phases)
+    final      = last phases
+    lastPolled = last polled
+    -- the model, polled phase by polled phase: a toggle changes nothing
+    -- known, and the thread keeps what it knows through it
+    step (m, _) ph = pollPhase wideCaps m ph
+    memBefore  = fst (foldl step (Memory Map.empty Map.empty, Map.empty) (init polled))
+    (memLast, idxLast) = step (memBefore, Map.empty) lastPolled
+    -- DNS not answering: something was looked up and nothing answered,
+    -- whatever the literal addresses in the list; or an empty list with
+    -- ledger peers on, nothing to look up
+    (asked, answered) = lookupsOf wideCaps memBefore lastPolled
+    empty = maybe False null (phPools lastPolled)
+    soon  = empty || (asked > 0 && answered == 0)
+    literal RelayAccessAddress {} = True
+    literal _                     = False
+    woken = isNothing (phPools lastPolled) /= isNothing (phPools final)
+    expected | soon || woken = snd (pollPhase wideCaps memLast final)
+             | otherwise     = idxLast
+    kept  = or [ Set.member n (phTransient lastPolled) && Map.member n (memAddrs memBefore)
+               | n <- Set.toList (names lastPolled) ]
+         || or [ Set.member i (phSrvTransient lastPolled) && Map.member i (memTargets memBefore)
+               | i <- Set.toList (services wideCaps lastPolled) ]
+    observed = runSimOrThrow $ do
+      Harness { hApply, hAllowances, hThread } <- newHarness wideCaps (const 0) 1000 1
+      hApply first
+      withAsync hThread $ \_ -> do
+        forM_ (drop 1 polled) $ \ph -> do
+          threadDelay 2
+          hApply ph { phPools = Nothing }
+          threadDelay 1
+          hApply ph
+        threadDelay 2
+        hApply final
+        threadDelay 3
+        readTVarIO (paIndex hAllowances)
+
+-- | What a poll learns before a lookup throws stays learnt: a name's answer
+-- replaces its address in the index and in what is known, so a later poll
+-- that keeps the name as last known, its lookup failing transiently, keeps
+-- the new address, not the one from before the failed poll. The throwing
+-- name is the last looked up, and slow, so the answer lands first.
+data AnswerThenThrow = AnswerThenThrow {
+    atName  :: !Int,        -- ^ the answering name, 1 to 5
+    atOld   :: !IP.IPv4,    -- ^ its address before
+    atNew   :: !IP.IPv4,    -- ^ its address after, another
+    atOther :: !IP.IPv4,    -- ^ the throwing name's address, name 6
+    atStake :: !Int
+  }
+  deriving Show
+
+instance Arbitrary AnswerThenThrow where
+  arbitrary = do
+    atName  <- choose (1, 5)
+    atOld   <- genIPv4
+    atNew   <- genIPv4 `suchThat` (/= atOld)
+    atOther <- genIPv4
+    atStake <- choose (1, 100)
+    return (AnswerThenThrow atName atOld atNew atOther atStake)
+  shrink at@AnswerThenThrow { atName, atStake } =
+       [ at { atName = n } | n <- shrink atName, n >= 1 ]
+    ++ [ at { atStake = s } | s <- shrink atStake, s >= 1 ]
+
+prop_answers_outlive_a_throw :: AnswerThenThrow -> Property
+prop_answers_outlive_a_throw AnswerThenThrow { atName, atOld, atNew, atOther, atStake } =
+    counterexample (show observed)
+  $ Map.keysSet observed === Set.fromList [key atNew, key atOther]
+  where
+    key ip = IP.toSockAddr (IP.IPv4 ip, 0)
+    pools  = Just [ (atStake, NonEmpty.fromList [Named atName 3001, Named 6 3001]) ]
+    phase dns transient = Phase { phPools = pools, phDns = dns, phSrv = Map.empty,
+                                  phTransient = transient, phSrvTransient = Set.empty }
+    initial = phase (Map.fromList [(atName, [atOld]), (6, [atOther])]) Set.empty
+    failing = phase (Map.fromList [(atName, [atNew]), (6, [atOther])]) Set.empty
+    final  = failing { phTransient = Set.singleton atName }
+    observed = runSimOrThrow $ do
+      -- the throwing name is the slowest, so every other answer lands first
+      Harness { hApply, hAllowances, hThread, hThrow } <-
+        newHarness wideCaps (\i -> if i == 6 then 0.5 else 0) 1000 1
+      hApply initial
+      withAsync hThread $ \_ -> do
+        threadDelay 3
+        -- the second phase, polled on the wake a toggle gives, throws at
+        -- its last name and is retried every second
+        hApply failing { phPools = Nothing }
+        hThrow (Set.singleton 6)
+        threadDelay 1
+        hApply failing
+        threadDelay 3
+        -- the next poll completes, the answering name kept as last known
+        hApply final
+        hThrow Set.empty
+        threadDelay 3
+        readTVarIO (paIndex hAllowances)
+
+-- | The bounds, with the index settled: every pool's first 'cRelays'
+-- entries, a service's targets in priority order each taking a slot; each
+-- name's 'cAddresses' smallest addresses; and of all that the 'cEntries'
+-- addresses the largest pools reach first, whatever order the answers
+-- came in, a lower pool's address giving way to a higher pool's. Two
+-- phases over the same pools, the second with other answers, so addresses
+-- are replaced and cross the budget's edge on the way, each phase polled
+-- once; the names' lookups take unequal times.
+data CapsCase = CapsCase {
+    ccCaps  :: Caps,
+    ccPools :: [(Int, NonEmpty Relay)],
+    ccDns   :: [(Map Int [IP.IPv4], Map Int [Target])],   -- ^ per phase
+    ccSlow  :: Map Int DiffTime                             -- ^ per name
+  }
+  deriving Show
+
+instance Arbitrary CapsCase where
+  arbitrary = do
+    caps  <- arbitrary
+    n     <- choose (1, 6)
+    pools <- vectorOf n $ (,) <$> choose (1, 100)
+                             <*> (NonEmpty.fromList <$> (choose (1, 6) >>= \k -> vectorOf k genRelay))
+    dns   <- vectorOf 2 $ do
+      ips <- fmap (Map.fromList . concat) $ forM [1 .. 6] $ \i -> do
+               present <- frequency [ (5, pure True), (1, pure False) ]
+               addrs   <- choose (1, 5) >>= \k -> vectorOf k genIPv4
+               return [ (i, addrs) | present ]
+      srv <- fmap Map.fromList $ forM [1 .. 3] $ \i -> (,) i <$> (choose (0, 6) >>= \k -> vectorOf k genTarget)
+      return (ips, srv)
+    slow  <- Map.fromList <$> forM [1 .. 6] (\i -> (,) i . (/ 100) . fromIntegral <$> choose (0, 50 :: Int))
+    return (CapsCase caps pools dns slow)
+  shrink CapsCase { ccCaps, ccPools, ccDns, ccSlow } =
+       [ CapsCase c ccPools ccDns ccSlow | c <- shrink ccCaps ]
+    ++ [ CapsCase ccCaps ps ccDns ccSlow | ps <- shrinkList shrinkPool ccPools, not (null ps) ]
+    ++ [ CapsCase ccCaps ccPools (take i ccDns ++ d' : drop (i + 1) ccDns) ccSlow
+       | (i, d) <- zip [0 ..] ccDns, d' <- shrinkDns d ]
+    ++ [ CapsCase ccCaps ccPools ccDns (Map.map (const 0) ccSlow) | any (> 0) (Map.elems ccSlow) ]
+    where
+      shrinkPool (w, rs) = [ (w, NonEmpty.fromList rs') | rs' <- shrinkList (const []) (NonEmpty.toList rs), not (null rs') ]
+      shrinkDns (ips, srv) =
+           [ (Map.fromList ips', srv) | ips' <- shrinkList shrinkIPs (Map.toList ips) ]
+        ++ [ (ips, Map.fromList srv') | srv' <- shrinkList shrinkTargets (Map.toList srv) ]
+      shrinkIPs (i, as)     = [ (i, as') | as' <- shrinkList (const []) as, not (null as') ]
+      shrinkTargets (i, ts) = [ (i, ts') | ts' <- shrinkList (const []) ts ]
+
+prop_caps :: CapsCase -> Property
+prop_caps CapsCase { ccCaps = caps@Caps { cRelays, cAddresses, cEntries }, ccPools, ccDns, ccSlow } =
+    counterexample (show (observed, expected))
+  . classify relaysBound "a pool beyond the relays bound"
+  . classify addressesCut "a name beyond the addresses bound"
+  . classify budgetBinds "the budget binds"
+  . classify (budgetBinds && unequal) "the budget binds with unequal lookup times"
+  $ conjoin [ counterexample ("phase " ++ show i) (idx === ex)
+            | (i, idx, ex) <- zip3 [0 :: Int ..] observed expected ]
+  where
+    phases   = [ Phase { phPools = Just ccPools, phDns = ips, phSrv = srv,
+                         phTransient = Set.empty, phSrvTransient = Set.empty }
+               | (ips, srv) <- ccDns ]
+    expected = expectedIndices caps phases
+    -- the lookups of a poll, every name's twice over, well within
+    settle   = 3 + 2 * sum (Map.elems ccSlow)
+    -- one poll per phase, the second on the wake a toggle of the setting
+    -- gives, so the index read is that poll's own patching, answer by
+    -- answer, not a later poll's rebuild
+    observed = runSimOrThrow $ do
+      Harness { hApply, hAllowances, hThread } <-
+        newHarness caps (\i -> Map.findWithDefault 0 i ccSlow) 1000 1
+      mapM_ hApply (take 1 phases)
+      withAsync hThread $ \_ -> forM (zip [0 :: Int ..] phases) $ \(i, ph) -> do
+        when (i > 0) $ hApply ph { phPools = Nothing } >> threadDelay 1
+        hApply ph
+        threadDelay settle
+        readTVarIO (paIndex hAllowances)
+    -- what binds, from the phases' data: more entries than the bound in
+    -- some pool, a service's targets each counted; more addresses than the
+    -- bound under some name; more addresses than the budget without it
+    relaysBound  = or [ length rs + sum [ length (Map.findWithDefault [] i srv) | Service i <- NonEmpty.toList rs ] > cRelays
+                      | (_, srv) <- ccDns, (_, rs) <- ccPools ]
+    addressesCut = or [ length as > cAddresses | (ips, _) <- ccDns, as <- Map.elems ips ]
+    budgetBinds  = any ((> cEntries) . Map.size) (expectedIndices caps { cEntries = maxBound } phases)
+    unequal      = Set.size (Set.fromList (Map.elems ccSlow)) > 1
+
+-- | The index never holds more than the budget, at any instant of a
+-- schedule: a poll's first publication, a list change, and an answer's
+-- routes with the eviction they cause each reach it in one transaction.
+-- Every state the index takes is seen.
+prop_index_bounded :: Schedule -> Caps -> Property
+prop_index_bounded (Schedule phases) caps@Caps { cEntries } =
+    counterexample (show (sizes, cEntries))
+  . classify (any ((> cEntries) . Map.size) (expectedIndices caps { cEntries = maxBound } phases)) "the budget binds"
+  $ all (<= cEntries) sizes
+  where
+    sizes = runSimOrThrow $ do
+      Harness { hApply, hAllowances, hThread } <- newHarness caps (const 0) 1 1
+      seen <- newTVarIO []
+      let watch prev = do
+            idx <- atomically $ do
+              idx <- readTVar (paIndex hAllowances)
+              check (idx /= prev)
+              modifyTVar seen (Map.size idx :)
+              return idx
+            watch idx
+      mapM_ hApply (take 1 phases)
+      withAsync hThread $ \_ ->
+        withAsync (watch Map.empty) $ \_ ->
+          forM_ phases $ \ph -> hApply ph >> threadDelay 3
+      readTVarIO seen
+
+-- | The index key of an IPv4 address a dual-stack socket presents as
+-- IPv4-mapped IPv6 is the IPv4 address's own key; any other address keeps
+-- its form with its port dropped, an IPv6 address its flow label and scope
+-- as well.
+prop_key_unmaps :: Property
+prop_key_unmaps =
+  forAllShrink genIPv4 shrinkIPv4 $ \ip ->
+  forAllShrink genIPv6 shrinkIPv6 $ \ip6 ->
+  forAllShrink (choose (1, 65535 :: Int)) shrink $ \p ->
+  forAllShrink (choose (1, 1048575 :: Int)) shrink $ \fl ->
+  forAllShrink (choose (1, 4294967295 :: Int)) shrink $ \sc ->
+    let port   = fromIntegral p
+        plain  = IP.toSockAddr (IP.IPv4 ip, port)
+        mapped = IP.toSockAddr (IP.IPv6 (IP.ipv4ToIPv6 ip), port)
+        v6     = IP.toSockAddr (IP.IPv6 ip6, port)
+        -- with the flow label and scope an accepting socket may carry
+        scoped = case v6 of
+                      SockAddrInet6 pt _ h _ -> SockAddrInet6 pt (fromIntegral fl) h (fromIntegral sc)
+                      other                  -> other
+    in     counterexample "mapped" (sockAddrWithoutPort mapped === sockAddrWithoutPort plain)
+      .&&. counterexample "plain"  (sockAddrWithoutPort plain  === IP.toSockAddr (IP.IPv4 ip, 0))
+      .&&. counterexample "v6"     (sockAddrWithoutPort v6     === IP.toSockAddr (IP.IPv6 ip6, 0))
+      .&&. counterexample "scoped" (sockAddrWithoutPort scoped === IP.toSockAddr (IP.IPv6 ip6, 0))
+  where
+    shrinkIPv4 ip = [ IP.toIPv4 os | os <- shrink (IP.fromIPv4 ip), length os == 4, all octet os ]
+    octet o = o >= 0 && o <= 255
+    -- any IPv6 address but an IPv4-mapped one
+    genIPv6 = do
+      ws5 <- vectorOf 5 (choose (0, 65535))
+      w5  <- choose (0, 65534)
+      ws2 <- vectorOf 2 (choose (0, 65535))
+      return (IP.toIPv6 (ws5 ++ [w5] ++ ws2))
+    shrinkIPv6 ip6 = [ IP.toIPv6 ws | ws <- shrink (IP.fromIPv6 ip6), length ws == 8
+                                    , all (\w -> w >= 0 && w <= 65535) ws
+                                    , take 6 ws /= [0, 0, 0, 0, 0, 0xffff] ]

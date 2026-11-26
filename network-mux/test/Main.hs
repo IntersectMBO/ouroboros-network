@@ -3,6 +3,9 @@ module Main (main) where
 import Test.Tasty
 
 import Test.Mux qualified (tests)
+import Test.Mux.Burst qualified (tests)
+import Test.Mux.Floor qualified (tests)
+import Test.Mux.FloorBucket qualified (tests)
 import Test.Mux.Timeout qualified (tests)
 
 main :: IO ()
@@ -13,5 +16,8 @@ tests =
   testGroup "mux"
     [ -- network logic
       Test.Mux.tests
+    , Test.Mux.Floor.tests
+    , Test.Mux.FloorBucket.tests
+    , Test.Mux.Burst.tests
     , Test.Mux.Timeout.tests
     ]
