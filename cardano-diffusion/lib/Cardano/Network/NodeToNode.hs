@@ -385,7 +385,10 @@ addSafetyMargin x = x + x `div` 10
 -- | Select `TxOutboundVersion` based on `NodeToNodeVersion`.
 --
 txOutboundVersion :: NodeToNodeVersion -> TxOutboundVersion
-txOutboundVersion v | v < NodeToNodeV_16 = TxOutboundV_1
+-- On this branch version 16 keeps the tx-submission rules of the 2.0.0.0
+-- release, as the Leios testnet's nodes read it; the outbound rules of
+-- 'TxOutboundV_2' start at version 17.
+txOutboundVersion v | v < NodeToNodeV_17 = TxOutboundV_1
                     | otherwise          = TxOutboundV_2
 
 -- | Maximum number of unacknowledged txids before `NodeToNodeV_16`

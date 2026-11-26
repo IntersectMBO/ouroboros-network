@@ -158,7 +158,10 @@ instance Queryable NodeToNodeVersionData where
 -- | NodeToNodeVersion which introduced Peras support
 --
 minPerasVersion :: NodeToNodeVersion
-minPerasVersion = NodeToNodeV_17
+-- On this branch version 16 is read as the Leios testnet's nodes, on the
+-- 2.0.0.0 release, read it: the experimental version, whose version data
+-- carries the Peras flag.  Leios runs from version 16 there.
+minPerasVersion = NodeToNodeV_16
 
 -- | `perasSupport` field is introduced with `NodeToNodeV_17`, and thus should be
 -- set to `PerasUnsupported` (and not be serialized) for versions before that.

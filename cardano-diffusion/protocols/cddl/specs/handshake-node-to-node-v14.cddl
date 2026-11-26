@@ -18,8 +18,10 @@ versionTable = { * versionNumber_v14_to_v16 => v14.nodeToNodeVersionData
                , * versionNumber_v17_to_last => v17.nodeToNodeVersionData
                }
 
-versionNumber_v14_to_v16 = 14 / 15 / 16
-versionNumber_v17_to_last = 17
+; On this branch version 16 carries the Peras flag, as on the Leios testnet
+; (the 2.0.0.0 release), so it is in the second group.
+versionNumber_v14_to_v16 = 14 / 15
+versionNumber_v17_to_last = 16 / 17
 
 ; All version numbers
 versionNumbers = versionNumber_v14_to_v16 / versionNumber_v17_to_last
