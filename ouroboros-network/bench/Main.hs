@@ -3,10 +3,8 @@
 module Main (main) where
 
 import Bench.TxSubmissionV2Server qualified as DirectV2
+import Bench.TxSubmissionV2Sweep qualified as Sweep
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Exception (evaluate)
-import System.Mem (performMajorGC)
 import Test.Tasty.Bench
 
 import Test.Ouroboros.Network.PeerSelection.PeerMetric
@@ -34,41 +32,31 @@ main =
                 bench "100k" $ nfAppIO microbenchmark1ProcessInput i
           ]
         , bgroup "TxSubmissionV2"
-          [ env (prepareEnv (TX.mkReceiveDuplicateFixture 100 3)) $ \fixture ->
+          [ env (pure (TX.mkReceiveDuplicateFixture 100 3)) $ \fixture ->
                 bench ("handleReceivedTxIds/duplicate-active/100existing/3txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
-          , env (prepareEnv (TX.mkResolvedAckFixture 100 10)) $ \fixture ->
+          , env (pure (TX.mkReceiveRetainedFixture 100 3)) $ \fixture ->
+                bench ("handleReceivedTxIds/duplicate-retained/100existing/3txids/" ++ benchLoopsLabel) $
+                  nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
+          , env (pure (TX.mkResolvedAckFixture 100 10)) $ \fixture ->
                 bench ("nextPeerAction/ack-resolved-retained/100advertisers/10txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runPeerActionLoop benchLoops) fixture
-          , env (prepareEnv (TX.mkFanoutFixture 100 3)) $ \fixture ->
+          , env (pure (TX.mkFanoutFixture 100 3)) $ \fixture ->
                 bench ("scenario/fanout-retained/100peers/3txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runFanoutLoop benchLoops) fixture
-          , env
-              (prepareEnv (DirectV2.mkDirectServerFixture 1_000))
-              $ \fixture ->
-                bench "server/direct-interpreter/single-peer/1000batches" $
+          , env (pure (DirectV2.mkDirectServerFixture 1_000)) $ \fixture ->
+                bench ("server/direct-interpreter/single-peer/" ++ DirectV2.batchesLabel 1_000) $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
-          , env
-              (prepareEnv (DirectV2.mkMultiPeerFixture 10 1_000))
-              $ \fixture ->
-                bench "server/direct-interpreter/multi-peer/10peers/1000batches" $
+          , env (pure (DirectV2.mkMultiPeerFixture 10 1_000)) $ \fixture ->
+                bench ("server/direct-interpreter/multi-peer/10peers/" ++ DirectV2.batchesLabel 1_000) $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
-          , env
-              (prepareEnv (DirectV2.mkMultiPeerFixture 100 100))
-              $ \fixture ->
-                bench "server/direct-interpreter/multi-peer/100peers/100batches" $
+          , env (pure (DirectV2.mkMultiPeerFixture 100 100)) $ \fixture ->
+                bench ("server/direct-interpreter/multi-peer/100peers/" ++ DirectV2.batchesLabel 100) $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
-          , env
-              (prepareEnv (DirectV2.mkMultiPeerFixture 100 1_000))
-              $ \fixture ->
-                bench "server/direct-interpreter/multi-peer/100peers/1000batches" $
+          , env (pure (DirectV2.mkMultiPeerFixture 100 1_000)) $ \fixture ->
+                bench ("server/direct-interpreter/multi-peer/100peers/" ++ DirectV2.batchesLabel 1_000) $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , Sweep.benchmarks
           ]
         ]
       ]
-
-prepareEnv :: NFData a => a -> IO a
-prepareEnv a = do
-  _ <- evaluate (rnf a)
-  performMajorGC
-  pure a

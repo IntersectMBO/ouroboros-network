@@ -752,7 +752,8 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                    sharedTxStateVar
                    inFlightRegistry
                    txCountersVar
-                   them $ \api -> do
+                   them
+                   $ \api -> do
             let server = txSubmissionInboundV2
                            ((them,) `contramap` txSubmissionInboundTracer)
                            NoTxSubmissionInitDelay

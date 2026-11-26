@@ -1519,6 +1519,7 @@ diffusionSimulationM
                                               traceWith nodeTracer $ WithTime t (WithName addr (DiffusionDebugTrace s)))
               , Node.aExtraChurnArgs       = cardanoChurnArgs
               , Node.aTxDecisionPolicy     = txDecisionPolicy
+              , Node.aTxSubmissionConfig   = txSubmissionConfig
               , Node.aTxs                  = txs
               , Node.aMuxCountersInterval  = muxCountersInterval
               , Node.aEgressScheduling     = egressScheduling <$> egress

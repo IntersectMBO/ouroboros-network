@@ -1,7 +1,10 @@
 {-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE CPP                       #-}
 {-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingStrategies        #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
@@ -96,7 +99,9 @@ import Data.OrdPSQ qualified as PSQ
 import Data.Semigroup (Min (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
+import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
+import NoThunks.Class (NoThunks)
 import System.Random (StdGen)
 
 import Ouroboros.Network.ConnectionManager.Types (Provenance)
@@ -835,20 +840,34 @@ makeDebugPeerSelectionState PeerSelectionState {..} up bp es am getPromotedHotTi
 -- This data type should not expose too much information and keep only
 -- essential data needed for computing the peer sharing request result
 --
+-- The governor writes it on every iteration; its fields are strict so that
+-- a write keeps nothing of that iteration's state alive until a reader
+-- comes.
 data PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
     availableToShare :: !(Set peeraddr),
     -- | When each hot upstream peer was promoted; the egress tiers gate on it.
-    hotUpstreamSince :: !(Map peeraddr Time)
+    hotUpstreamSince :: !(Map peeraddr Time),
+    -- | The local roots' addresses; inbound tx-submission's fetch tiers keep
+    -- them fast by standing.  A root is recognised on an inbound connection
+    -- by its remote address being one of these, which holds when the root
+    -- binds its outbound connections to its listening address, as an
+    -- initiator-and-responder node does; a root that connects from another
+    -- address or port is served by the coin like any other peer.
+    localRootAddrs   :: !(Set peeraddr)
   }
-  deriving Show
+  deriving (Show, Generic)
+
+deriving anyclass instance NoThunks peeraddr
+                        => NoThunks (PublicPeerSelectionState peeraddr)
 
 emptyPublicPeerSelectionState :: Ord peeraddr
                               => PublicPeerSelectionState peeraddr
 emptyPublicPeerSelectionState =
   PublicPeerSelectionState {
     availableToShare = mempty,
-    hotUpstreamSince = Map.empty
+    hotUpstreamSince = Map.empty,
+    localRootAddrs   = Set.empty
   }
 
 makePublicPeerSelectionStateVar
@@ -863,11 +882,12 @@ makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
 --
 toPublicState :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
-toPublicState PeerSelectionState { knownPeers, activeSince } =
+toPublicState PeerSelectionState { knownPeers, activeSince, localRootPeers } =
    PublicPeerSelectionState {
      availableToShare =
        KnownPeers.getPeerSharingResponsePeers knownPeers,
-     hotUpstreamSince = activeSince
+     hotUpstreamSince = activeSince,
+     localRootAddrs   = LocalRootPeers.keysSet localRootPeers
    }
 
 -- | Peer selection view.
