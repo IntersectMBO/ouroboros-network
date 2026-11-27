@@ -10,6 +10,8 @@ import Data.Foldable qualified as Foldable
 import Data.Function (on)
 import Data.List (nub, nubBy)
 import Data.Set qualified as Set
+import Ouroboros.Network.SizeInBytes
+import Ouroboros.Network.TxSubmission.Mempool.Reader (mempoolTxIdsAfter)
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
            MempoolSeq (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
@@ -19,7 +21,8 @@ import Test.Tasty.QuickCheck
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.TxSubmission.Mempool.Simple"
-        [ testProperty "mempool writer" prop_mempool_writer
+        [ testProperty "reader sees all transactions added to an empty mempool" prop_mempool_empty
+        , testProperty "mempool writer" prop_mempool_writer
         ]
 
 
@@ -57,6 +60,21 @@ instance Arbitrary MempoolTxs where
     txids <- arbitrary
     return $ MempoolTxs [ Tx txid True | txid <- nub txids ]
   shrink (MempoolTxs txs) = MempoolTxs <$> shrinkList (const []) txs
+
+
+prop_mempool_empty :: MempoolTxs -> Property
+prop_mempool_empty (MempoolTxs txs) = runSimOrThrow $ do
+    mempool <- Mempool.empty
+    let writer = Mempool.getWriter DuplicateTxId getTxId
+                   (\_ -> pure . map Right) (const (pure ())) mempool
+        reader = Mempool.getReader getTxId (const size) mempool
+    _ <- Mempool.mempoolAddTxs writer txs
+    snapshot <- atomically (Mempool.mempoolGetSnapshot reader)
+    pure $ mempoolTxIdsAfter snapshot (Mempool.mempoolZeroIdx reader)
+       === [(getTxId tx, idx, size) | (idx, tx) <- zip [0..] txs]
+  where
+    size :: SizeInBytes
+    size = 1
 
 
 prop_mempool_writer

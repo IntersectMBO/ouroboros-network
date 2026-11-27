@@ -62,7 +62,7 @@ newtype Mempool m txid tx = Mempool (StrictTVar m (MempoolSeq txid tx))
 
 
 empty :: MonadSTM m => m (Mempool m txid tx)
-empty = Mempool <$> newTVarIO (MempoolSeq Set.empty Seq.empty (-1))
+empty = Mempool <$> newTVarIO (MempoolSeq Set.empty Seq.empty 0)
 
 
 new :: ( MonadSTM m
