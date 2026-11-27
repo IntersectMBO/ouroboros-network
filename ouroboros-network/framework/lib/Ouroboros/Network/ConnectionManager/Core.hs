@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE BlockArguments           #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
@@ -31,18 +30,18 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException, assert)
-import Control.Monad (forM_, guard, unless, when, (>=>))
+import Control.Monad (filterM, forM_, guard, unless, when, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (throwTo)
 import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Monad.Fix
 import Control.Tracer (Tracer, contramap, traceWith)
 import Data.Bifunctor
 import Data.Foldable (foldMap', traverse_)
 import Data.Function (on)
 import Data.Functor (void, ($>))
+import Data.Maybe (isNothing)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.Stack (CallStack, HasCallStack, callStack)
@@ -370,7 +369,6 @@ with
        , MonadAsync         m
        , MonadDelay         m
        , MonadEvaluate      m
-       , MonadFix           m
        , MonadMask          m
        , MonadThrow    (STM m)
        , MonadTimer         m
@@ -431,6 +429,9 @@ with args@Arguments {
           stdGenVar <- newTVar (stdGen args)
           return (v, stdGenVar)
 
+    -- History is independent of map membership and survives map rollback.
+    handlers <- newTVarIO ([] :: [Async m ()])
+
     let readState
           :: STM m (State.ConnMap peerAddr AbstractState)
         readState = readTMVar stateVar >>= State.readAbstractStateMap
@@ -466,7 +467,7 @@ with args@Arguments {
                   WithInitiatorMode
                     OutboundConnectionManager {
                         ocmAcquireConnection =
-                          acquireOutboundConnectionImpl stateVar stdGenVar outboundHandler,
+                          acquireOutboundConnectionImpl handlers stateVar stdGenVar outboundHandler,
                         ocmReleaseConnection =
                           releaseOutboundConnectionImpl stateVar stdGenVar
                       },
@@ -480,7 +481,7 @@ with args@Arguments {
                   WithResponderMode
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl stateVar inboundHandler,
+                          includeInboundConnectionImpl handlers stateVar inboundHandler,
                         icmReleaseConnection =
                           releaseInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
@@ -500,13 +501,13 @@ with args@Arguments {
                   WithInitiatorResponderMode
                     OutboundConnectionManager {
                         ocmAcquireConnection =
-                          acquireOutboundConnectionImpl stateVar stdGenVar outboundHandler,
+                          acquireOutboundConnectionImpl handlers stateVar stdGenVar outboundHandler,
                         ocmReleaseConnection =
                           releaseOutboundConnectionImpl stateVar stdGenVar
                       }
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl stateVar inboundHandler,
+                          includeInboundConnectionImpl handlers stateVar inboundHandler,
                         icmReleaseConnection =
                           releaseInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
@@ -520,11 +521,20 @@ with args@Arguments {
                 waitForOutboundDemotion
               }
 
+    -- Owning scopes stop callers before this final snapshot. The live
+    -- connection map can omit handlers whose results are still pending.
+    let sweep = do
+          pending <- atomically $
+            readTVar handlers >>= filterM (fmap isNothing . pollSTM)
+          forConcurrently_ pending $ \thread -> do
+            throwTo (asyncThreadId thread) AsyncCancelled
+            void $ waitCatch thread
+
     k connectionManager
       -- Since this exception handler is blocking it might receive exceptions
       -- during its execution, which we want to avoid, so we wrap it around
       -- uninterruptibleMask_.
-      `finally` uninterruptibleMask_ (do
+      `finally` uninterruptibleMask_ ((do
         traceWith tracer TrShutdown
 
         state <- atomically $ readTMVar stateVar
@@ -547,7 +557,7 @@ with args@Arguments {
 
         atomically $ runLastToFinishM
                    $ foldMap (LastToFinishM . void <$> waitCatchSTM) asyncs
-      )
+      ) `finally` sweep)
   where
     traceCounters :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m) -> m ()
     traceCounters stateVar = do
@@ -563,36 +573,61 @@ with args@Arguments {
       <$> State.readConnectionStates st
 
 
-    -- Fork connection thread.
-    --
-    -- TODO: We could probably elegantly eliminate 'PromiseWriter', now that we use
-    -- MonadFix.
+    -- A handler can exit before reporting a handshake result. Prefer the
+    -- promise when both it and the handler's result are ready.
+    awaitHandshakeResult
+      :: forall result.
+         PromiseReader m result
+      -> Async m ()
+      -> m (Maybe result)
+    awaitHandshakeResult reader connThread =
+      atomically $
+        (Just <$> readPromise reader)
+          `orElse` (waitCatchSTM connThread $> Nothing)
+
+
+    -- Fork and register the handler. Inbound handlers wait for the parent to
+    -- hand over the entry and socket. Until then the child cannot clean up any
+    -- connection state.
     forkConnectionHandler
-      :: (versionData -> versionData)
+      :: StrictTVar m [Async m ()]
+      -> (versionData -> versionData)
       -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
-      -> MutableConnState peerAddr handle handleError version m
+      -> m (Maybe (MutableConnState peerAddr handle handleError version m))
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
-    forkConnectionHandler updateVersionDataFn stateVar
-                          mutableConnState@MutableConnState { connStateId, connVar }
+    forkConnectionHandler handlers updateVersionDataFn stateVar
+                          awaitEntry
                           socket
                           connId
                           writer
                           handler =
-        mask_ $ asyncWithUnmask \unmask -> flip finally (cleanup unmask) do
-          runWithUnmask
-            (handler updateVersionDataFn socket writer
-                     (TrConnectionHandler connId `contramap` tracer)
-                     connId
-                     (\bearerTimeout -> getBearer makeBearer bearerTimeout)
-                     withBuffer)
-            unmask
+        mask_ $ do
+          thread <- asyncWithUnmask \unmask -> do
+            entry <- awaitEntry
+            forM_ entry $ \mutableConnState ->
+              flip finally (cleanup mutableConnState unmask) $
+                runWithUnmask
+                  (handler updateVersionDataFn socket writer
+                           (TrConnectionHandler connId `contramap` tracer)
+                           connId
+                           (\bearerTimeout -> getBearer makeBearer bearerTimeout)
+                           withBuffer)
+                  unmask
+          -- Keep unfinished handlers even after their map entries disappear.
+          -- Poll for completion here to avoid retaining an unbounded history.
+          atomically $ do
+            pending <- readTVar handlers >>= filterM (fmap isNothing . pollSTM)
+            writeTVar handlers (thread : pending)
+          pure thread
       where
-        cleanup :: (forall c. m c -> m c) -> m ()
-        cleanup unmask =
+        cleanup :: MutableConnState peerAddr handle handleError version m
+                -> (forall c. m c -> m c)
+                -> m ()
+        cleanup mutableConnState@MutableConnState { connStateId, connVar } unmask =
           -- We must ensure that we update 'connVar',
           -- `acquireOutboundConnection` might be blocked on it awaiting for:
           -- - handshake negotiation; or
@@ -779,7 +814,8 @@ with args@Arguments {
 
     includeInboundConnectionImpl
         :: HasCallStack
-        => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        => StrictTVar m [Async m ()]
+        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> Word32
         -- ^ inbound connections hard limit
@@ -793,7 +829,7 @@ with args@Arguments {
         -> ConnectionId peerAddr
         -- ^ connection id used as an identifier of the resource
         -> m (Connected peerAddr handle handleError)
-    includeInboundConnectionImpl stateVar
+    includeInboundConnectionImpl handlers stateVar
                                  handler
                                  hardLimit
                                  socket
@@ -810,74 +846,53 @@ with args@Arguments {
             let provenance = Inbound
             traceWith tracer (TrIncludeConnection provenance (remoteAddress connId))
             (reader, writer) <- newEmptyPromiseIO
-            (connThread, connVar, connState0, connState) <-
-              mfix $ \ ~(connThread, _mutableConnVar, _connState0, _connState) -> do
-                -- Either
-                -- @
-                --   Accepted    : ● → UnnegotiatedState Inbound
-                --   Overwritten : ● → UnnegotiatedState Inbound
-                --   SelfConn    : UnnegotiatedState Outbound
-                --               → UnnegotiatedState Inbound
-                -- @
-                --
-                -- This is subtle part, which needs to handle a near simultaneous
-                -- open.  We cannot rely on 'ReservedOutboundState' state as
-                -- a lock.  It may happen that the `acquireOutboundConnection`
-                -- will put 'ReservedOutboundState', but before it will call `connect`
-                -- the `accept` call will return.  We overwrite the state and
-                -- replace the connection state 'TVar' with a fresh one.  Nothing
-                -- is blocked on the replaced 'TVar'.
-                --
-                -- The `SelfConn` transition can happen when the node tries to
-                -- connect to itself (and inbound & outbound addresses are the
-                -- same).
-                let connState' = UnnegotiatedState provenance connId connThread
-                (mutableConnVar', connState0') <-
-                  atomically $ do
-                    let v0 = State.lookup connId state
-                    case v0 of
-                      Nothing -> do
-                        -- 'Accepted'
-                        v <- State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
-                        labelTVar (connVar v) ("conn-state-" ++ show connId)
-                        return (v, Nothing)
-                      Just v -> do
-                        -- 'Overwritten', 'SelfConn' or accepting a new
-                        -- connection while the old one is terminating.
-                        connState0' <- readTVar (connVar v)
-                        let fault = withCallStack . ForbiddenOperation (remoteAddress connId)
-                        !v' <- case connState0' of
-                           -- Overwritten
-                           ReservedOutboundState {} -> writeTVar (connVar v) connState'
-                                                    $> v
-                           -- SelfConn
-                           UnnegotiatedState     {} -> writeTVar (connVar v) connState'
-                                                    $> v
-
-                           OutboundUniState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           OutboundDupState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           OutboundIdleState     {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           DuplexState           {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           InboundIdleState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
-                           InboundState          {} -> throwSTM . fault $ State.abstractState (Known connState0')
-
-                           TerminatingState      {} -> State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
-                           TerminatedState       {} -> State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
-
-                        labelTVar (connVar v') ("conn-state-" ++ show connId)
-                        return (v', Just connState0')
-
-                connThread' <-
+            entry <- newEmptyTMVarIO
+            (connThread, mutableEntry, connState0, connState) <- mask_ $
+              (do
+                connThread <-
                   forkConnectionHandler
-                     id stateVar mutableConnVar' socket connId writer handler
-                return (connThread', mutableConnVar', connState0', connState')
+                    handlers id stateVar (atomically (readTMVar entry)) socket connId writer handler
+                let connState = UnnegotiatedState provenance connId connThread
+                atomically $ do
+                  -- Read and update the reused TVar in one transaction after
+                  -- the fork. Other callers may still hold this TVar while
+                  -- we have the map lease.
+                  let freshEntry = State.newMutableConnState
+                        (remoteAddress connId) connStateIdSupply connState
+                  (mutableEntry, connState0) <-
+                    case State.lookup connId state of
+                      Nothing -> (, Nothing) <$> freshEntry
+                      Just existing -> do
+                        previous <- readTVar (connVar existing)
+                        -- Reservations and simultaneous opens share the TVar
+                        -- with the existing caller.
+                        let reuse = writeTVar (connVar existing) connState $> existing
+                            forbidden = throwSTM $
+                              withCallStack (ForbiddenOperation (remoteAddress connId)
+                                (State.abstractState (Known previous)))
+                        chosen <- case previous of
+                          ReservedOutboundState {} -> reuse
+                          UnnegotiatedState     {} -> reuse
+                          OutboundUniState      {} -> forbidden
+                          OutboundDupState      {} -> forbidden
+                          OutboundIdleState     {} -> forbidden
+                          DuplexState           {} -> forbidden
+                          InboundIdleState      {} -> forbidden
+                          InboundState          {} -> forbidden
+                          TerminatingState      {} -> freshEntry
+                          TerminatedState       {} -> freshEntry
+                        return (chosen, Just previous)
+                  labelTVar (connVar mutableEntry) ("conn-state-" ++ show connId)
+                  putTMVar entry (Just mutableEntry)
+                  return (connThread, mutableEntry, connState0, connState))
+              `onException` atomically (void $ tryPutTMVar entry Nothing)
 
-            traceWith trTracer (TransitionTrace (connStateId connVar)
+            traceWith trTracer (TransitionTrace (connStateId mutableEntry)
                                  Transition { fromState = maybe Unknown Known connState0
                                             , toState   = Known connState
                                             })
-            return ( State.insert connId connVar state
-                   , Right (connVar, connThread, reader)
+            return ( State.insert connId mutableEntry state
+                   , Right (mutableEntry, connThread, reader)
                    )
           else
             return ( state
@@ -894,17 +909,20 @@ with args@Arguments {
                 , connThread, reader) -> do
             traceCounters stateVar
 
-            res <- atomically $ readPromise reader
+            res <- awaitHandshakeResult reader connThread
             case res of
-              Left handleError -> do
+              Nothing ->
+                return (Disconnected connId ConnectionInTerminatedState)
+
+              Just (Left handleError) -> do
                 terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
                                                  (ConnectionHandlerError handleError)
 
-              Right HandshakeConnectionQuery -> do
+              Just (Right HandshakeConnectionQuery) -> do
                 terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
                                                  ConnectionDisconnectedByHandshakeQuery
 
-              Right (HandshakeConnectionResult handle (_version, versionData)) -> do
+              Just (Right (HandshakeConnectionResult handle (_version, versionData))) -> do
                 let dataFlow = connectionDataFlow versionData
                 (connected, mbTransition, provenance) <- atomically $ do
                   connState <- readTVar connVar
@@ -1263,17 +1281,23 @@ with args@Arguments {
 
     acquireOutboundConnectionImpl
         :: HasCallStack
-        => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        => StrictTVar m [Async m ()]
+        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> DiffusionMode
         -> peerAddr
         -> Provenance
         -> m (Connected peerAddr handle handleError)
-    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connProv = do
-        let provenance = Outbound
+    acquireOutboundConnectionImpl handlers stateVar stdGenVar handler diffusionMode peerAddr connProv = do
         traceWith tracer (TrIncludeConnection provenance peerAddr)
-        (trace, trTrace, eHandleWedge) <- atomically $ do
+        -- A fresh connection owns its reservation as soon as selection
+        -- commits. Install rollback before running any further effects.
+        bracketOnError selectOutbound releaseReservation acquireSelected
+      where
+      provenance = Outbound
+
+      selectOutbound = atomically $ do
           state <- readTMVar stateVar
           stdGen <- stateTVar stdGenVar Random.splitGen
           case State.lookupByRemoteAddr stdGen peerAddr state of
@@ -1418,6 +1442,52 @@ with args@Arguments {
                          , Right (mutableConnState, Nowhere)
                          )
 
+      -- The socket bracket handles errors after socket acquisition. Here we
+      -- only roll back the exact reservation still in the unknown-local slot.
+      releaseReservation
+        :: ( Maybe (Trace peerAddr handlerTrace)
+           , Maybe (TransitionTrace State.ConnStateId
+                       (ConnectionState peerAddr handle handleError version m))
+           , Either (ConnectionManagerError peerAddr)
+                    ( MutableConnState peerAddr handle handleError version m
+                    , Wedge (Connected peerAddr handle handleError)
+                            (ConnectionId peerAddr)
+                    )
+           )
+        -> m ()
+      releaseReservation (_, _, Right (entry@MutableConnState { connVar, connStateId }, Nowhere)) = do
+        released <- uninterruptibleMask_ $ atomically $ do
+          connState <- readTVar connVar
+          case connState of
+            ReservedOutboundState ->
+              modifyTMVarSTM stateVar $ \state -> do
+                let reservation = Map.lookup peerAddr (State.getConnMap state)
+                                  >>= Map.lookup State.UnknownLocalAddr
+                case reservation of
+                  Just e | e == entry -> do
+                    writeTVar connVar (TerminatedState Nothing)
+                    return (State.deleteAtRemoteAddr peerAddr entry state, True)
+                  _ -> pure (state, False)
+            _ -> return False
+        when released $ do
+          let closed = TerminatedState Nothing
+          traceWith trTracer (TransitionTrace connStateId (mkTransition ReservedOutboundState closed))
+          traceWith trTracer (TransitionTrace connStateId (Transition (Known closed) Unknown))
+          traceCounters stateVar
+      releaseReservation _ = pure ()
+
+      acquireSelected
+        :: ( Maybe (Trace peerAddr handlerTrace)
+           , Maybe (TransitionTrace State.ConnStateId
+                       (ConnectionState peerAddr handle handleError version m))
+           , Either (ConnectionManagerError peerAddr)
+                    ( MutableConnState peerAddr handle handleError version m
+                    , Wedge (Connected peerAddr handle handleError)
+                            (ConnectionId peerAddr)
+                    )
+           )
+        -> m (Connected peerAddr handle handleError)
+      acquireSelected (trace, trTrace, eHandleWedge) = do
         traverse_ (traceWith tracer) trace
         traverse_ (traceWith trTracer) trTrace
         traceCounters stateVar
@@ -1530,7 +1600,8 @@ with args@Arguments {
 
                   connThread <-
                     forkConnectionHandler
-                      (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer handler
+                      handlers (`updateVersionData` diffusionMode) stateVar
+                      (pure (Just mutableConnState)) socket connId writer handler
 
                   return (connId, connThread)
 
@@ -1581,17 +1652,20 @@ with args@Arguments {
                       mbAssertion
             traceCounters stateVar
 
-            res <- atomically (readPromise reader)
+            res <- awaitHandshakeResult reader connThread
             case res of
-              Left handleError -> do
+              Nothing ->
+                return (Disconnected connId ConnectionInTerminatedState)
+
+              Just (Left handleError) -> do
                 terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
                                                   (ConnectionHandlerError handleError)
 
-              Right HandshakeConnectionQuery -> do
+              Just (Right HandshakeConnectionQuery) -> do
                 terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
                                                   ConnectionDisconnectedByHandshakeQuery
 
-              Right (HandshakeConnectionResult handle (_version, versionData)) -> do
+              Just (Right (HandshakeConnectionResult handle (_version, versionData))) -> do
                 let dataFlow = connectionDataFlow versionData
                 -- We can safely overwrite the state: after successful
                 -- `connect` it's not possible to have a race condition
@@ -1917,10 +1991,14 @@ with args@Arguments {
                           (acceptedConnectionsHardLimit connectionsLimits)
                 if numberToPrune > 0
                 then do
-                  (_, prune)
+                  (pruneSelf, prune)
                     <- mkPruneAction connId numberToPrune state connState' connVar stdGenVar connThread
+
+                  unless pruneSelf $
+                    writeTVar connVar connState'
+
                   return
-                    ( PruneConnections prune (Left connState)
+                    ( PruneConnections prune (if pruneSelf then Left connState else Right tr)
                     , Nothing
                     )
 

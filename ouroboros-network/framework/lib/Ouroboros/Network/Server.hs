@@ -34,7 +34,7 @@ module Ouroboros.Network.Server
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
-import Control.Monad (when)
+import Control.Monad (filterM, unless, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -44,6 +44,7 @@ import Control.Monad.Fix (MonadFix)
 
 import Control.Tracer (Tracer, contramap, traceWith)
 
+import Data.Foldable (traverse_)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (isNothing)
@@ -56,6 +57,7 @@ import Foreign.C.Error
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
+import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
@@ -129,8 +131,8 @@ with :: forall muxMode socket peerAddr initiatorCtx responderCtx handle handlerT
     -- ^ a callback which receives a handle to inbound governor thread and can
     -- read `PublicState`.
     --
-    -- Note that as soon as the callback returns, all threads run by the server
-    -- will be stopped.
+    -- Returning from the callback starts shutdown. The server waits for
+    -- admission workers and connection handlers before returning.
     -> m x
 with Arguments {
       sockets = socks,
@@ -146,33 +148,34 @@ with Arguments {
       localAddresses <- traverse (getLocalAddr snocket) sockets
       InboundGovernor.with inboundGovernorArgs
         \inboundGovernorThread readPublicInboundState connectionManager ->
-          withAsync do
-            labelThisThread "server"
-            k inboundGovernorThread readPublicInboundState connectionManager
-          \actionThread -> do
-            traceWith tracer (TrServerStarted localAddresses)
-            let acceptLoops :: [m Void]
-                acceptLoops =
-                            [ (do
-                                  labelThisThread ("accept " ++ show localAddress)
-                                  accept snocket socket >>= acceptLoop localAddress connectionManager)
-                                `finally` close snocket socket
-                            | (localAddress, socket) <- localAddresses `zip` sockets
-                            ]
-            -- race all `acceptLoops` with `actionThread` and
-            -- `inboundGovernorThread`
-            let waiter = fn <$> (do
-                                    labelThisThread "racing-action-inbound-governor"
-                                    actionThread `waitEither` inboundGovernorThread)
+          bracket (newTVarIO []) (joinAdmissions inboundGovernorThread) $ \admissions ->
+            withAsync do
+              labelThisThread "server"
+              k inboundGovernorThread readPublicInboundState connectionManager
+            \actionThread -> do
+              traceWith tracer (TrServerStarted localAddresses)
+              let acceptLoops :: [m Void]
+                  acceptLoops =
+                              [ (do
+                                    labelThisThread ("accept " ++ show localAddress)
+                                    accept snocket socket >>= acceptLoop admissions localAddress connectionManager)
+                                  `finally` close snocket socket
+                              | (localAddress, socket) <- localAddresses `zip` sockets
+                              ]
+              -- race all `acceptLoops` with `actionThread` and
+              -- `inboundGovernorThread`
+              let waiter = fn <$> (do
+                                      labelThisThread "racing-action-inbound-governor"
+                                      actionThread `waitEither` inboundGovernorThread)
 
-            (fn <$> waiter `race` (labelThisThread "racing-accept-loops" >> raceAll acceptLoops))
-              `finally`
-                traceWith tracer TrServerStopped
-              `catch`
-                \(e :: SomeException) -> do
-                  when (isNothing $ fromException @SomeAsyncException e) $
-                    traceWith tracer (TrServerError e)
-                  throwIO e
+              (fn <$> waiter `race` (labelThisThread "racing-accept-loops" >> raceAll acceptLoops))
+                `finally`
+                  traceWith tracer TrServerStopped
+                `catch`
+                  \(e :: SomeException) -> do
+                    when (isNothing $ fromException @SomeAsyncException e) $
+                      traceWith tracer (TrServerError e)
+                    throwIO e
   where
     fn :: Either x Void -> x
     fn (Left x)  = x
@@ -185,11 +188,32 @@ with Arguments {
         go as []     = action (reverse as)
         go as (x:xs) = withAsync x (\a -> go (a:as) xs)
 
-    acceptLoop :: peerAddr
+    -- Accept loops have stopped and joined. Let admissions finish normally:
+    -- interrupting a worker after it forks a handler can roll back the map.
+    joinAdmissions :: Async m Void -> StrictTVar m [Async m ()] -> m ()
+    joinAdmissions governor admissions = uninterruptibleMask_ $ do
+      workers <- readTVarIO admissions
+      let joinWorkers = do
+            finished <- atomically $
+              (False <$ drainNotifications)
+                `orElse` (True <$ traverse_ waitCatchSTM workers)
+            unless finished joinWorkers
+
+          -- Successful admissions can still write to the bounded queue.
+          -- After the governor exits, drain it while waiting for their results.
+          drainNotifications = do
+            _ <- waitCatchSTM governor
+            notifications <- InfoChannel.readMessages
+              (InboundGovernor.infoChannel inboundGovernorArgs)
+            check (not (null notifications))
+      joinWorkers
+
+    acceptLoop :: StrictTVar m [Async m ()]
+               -> peerAddr
                -> ConnectionManager muxMode socket peerAddr handle handleError m
                -> Accept m socket peerAddr
                -> m Void
-    acceptLoop localAddress connectionManager acceptOne0 = mask $ \unmask -> do
+    acceptLoop admissions localAddress connectionManager acceptOne0 = mask $ \unmask -> do
         labelThisThread ("accept-loop-" ++ prettyShow localAddress)
         go unmask acceptOne0
       where
@@ -236,7 +260,7 @@ with Arguments {
                   let connId = ConnectionId { localAddress = localAddress',
                                               remoteAddress }
                   traceWith tracer (TrAcceptConnection connId)
-                  async $
+                  worker <- async $
                     do
                        a <-
                          unmask
@@ -248,6 +272,10 @@ with Arguments {
                          Disconnected {} -> close snocket socket
                     `onException`
                       close snocket socket
+                  -- The accept loop is masked across fork and registration.
+                  atomically $ do
+                    pending <- readTVar admissions >>= filterM (fmap isNothing . pollSTM)
+                    writeTVar admissions (worker : pending)
               `onException`
                  close snocket socket
               )

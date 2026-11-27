@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap)
+import Control.Tracer (Tracer (..), contramap, mkTracer, nullTracer)
 
 import GHC.Generics
 import GHC.IO.Exception
@@ -45,6 +45,7 @@ import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid (All (..))
 import Data.Proxy (Proxy (..))
+import Data.Set qualified as Set
 import Data.Text.Lazy qualified as Text
 import Data.Void (Void)
 import Quiet
@@ -72,7 +73,8 @@ import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
            AddressFamily (TestFamily), Snocket (..), TestAddress (..))
 import Ouroboros.Network.Util (PrettyShow (..))
 
-import Test.Ouroboros.Network.ConnectionManager.Utils (verifyAbstractTransition)
+import Test.Ouroboros.Network.ConnectionManager.Utils
+           (abstractStateIsFinalTransition, verifyAbstractTransition)
 import Test.Ouroboros.Network.Utils (dynamicTracer, sayTracer)
 
 
@@ -85,6 +87,26 @@ tests =
     -- TODO: replace these tests with 'Test.Ouroboros.Network.Server' simulation.
     testProperty "overwritten"                    unit_overwritten
   , testProperty "timeoutExpired"                 unit_timeoutExpired
+  , testProperty "reservation trace failure clears the slot"
+      (unit_outboundReservationRollback ReservationTrace)
+  , testProperty "socket open failure clears the slot"
+      (unit_outboundReservationRollback SocketOpen)
+  , testProperty "socket configuration failure closes the socket and clears the slot"
+      (unit_outboundReservationRollback SocketConfiguration)
+  , testProperty "inbound caller disconnects if the handler exits without a result"
+      (unit_handshakeCompletion Inbound False)
+  , testProperty "outbound caller disconnects if the handler exits without a result"
+      (unit_handshakeCompletion Outbound False)
+  , testProperty "inbound caller observes a published query"
+      (unit_handshakeCompletion Inbound True)
+  , testProperty "outbound caller observes a published query"
+      (unit_handshakeCompletion Outbound True)
+  , testProperty "outbound release after pruning another connection reaches inbound idle"
+      (unit_outboundRelease PruneOther)
+  , testProperty "outbound release prunes the released connection when selected"
+      (unit_outboundRelease PruneSelf)
+  , testProperty "outbound release within the inbound limit reaches inbound idle"
+      (unit_outboundRelease SpareCapacity)
   ]
 
 
@@ -681,12 +703,11 @@ instance Arbitrary SkewedBool where
 --
 --  The purpose of this simulation is to put the connection manager state
 --  machine in all possible states and check that it will only execute allowed
---  transitions.
+--  transitions and that each connection is removed by shutdown.
 --
 -- Possible extensions:
 --
 -- * test that resources are eventually closed;
--- * we could check that every connection eventually ends in 'TerminatedState';
 -- * we can statically compute which transitions we will observe
 -- * include handshake failures
 --
@@ -723,7 +744,9 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
               cmTrace = selectTraceEventsDynamic tr
 
           in counterexample ("\nTransition Trace\n" ++ (intercalate "\n" . map show $ cmTrace))
-                            (verifyTrace cmTrace)
+               $ conjoin [ verifyTrace cmTrace
+                         , verifyFinalTransitions cmTrace
+                         ]
   where
     myAddress :: Maybe Addr
     myAddress = if bindToLocalAddress
@@ -736,6 +759,19 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
       where
         verifyTransitionProp :: AbstractTransition -> Property
         verifyTransitionProp tr = counterexample ("\nUnexpected transition: " ++ show tr) (verifyAbstractTransition tr)
+
+    verifyFinalTransitions :: [TestAbstractTransitionTrace] -> Property
+    verifyFinalTransitions cmTrace = conjoin
+      [ counterexample "No connection transitions were traced" (not (Map.null lastTransitions))
+      , conjoin
+          [ counterexample ("\nUnexpected final transition for " ++ show connStateId ++ ": " ++ show tr)
+                           (abstractStateIsFinalTransition tr)
+          | (connStateId, tr) <- Map.toList lastTransitions
+          ]
+      ]
+      where
+        lastTransitions = Map.fromList
+          [ (ttPeerAddr event, ttTransition event) | event <- cmTrace ]
 
 
     experiment :: forall s. IOSim s Int
@@ -766,7 +802,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
 
         inbgovInfoChannel <- newInformationChannel
         let connectionHandler = mkConnectionHandler snocket
-        result <- CM.with
+        CM.with
           CM.Arguments {
             tracer,
             trTracer,
@@ -964,11 +1000,6 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             threadDelay (testTimeWaitTimeout + 1)
             atomically $ numberOfConnections connectionManager
 
-        -- we need to wait at least `testTimeWaitTimeout` to let all the
-        -- outstanding threads to terminate.  This can happen in a rare case
-        threadDelay (10 * testTimeWaitTimeout)
-        return result
-
     checkException :: Either SomeException a -> IOSim s ()
     checkException Right {}   = pure ()
     checkException (Left err) = do
@@ -1091,6 +1122,270 @@ unit_timeoutExpired =
           )
         ])
 
+
+
+data OutboundFailure = ReservationTrace | SocketOpen | SocketConfiguration
+  deriving (Eq)
+
+unit_outboundReservationRollback :: OutboundFailure -> Property
+unit_outboundReservationRollback failure =
+    runSimOrThrow experiment ===
+      ((True, True), (True, True), expectedOpens, expectedCloses)
+  where
+    expectedOpens = if failure == ReservationTrace then 0 else 2
+    expectedCloses = if failure == SocketConfiguration then 2 else 0
+
+    experiment :: forall s. IOSim s ((Bool, Bool), (Bool, Bool), Int, Int)
+    experiment = do
+      baseSnocket <- mkSnocket mempty
+      opens <- newTVarIO (0 :: Int)
+      closes <- newTVarIO (0 :: Int)
+      let injected = IOError Nothing ResourceExhausted
+                       "outbound acquisition" "injected failure" Nothing Nothing
+          faultSnocket = baseSnocket {
+              openToConnect = \addr -> do
+                atomically $ modifyTVar opens (+1)
+                when (failure == SocketOpen) (throwIO injected)
+                openToConnect baseSnocket addr,
+              close = \fd -> do
+                atomically $ modifyTVar closes (+1)
+                close baseSnocket fd
+            }
+          reservationTracer = mkTracer $ \event -> case event of
+            CM.TrMutableConnStateId {} | failure == ReservationTrace -> throwIO injected
+            _ -> pure ()
+      connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
+      info <- newInformationChannel
+      CM.with
+        CM.Arguments {
+          tracer = reservationTracer,
+          trTracer = nullTracer,
+          ipv4Address = Nothing,
+          ipv6Address = Nothing,
+          addressType = \_ -> Just IPv4Address,
+          snocket = faultSnocket,
+          makeBearer = makeFDBearer,
+          withBuffer = \f -> f Nothing,
+          configureSocket = \_ _ -> throwIO injected,
+          connectionDataFlow = id,
+          prunePolicy = simplePrunePolicy,
+          stdGen = Random.mkStdGen 0,
+          connectionsLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+          timeWaitTimeout = testTimeWaitTimeout,
+          outboundIdleTimeout = testOutboundIdleTimeout,
+          updateVersionData = \a _ -> a,
+          connStateIdSupply,
+          classifyHandlerError = \_ -> HandshakeFailure
+        }
+        (InResponderMode info)
+        (mkConnectionHandler faultSnocket)
+        $ \cm -> do
+          let peer = TestAddress 1
+              attempt = do
+                outcome <- try (acquireOutboundConnection cm
+                  InitiatorAndResponderDiffusionMode peer Outbound)
+                states <- atomically $ readState cm
+                pure (either (== injected) (const False) outcome,
+                      Map.null (CM.getConnMap states))
+          first <- attempt
+          second <- attempt
+          openCount <- atomically $ readTVar opens
+          closeCount <- atomically $ readTVar closes
+          pure (first, second, openCount, closeCount)
+
+
+data HandshakeOutcome = Terminated | Query
+  deriving (Eq, Show)
+
+-- Exercise the actual caller path with a handler that either fails before
+-- publication or publishes a query and returns.
+unit_handshakeCompletion :: Provenance -> Bool -> Property
+unit_handshakeCompletion provenance publishQuery =
+    runSimOrThrow experiment ===
+      (Just (if publishQuery then Query else Terminated), True, Just 1)
+  where
+    experiment :: forall s. IOSim s (Maybe HandshakeOutcome, Bool, Maybe Int)
+    experiment = do
+      baseSnocket <- mkSnocket mempty
+      closes <- newTVarIO (0 :: Int)
+      let snocket = baseSnocket {
+              connect = \_ _ -> pure (),
+              close = \fd -> do
+                close baseSnocket fd
+                atomically $ modifyTVar closes (+1)
+            }
+          handler :: ConnectionHandlerFn () (FD (IOSim s)) Addr
+                         (Handle (IOSim s)) Void Version VersionData (IOSim s)
+          handler _ _ writer _ _ _ _ =
+            MaskedAction $ \_ ->
+              if publishQuery
+                then atomically $ writePromise writer (Right HandshakeConnectionQuery)
+                else throwIO (userError "handler failed before publishing")
+      connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
+      info <- newInformationChannel
+      let connId = ConnectionId (TestAddress 0) (TestAddress 1)
+          tracer = nullTracer
+      CM.with
+        CM.Arguments {
+          tracer,
+          trTracer = nullTracer,
+          ipv4Address = Nothing,
+          ipv6Address = Nothing,
+          addressType = const (Just IPv4Address),
+          snocket,
+          makeBearer = makeFDBearer,
+          withBuffer = \f -> f Nothing,
+          configureSocket = \_ _ -> pure (),
+          connectionDataFlow = id,
+          prunePolicy = simplePrunePolicy,
+          stdGen = Random.mkStdGen 0,
+          connectionsLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+          timeWaitTimeout = testTimeWaitTimeout,
+          outboundIdleTimeout = testOutboundIdleTimeout,
+          updateVersionData = const,
+          connStateIdSupply,
+          classifyHandlerError = \_ -> HandshakeFailure
+        }
+        (InResponderMode info)
+        (ConnectionHandler (WithInitiatorResponderMode handler handler))
+        $ \cm -> do
+          result <- timeout 1 $ case provenance of
+            Inbound -> do
+              fd <- open snocket TestFamily
+              includeInboundConnection cm maxBound fd connId
+            Outbound ->
+              acquireOutboundConnection cm InitiatorAndResponderDiffusionMode
+                (remoteAddress connId) Outbound
+          -- A query result can arrive before the handler finishes cleanup.
+          closeCount <- timeout 1 $ atomically $ do
+            count <- readTVar closes
+            check (count > 0)
+            pure count
+          states <- atomically $ readState cm
+          let outcome = case result of
+                Just (Disconnected actual ConnectionInTerminatedState)
+                  | actual == connId -> Just Terminated
+                Just (Disconnected actual ConnectionDisconnectedByHandshakeQuery)
+                  | actual == connId -> Just Query
+                _ -> Nothing
+          pure (outcome, Map.null (CM.getConnMap states), closeCount)
+
+
+data OutboundReleaseCase = PruneOther | PruneSelf | SpareCapacity
+
+-- Use the public operations to fill the inbound slots before releasing a
+-- ticking outbound connection that would otherwise take one more slot.
+unit_outboundRelease :: OutboundReleaseCase -> Property
+unit_outboundRelease releaseCase = once $
+    case traceResult False trace of
+      Left failure -> counterexample (displayException failure) False
+      Right (actualOutbound, actualInbound, before, result, after) ->
+        conjoin
+          [ actualOutbound === outboundId
+          , actualInbound === inboundId
+          , counterexample "state before release" (CM.getConnMap before === initialMap)
+          , counterexample (show result) $ case result of
+              OperationSuccess st -> st === ticking
+              _                   -> property False
+          , counterexample "state after release" (fmap CM.getConnMap after === Just expectedMap)
+          , counterexample "pruning events" (prunes === expectedPrunes)
+          , counterexample "release transition traces" (length releaseTraces === expectedReleaseTraces)
+          ]
+  where
+    trace = runSimTrace experiment
+
+    local = TestAddress 0
+    outbound = TestAddress 1
+    inbound = TestAddress 2
+    outboundId = ConnectionId local outbound
+    inboundId = ConnectionId local inbound
+    (limit, victim) = case releaseCase of
+      PruneOther    -> (1, Just inboundId)
+      PruneSelf     -> (1, Just outboundId)
+      SpareCapacity -> (2, Nothing)
+
+    ticking = OutboundDupSt Ticking
+    idle = InboundIdleSt Duplex
+    entry = Map.singleton (CM.LocalAddr local)
+    initialMap = Map.fromList [(outbound, entry ticking), (inbound, entry idle)]
+    bothIdle = Map.fromList [(outbound, entry idle), (inbound, entry idle)]
+    expectedMap = maybe bothIdle (\key -> Map.delete (remoteAddress key) bothIdle) victim
+
+    expectedPrunes = case victim of
+      Nothing  -> []
+      Just key -> [(Set.singleton key, 1, Set.fromList [outboundId, inboundId])]
+    prunes =
+      [ (selected, count, candidates)
+      | CM.TrPruneConnections selected count candidates <-
+          selectTraceEventsDynamic trace :: [TestConnectionManagerTrace]
+      ]
+
+    expectedReleaseTraces = case releaseCase of
+      PruneSelf -> 0
+      _         -> 1
+    releaseTraces =
+      [ transition
+      | TransitionTrace _ transition <-
+          selectTraceEventsDynamic trace :: [TestAbstractTransitionTrace]
+      , transition == mkAbsTransition ticking idle
+      ]
+
+    experiment
+      :: forall s.
+         IOSim s ( ConnectionId Addr
+                 , ConnectionId Addr
+                 , CM.ConnMap Addr AbstractState
+                 , OperationResult AbstractState
+                 , Maybe (CM.ConnMap Addr AbstractState)
+                 )
+    experiment = do
+      baseSnocket <- mkSnocket mempty
+      connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
+      info <- newInformationChannel
+      let snocket = baseSnocket { connect = \_ _ -> pure () }
+          handler :: ConnectionHandlerFn () (FD (IOSim s)) Addr
+                         () Void Version VersionData (IOSim s)
+          handler _ _ writer _ _ _ _ =
+            MaskedAction $ \unmask -> do
+              atomically $ writePromise writer
+                (Right (HandshakeConnectionResult () ((), Duplex)))
+              unmask (atomically retry)
+      CM.with
+        CM.Arguments {
+          tracer = dynamicTracer,
+          trTracer = fmap CM.abstractState `contramap` dynamicTracer,
+          ipv4Address = Nothing,
+          ipv6Address = Nothing,
+          addressType = const (Just IPv4Address),
+          snocket,
+          makeBearer = makeFDBearer,
+          withBuffer = \f -> f Nothing,
+          configureSocket = \_ _ -> pure (),
+          connectionDataFlow = id,
+          prunePolicy = \_ _ _ -> maybe Set.empty Set.singleton victim,
+          stdGen = Random.mkStdGen 0,
+          connectionsLimits = AcceptedConnectionsLimit limit limit 0,
+          timeWaitTimeout = testTimeWaitTimeout,
+          outboundIdleTimeout = testOutboundIdleTimeout,
+          updateVersionData = const,
+          connStateIdSupply,
+          classifyHandlerError = const HandshakeFailure
+        }
+        (InResponderMode info)
+        (ConnectionHandler (WithInitiatorResponderMode handler handler))
+        $ \cm -> do
+          Connected actualOutbound _ _ <- acquireOutboundConnection cm
+            InitiatorAndResponderDiffusionMode outbound Outbound
+          fd <- open snocket TestFamily
+          Connected actualInbound _ _ <- includeInboundConnection cm limit fd inboundId
+          before <- atomically $ readState cm
+          result <- releaseOutboundConnection cm outboundId
+          -- Wait for victim cleanup independently of the survivor's state.
+          after <- timeout 10 $ atomically $ do
+            states <- readState cm
+            check (maybe True (\key -> Map.notMember (remoteAddress key) (CM.getConnMap states)) victim)
+            pure states
+          pure (actualOutbound, actualInbound, before, result, after)
 
 
 --

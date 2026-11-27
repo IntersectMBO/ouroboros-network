@@ -857,8 +857,8 @@ data DisconnectionException handlerError =
       -- manager moved it to `TerminatingState`.
       ConnectionInTerminatingState
 
-      -- | We tried to accept or acquire a connection but the connection
-      -- manager moved it to `TerminatedState`.
+      -- | The connection reached `TerminatedState`, or its handler exited
+      -- before publishing a handshake result.
     | ConnectionInTerminatedState
 
       -- | The connection was refused because we reached inbound connection hard
