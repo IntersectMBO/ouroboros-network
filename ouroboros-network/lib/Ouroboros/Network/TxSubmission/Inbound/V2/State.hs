@@ -30,6 +30,7 @@ import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
 import Data.List as List (foldl')
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
 import GHC.Stack (HasCallStack)
 
@@ -640,10 +641,6 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacConfig, pacPee
     acknowledgedTxIds = toList acknowledgedTxIdsSeq
     txIdsToAcknowledge = fromIntegral numOfAcked
 
-    ackablePrefix =
-      StrictSeq.takeWhileL (txIdAckable ctx)
-                           (peerUnacknowledgedTxIds pacPeerState)
-
     numOfUnacked = StrictSeq.length (peerUnacknowledgedTxIds pacPeerState)
     numOfRequested = fromIntegral (peerRequestedTxIds pacPeerState) :: Int
     hasOutstandingBodyReplies =
@@ -651,7 +648,10 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacConfig, pacPee
     keepOneUnackedForPipelinedRequest =
       txIdRequestMode == AllowPipelinedTxIdRequests
         && (numOfRequested > 0 || hasOutstandingBodyReplies)
-    numOfAcked0 = StrictSeq.length ackablePrefix
+    numOfAcked0 =
+      fromMaybe numOfUnacked $
+        StrictSeq.findIndexL (not . txIdAckable ctx)
+          (peerUnacknowledgedTxIds pacPeerState)
     numOfAcked
       -- A pipelined txid request becomes a non-blocking protocol message
       -- while any txid or body reply is still in flight. The outbound side
