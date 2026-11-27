@@ -485,19 +485,19 @@ pickSubmitAction' PeerActionContext { pacPeerState, pacSharedState } unacknowled
     -- most once per scheduler invocation; the duplicates remain in the
     -- queue so the ack-by-count handshake stays in sync with the sender.
     pickBufferedTxsToSubmit =
-        go IntSet.empty [] (toList unacknowledgedTxIds)
+        go IntSet.empty (toList unacknowledgedTxIds)
       where
-        go _    acc [] = reverse acc
-        go seen acc (txKey@(TxKey k) : rest)
-          | IntSet.member k seen = go seen acc rest
+        go _    [] = []
+        go seen (txKey@(TxKey k) : rest)
+          | IntSet.member k seen = go seen rest
           | otherwise =
               case IntMap.lookup k (sharedTxTable pacSharedState) of
                 Just txEntry
                   | txBufferedByPeer pacPeerState k
-                  , not (txInSubmission txEntry) ->
-                      go (IntSet.insert k seen) (txKey : acc) rest
-                Just _  -> reverse acc
-                Nothing -> go seen acc rest
+                  , not (txInSubmission txEntry)
+                  -> txKey : go (IntSet.insert k seen) rest
+                Just _  -> []
+                Nothing -> go seen rest
 
 -- | Select transactions to request from the peer, if within policy limits.
 --
