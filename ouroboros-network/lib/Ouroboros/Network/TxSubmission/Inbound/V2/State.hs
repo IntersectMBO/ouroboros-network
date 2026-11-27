@@ -435,10 +435,17 @@ pickSubmitAction'
   :: PeerActionContext peeraddr txid tx
   -> StrictSeq.StrictSeq TxKey
   -> Maybe [TxKey]
-pickSubmitAction' PeerActionContext { pacPeerState, pacSharedState } unacknowledgedTxIds =
-  if null pickBufferedTxsToSubmit
-     then Nothing
-     else Just pickBufferedTxsToSubmit
+pickSubmitAction' PeerActionContext { pacPeerState, pacSharedState } unacknowledgedTxIds
+  -- With no buffered bodies, avoid walking the queue and looking up its
+  -- keys in the shared table, including during the slow-gate lookahead.
+  | IntMap.null (peerDownloadedTxs pacPeerState)
+  = Nothing
+
+  | null pickBufferedTxsToSubmit
+  = Nothing
+
+  | otherwise
+  = Just pickBufferedTxsToSubmit
   where
 
     -- Walk the unacknowledged txid queue in peer advertisement order,
