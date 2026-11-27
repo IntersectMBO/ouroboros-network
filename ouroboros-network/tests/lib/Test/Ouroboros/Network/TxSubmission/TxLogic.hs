@@ -9593,12 +9593,17 @@ instance Arbitrary ArbTxIdReply where
 prop_replySizeCounters :: ArbTxDecisionPolicy -> NonEmptyList ArbTxIdReply -> Property
 prop_replySizeCounters (ArbTxDecisionPolicy policy0) (NonEmpty replies0) =
     checkCoverage $
-    cover 20 (any ((== AcksOnly) . arqRequest) replies) "acknowledgements alone" $
+    cover 20 (any ((== AcksOnly) . arqRequest) replies)
+             "acknowledgements alone" $
     cover 30 (length replies >= 2 && any (isSlowRequest . arqRequest) replies
-              && not (all (isSlowRequest . arqRequest) replies)) "slow and other requests outstanding" $
-    cover 30 (any (\r -> arqSize r < arqAsked r) replies) "a reply shorter than its request" $
-    cover 10 (any (\r -> arqRequest r /= AcksOnly && arqSize r == 0) replies) "an empty reply to a request for txids" $
-    cover 10 (any (\r -> arqRequest r /= AcksOnly && arqSize r == arqAsked r) replies) "a reply as long as its request" $
+              && not (all (isSlowRequest . arqRequest) replies))
+             "slow and other requests outstanding" $
+    cover 30 (any (\r -> arqSize r < arqAsked r) replies)
+             "a reply shorter than its request" $
+    cover 10 (any (\r -> arqRequest r /= AcksOnly && arqSize r == 0) replies)
+             "an empty reply to a request for txids" $
+    cover 10 (any (\r -> arqRequest r /= AcksOnly && arqSize r == arqAsked r) replies)
+             "a reply as long as its request" $
     runSimOrThrow $ do
       registry  <- noRootsRegistry (mkStdGen 3)
       sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
@@ -9618,11 +9623,17 @@ prop_replySizeCounters (ArbTxDecisionPolicy policy0) (NonEmpty replies0) =
       c <- snapshotCountersWith atomically retired registry
       let buckets = (txIdReplies0 c, txIdReplies1 c, txIdReplies2to4 c, txIdReplies5to9 c, txIdReplies10 c)
       pure $ conjoin
-        [ counterexample ("replies " ++ show (txIdRepliesReceived c)) (txIdRepliesReceived c === fromIntegral (length replies))
-        , counterexample ("received " ++ show (txIdsReceived c)) (txIdsReceived c === fromIntegral (sum (map arqSize replies)))
-        , counterexample ("slow " ++ show (txIdsReceivedSlow c)) (txIdsReceivedSlow c === expectedSlow)
-        , counterexample ("buckets " ++ show buckets) (buckets === expectedBuckets)
-        , conjoin [ counterexample ("requests left at " ++ show peer ++ ": " ++ show left) (StrictSeq.null left)
+        [ counterexample ("replies " ++ show (txIdRepliesReceived c))
+                         (txIdRepliesReceived c === fromIntegral (length replies))
+        , counterexample ("received " ++ show (txIdsReceived c))
+                         (txIdsReceived c === fromIntegral (sum (map arqSize replies)))
+        , counterexample ("slow " ++ show (txIdsReceivedSlow c))
+                         (txIdsReceivedSlow c === expectedSlow)
+        , counterexample ("buckets " ++ show buckets)
+                         (buckets === expectedBuckets)
+        , conjoin [ counterexample
+                      ("requests left at " ++ show peer ++ ": " ++ show left)
+                      (StrictSeq.null left)
                   | (peer, left) <- lefts ]
         ]
   where
