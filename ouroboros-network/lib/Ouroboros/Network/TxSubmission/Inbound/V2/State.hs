@@ -205,9 +205,21 @@ pickPeerActionChoice txIdRequestMode ctx
   -- Pick TXs to submit to the mempool
   | Just txsToSubmit <- pickSubmitAction ctx =
       ChooseSubmit txsToSubmit
+
   -- Pick TXs to fetch
   | Just (txsToRequest, txsToRequestSize, txTable') <- pickRequestTxsAction ctx =
       ChooseRequestTxs txsToRequest txsToRequestSize txTable'
+
+  -- When the slow gate holds and no bodies are buffered,
+  -- acknowledgements cannot unblock submission. Wait without
+  -- scanning the acknowledgement prefix.
+  --
+  -- This is safe because pickSubmitAction' returns Nothing for
+  -- every queue when the context's body buffer is empty.
+  | Just gateUntil <- slowGate ctx
+  , noBuffered =
+      waitGate gateUntil
+
   -- Pick TXids to ack and/or request more TXids, unless the slow tier's
   -- gate holds the request.  Acknowledgements that free a buffered body
   -- pass the gate, in a request for no txids, which leaves the gate as
@@ -224,12 +236,7 @@ pickPeerActionChoice txIdRequestMode ctx
           , Just _ <- pickSubmitAction' ctx unacknowledgedTxIds' ->
               ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge 0 unacknowledgedTxIds'
           | otherwise -> waitGate gateUntil
-  -- Nothing to do now.  A slow peer whose gate holds waits for the gate
-  -- as for a gated request, unless it holds a buffered body; anyone else
-  -- parks on the generation.
-  | Just gateUntil <- slowGate ctx
-  , noBuffered =
-      waitGate gateUntil
+
   | otherwise =
       ChooseDoNothing wakeDelay WakeCounter
   where
